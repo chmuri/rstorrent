@@ -1,0 +1,19 @@
+[package]
+name = "lt-net"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-common.workspace = true
+lt-sys.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+hickory-resolver.workspace = true
+reqwest.workspace = true
+bitflags.workspace = true
+libc.workspace = true
+nix.workspace = true

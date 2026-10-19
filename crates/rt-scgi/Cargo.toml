@@ -1,0 +1,16 @@
+[package]
+name = "rt-scgi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-common.workspace = true
+rt-rpc.workspace = true
+lt-net.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+flate2.workspace = true

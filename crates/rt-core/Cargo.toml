@@ -1,0 +1,27 @@
+[package]
+name = "rt-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-common.workspace = true
+lt-engine.workspace = true
+lt-dht.workspace = true
+lt-protocol.workspace = true
+rt-rpc.workspace = true
+lt-storage.workspace = true
+lt-net.workspace = true
+lt-tracker.workspace = true
+lt-sys.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+getrandom.workspace = true
+nix.workspace = true
+libc.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+lt-crypto.workspace = true

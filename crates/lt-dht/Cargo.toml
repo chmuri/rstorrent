@@ -1,0 +1,15 @@
+[package]
+name = "lt-dht"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-common.workspace = true
+lt-net.workspace = true
+lt-crypto.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+bytes.workspace = true
