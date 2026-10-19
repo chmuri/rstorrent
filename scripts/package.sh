@@ -93,11 +93,20 @@ EOF
 fi
 
 # --- Checksums --------------------------------------------------------------
+checksum() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$@"
+    else
+        # macOS/BSD
+        shasum -a 256 "$@"
+    fi
+}
+
 (
     cd "${OUT_DIR}"
-    sha256sum "${TARBALL}" >"${PACKAGE_NAME}-${VERSION}-${TARGET}.sha256"
+    checksum "${TARBALL}" >"${PACKAGE_NAME}-${VERSION}-${TARGET}.sha256"
     if [ -n "${DEB_ARCH}" ]; then
-        sha256sum "${PACKAGE_NAME}_${VERSION}_${DEB_ARCH}.deb" >>"${PACKAGE_NAME}-${VERSION}-${TARGET}.sha256"
+        checksum "${PACKAGE_NAME}_${VERSION}_${DEB_ARCH}.deb" >>"${PACKAGE_NAME}-${VERSION}-${TARGET}.sha256"
     fi
 )
 echo "created ${OUT_DIR}/${PACKAGE_NAME}-${VERSION}-${TARGET}.sha256"
