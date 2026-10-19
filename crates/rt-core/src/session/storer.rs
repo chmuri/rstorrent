@@ -6,7 +6,9 @@ use std::os::fd::RawFd;
 use std::path::Path;
 use nix::fcntl::{open, OFlag};
 use nix::sys::stat::Mode;
-use nix::unistd::{fdatasync, fsync, write};
+#[cfg(target_os = "linux")]
+use nix::unistd::fdatasync;
+use nix::unistd::{fsync, write};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryEntry {
