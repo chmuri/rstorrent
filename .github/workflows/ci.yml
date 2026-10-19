@@ -1,34 +1,90 @@
-name: Rust CI
+name: CI
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: ["main", "master"]
   pull_request:
-    branches: [ "master", "main" ]
+    branches: ["main", "master"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check-and-test:
-    name: Check & Test
+  fmt:
+    name: rustfmt (advisory)
+    # The port is not fully rustfmt-clean yet; keep the check visible without
+    # blocking pull requests until the formatting pass lands.
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
+  clippy:
+    name: clippy (advisory)
+    # Existing clippy warnings are reported but do not block the build yet.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
-      - name: Rust Cache
+      - name: Rust cache
         uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets
 
-      - name: Cargo Check
-        run: cargo check --workspace --all-targets
-
-      - name: Cargo Test
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is not supported: the daemon uses Unix sockets, signals and
+        # POSIX file APIs.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Run tests
         run: cargo test --workspace --all-targets
 
-      - name: Cargo Build Release
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Build release binary
         run: cargo build --release -p rstorrent
