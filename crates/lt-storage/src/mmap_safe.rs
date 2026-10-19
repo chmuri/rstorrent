@@ -171,7 +171,12 @@ impl MappedMemory {
         }
 
         let target_ptr = unsafe { self.ptr.add(offset) as *mut libc::c_void };
-        let ret = unsafe { libc::mincore(target_ptr, length, vec.as_mut_ptr()) };
+        // Linux takes `*mut c_uchar`; the BSD/macOS signature takes `*mut c_char`.
+        #[cfg(target_os = "linux")]
+        let resident_ptr = vec.as_mut_ptr();
+        #[cfg(not(target_os = "linux"))]
+        let resident_ptr = vec.as_mut_ptr() as *mut libc::c_char;
+        let ret = unsafe { libc::mincore(target_ptr, length, resident_ptr) };
         if ret != 0 {
             let err = std::io::Error::last_os_error();
             return Err(StorageError::MincoreFailed(err.to_string()));
@@ -256,25 +261,41 @@ pub fn allocate_file(fd: RawFd, size: u64) -> Result<(), StorageError> {
         return Ok(());
     }
 
-    // Attempt Linux fallocate (mode 0 = allocate and extend file size)
-    let ret = unsafe { libc::fallocate(fd, 0, 0, size as libc::off_t) };
-    if ret == 0 {
-        return Ok(());
-    }
-
-    let err = std::io::Error::last_os_error();
-    let raw_errno = err.raw_os_error().unwrap_or(0);
-
-    // If fallocate is unsupported on this filesystem, fallback to posix_fallocate
-    if raw_errno == libc::EOPNOTSUPP || raw_errno == libc::ENOSYS {
-        let ret_posix = unsafe { libc::posix_fallocate(fd, 0, size as libc::off_t) };
-        if ret_posix == 0 {
+    #[cfg(target_os = "linux")]
+    {
+        // Attempt Linux fallocate (mode 0 = allocate and extend file size)
+        let ret = unsafe { libc::fallocate(fd, 0, 0, size as libc::off_t) };
+        if ret == 0 {
             return Ok(());
         }
-        return Err(StorageError::FallocateFailed(
-            std::io::Error::from_raw_os_error(ret_posix).to_string(),
-        ));
+
+        let err = std::io::Error::last_os_error();
+        let raw_errno = err.raw_os_error().unwrap_or(0);
+
+        // If fallocate is unsupported on this filesystem, fallback to posix_fallocate
+        if raw_errno == libc::EOPNOTSUPP || raw_errno == libc::ENOSYS {
+            let ret_posix = unsafe { libc::posix_fallocate(fd, 0, size as libc::off_t) };
+            if ret_posix == 0 {
+                return Ok(());
+            }
+            return Err(StorageError::FallocateFailed(
+                std::io::Error::from_raw_os_error(ret_posix).to_string(),
+            ));
+        }
+
+        Err(StorageError::FallocateFailed(err.to_string()))
     }
 
-    Err(StorageError::FallocateFailed(err.to_string()))
+    #[cfg(not(target_os = "linux"))]
+    {
+        // macOS/BSD have no fallocate; extend the file instead (sparse).
+        let ret = unsafe { libc::ftruncate(fd, size as libc::off_t) };
+        if ret == 0 {
+            return Ok(());
+        }
+
+        Err(StorageError::FallocateFailed(
+            std::io::Error::last_os_error().to_string(),
+        ))
+    }
 }

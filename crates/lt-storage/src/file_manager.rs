@@ -536,8 +536,17 @@ impl FileManager {
 }
 
 fn apply_fadvise_random(fd: RawFd) -> bool {
-    // `posix_fadvise` returns an error number directly rather than setting errno.
-    unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_RANDOM) == 0 }
+    #[cfg(target_os = "linux")]
+    {
+        // `posix_fadvise` returns an error number directly rather than setting errno.
+        unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_RANDOM) == 0 }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Not available on macOS/BSD; leave the kernel heuristics alone.
+        let _ = fd;
+        false
+    }
 }
 
 fn allocate_for_file(fd: RawFd, size: u64) {
@@ -545,34 +554,48 @@ fn allocate_for_file(fd: RawFd, size: u64) {
         return;
     }
 
-    let ret = unsafe { libc::fallocate(fd, 0, 0, size as libc::off_t) };
-    if ret == 0 {
-        return;
+    #[cfg(target_os = "linux")]
+    {
+        let ret = unsafe { libc::fallocate(fd, 0, 0, size as libc::off_t) };
+        if ret == 0 {
+            return;
+        }
+
+        let err = std::io::Error::last_os_error();
+        let errno = err.raw_os_error().unwrap_or(0);
+
+        if errno == libc::EOPNOTSUPP || errno == libc::ENOSYS {
+            log_fallocate_unsupported_once(errno);
+
+            // Explicit fallback for filesystems without Linux fallocate.
+            let posix_ret = unsafe { libc::posix_fallocate(fd, 0, size as libc::off_t) };
+            if posix_ret != 0 && !FALLOCATE_FALLBACK_FAILED_LOGGED.swap(true, Ordering::Relaxed)
+            {
+                tracing::warn!(
+                    errno = posix_ret,
+                    "posix_fallocate fallback also failed; continuing without preallocation"
+                );
+            }
+            return;
+        }
+
+        tracing::debug!(
+            errno = errno,
+            "fallocate failed; continuing without preallocation"
+        );
     }
 
-    let err = std::io::Error::last_os_error();
-    let errno = err.raw_os_error().unwrap_or(0);
-
-    if errno == libc::EOPNOTSUPP || errno == libc::ENOSYS {
-        log_fallocate_unsupported_once(errno);
-
-        // Explicit fallback for filesystems without Linux fallocate.
-        let posix_ret = unsafe { libc::posix_fallocate(fd, 0, size as libc::off_t) };
-        if posix_ret != 0
-            && !FALLOCATE_FALLBACK_FAILED_LOGGED.swap(true, Ordering::Relaxed)
-        {
-            tracing::warn!(
-                errno = posix_ret,
-                "posix_fallocate fallback also failed; continuing without preallocation"
+    #[cfg(not(target_os = "linux"))]
+    {
+        // macOS/BSD have no fallocate; extend the file instead (sparse).
+        let ret = unsafe { libc::ftruncate(fd, size as libc::off_t) };
+        if ret != 0 {
+            tracing::debug!(
+                errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0),
+                "ftruncate failed; continuing without preallocation"
             );
         }
-        return;
     }
-
-    tracing::debug!(
-        errno = errno,
-        "fallocate failed; continuing without preallocation"
-    );
 }
 
 #[cfg(test)]

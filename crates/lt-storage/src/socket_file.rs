@@ -82,7 +82,7 @@ impl SocketFile {
         let c_path = CString::new(path.as_ref().to_string_lossy().as_bytes())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
-        let ret = unsafe { libc::open(c_path.as_ptr(), full_flags, file_mode) };
+        let ret = unsafe { libc::open(c_path.as_ptr(), full_flags, file_mode as libc::c_uint) };
         if ret == INVALID_FD {
             return Err(StorageError::Io(std::io::Error::last_os_error()));
         }
