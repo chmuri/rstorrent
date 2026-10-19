@@ -1,0 +1,8 @@
+# Cross-compilation settings (https://github.com/cross-rs/cross).
+#
+# rt-grpc's build script compiles the protobuf contract at build time, and the
+# cross images do not ship protoc, so install it inside the build container.
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update && apt-get install -y --no-install-recommends protobuf-compiler",
+]

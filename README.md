@@ -1,8 +1,10 @@
 # rstorrent
 
 [![CI](https://github.com/chmuri/rstorrent/actions/workflows/ci.yml/badge.svg)](https://github.com/chmuri/rstorrent/actions/workflows/ci.yml)
+[![Release](https://github.com/chmuri/rstorrent/actions/workflows/release.yml/badge.svg)](https://github.com/chmuri/rstorrent/releases)
 [![License: GPL v2+](https://img.shields.io/badge/License-GPL%20v2%2B-blue.svg)](LICENSE)
 [![Rust: 2021](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-informational.svg)](#supported-platforms)
 
 A modern, high-performance, memory-safe BitTorrent client and engine written in pure Rust. `rstorrent` is a complete re-implementation and architectural evolution of the legendary [rTorrent](https://github.com/rakshasa/rtorrent) and [libtorrent](https://github.com/rakshasa/libtorrent) C++ codebase.
 
@@ -30,6 +32,11 @@ It provides 100% behavioral parity with rTorrent's RPC and SCGI protocol, allowi
 - **Interactive TUI & Daemon Mode**:
   - Rich Terminal User Interface powered by [Ratatui](https://github.com/ratatui/ratatui) and [Crossterm](https://github.com/crossterm-rs/crossterm).
   - Headless daemon mode (`--daemon`) for servers and Docker containers.
+- **Native gRPC API**:
+  - Tonic-based `rtorrent.v1` services (`TorrentService`, `SystemService`,
+    `CommandService`) over TCP or Unix sockets.
+  - Server-streaming `StreamEvents` and `StreamStats` for push-based frontends
+    (Flood's `rstorrent` connector uses them).
 - **Dual Binary Compatibility**:
   - Provides both `rstorrent` and `rtorrent` binaries out of the box for backward compatibility with existing scripts.
 
@@ -99,6 +106,70 @@ cargo build --release -p rstorrent
 
 ---
 
+## Releases & Packages
+
+Every `v*` tag is built by the [Release workflow](.github/workflows/release.yml)
+and published on the [Releases](https://github.com/chmuri/rstorrent/releases)
+page together with SHA-256 checksums. See [CHANGELOG.md](CHANGELOG.md) for the
+full change history.
+
+### Supported platforms
+
+| Platform | Packages |
+| --- | --- |
+| Linux x86_64 (glibc) | `.deb` (`amd64`), `.tar.gz` |
+| Linux aarch64 (glibc) | `.deb` (`arm64`), `.tar.gz` |
+| macOS x86_64 | `.tar.gz` |
+| macOS arm64 (Apple Silicon) | `.tar.gz` |
+| Windows | Not supported (Unix sockets, signals and POSIX APIs) |
+
+### Debian / Ubuntu
+
+```bash
+# Download the .deb for your architecture from the Releases page, then:
+sudo apt install ./rstorrent_<version>_amd64.deb
+# Installs /usr/bin/rstorrent and the /usr/bin/rtorrent compatibility symlink.
+```
+
+### Tarball (any Linux distribution, macOS)
+
+```bash
+tar -xzf rstorrent-<version>-<target>.tar.gz
+sudo install -m 0755 rstorrent-<version>/rstorrent /usr/local/bin/
+```
+
+Every release also ships `*-sha256` files; verify with `sha256sum -c`.
+
+---
+
+## Native gRPC API
+
+Besides SCGI/XML-RPC, the daemon exposes a native gRPC server
+([`crates/rt-grpc`](crates/rt-grpc), package `rtorrent.v1`) with the same
+command map underneath:
+
+```bash
+# Unix domain socket (recommended, no TLS needed on a local socket)
+rstorrent --daemon --grpc-socket /run/rstorrent/grpc.sock
+
+# or TCP
+rstorrent --daemon --grpc-port 50051
+```
+
+| Service | Methods |
+| --- | --- |
+| `TorrentService` | `ListTorrents`, `GetTorrent`, `AddTorrent`, `ControlTorrent`, `RemoveTorrent`, `SetTorrentPriority`, `StreamEvents` (server streaming) |
+| `SystemService` | `GetVersion`, `GetSessionStats`, `StreamStats` (server streaming), `Shutdown` |
+| `CommandService` | `Execute`, `Multicall`, `ListCommands` (full rTorrent DSL bridge) |
+
+`CommandService` understands rTorrent's command syntax (`load.*`,
+`d.multicall2`, `f/t/p.multicall`, `session.path`, `d.custom1`, …), including
+XML-RPC-style target routing, so existing integrations can be ported one call
+at a time. Flood's dedicated `rstorrent` connector consumes the gRPC streams;
+see the Flood repository for a ready-to-run `docker-compose.rstorrent.yml`.
+
+---
+
 ## Configuration
 
 `rstorrent` automatically looks for configuration files in standard locations:
@@ -145,6 +216,13 @@ cargo clippy --workspace --all-targets
 ## Contributing
 
 Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code style, test coverage requirements, and pull request workflow.
+
+---
+
+## Changelog & Security
+
+- [CHANGELOG.md](CHANGELOG.md) — release history.
+- [SECURITY.md](SECURITY.md) — how to report vulnerabilities.
 
 ---
 
