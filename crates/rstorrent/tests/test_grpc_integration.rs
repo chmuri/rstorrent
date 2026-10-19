@@ -23,6 +23,10 @@ async fn test_grpc_daemon_integration() {
         no_rc: true,
         grpc_port: Some(port),
         directory: Some(download_directory.clone()),
+        options: vec![
+            "directory.default.set=/tmp/rstorrent-grpc-option-downloads".to_string(),
+            "session.path.set=/tmp/rstorrent-grpc-option-session".to_string(),
+        ],
         ..Default::default()
     };
 
@@ -95,8 +99,9 @@ async fn test_grpc_daemon_integration() {
         Some(object_value::Kind::StringValue(value)) => value,
         other => panic!("unexpected directory.default result: {other:?}"),
     };
-    assert!(
-        default_dir.starts_with(&download_directory),
+    // `-o` options are applied after the typed CLI flags, so they win.
+    assert_eq!(
+        default_dir, "/tmp/rstorrent-grpc-option-downloads",
         "directory.default = {default_dir}"
     );
 
