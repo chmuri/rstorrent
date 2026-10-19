@@ -8,6 +8,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+// `posix_fadvise` is Linux-only; on other platforms the hint is skipped and
+// counted as a failure instead of a success.
+const FADVISE_SUCCESS: u64 = if cfg!(target_os = "linux") { 1 } else { 0 };
+const FADVISE_FAILURES: u64 = if cfg!(target_os = "linux") { 0 } else { 1 };
+
 use lt_storage::disk_thread::{
     global_disk_thread, global_file_manager_stats, shutdown_global_disk_thread, DiskThread,
 };
@@ -52,13 +57,13 @@ fn disk_thread_exposes_real_file_manager_counters() {
     assert_eq!(stats.files_opened, 1);
     assert_eq!(stats.files_closed, 0);
     assert_eq!(stats.files_failed, 0);
-    assert_eq!(stats.fadvise, 1);
-    assert_eq!(stats.fadvise_failures, 0);
+    assert_eq!(stats.fadvise, FADVISE_SUCCESS);
+    assert_eq!(stats.fadvise_failures, FADVISE_FAILURES);
     assert_eq!(thread.file_manager_stats(), stats);
     assert_eq!(thread.files_opened_counter(), 1);
     assert_eq!(thread.files_closed_counter(), 0);
     assert_eq!(thread.files_failed_counter(), 0);
-    assert_eq!(thread.files_advised_counter(), 1);
+    assert_eq!(thread.files_advised_counter(), FADVISE_SUCCESS);
 
     // A read of a path that does not exist fails inside `FileManager::open`
     // and must increment the failure counter without changing the open gauge.
