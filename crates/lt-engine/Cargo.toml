@@ -1,0 +1,23 @@
+[package]
+name = "lt-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-common.workspace = true
+lt-protocol.workspace = true
+lt-storage.workspace = true
+lt-tracker.workspace = true
+lt-dht.workspace = true
+lt-crypto.workspace = true
+lt-net.workspace = true
+lt-sys.workspace = true
+bytes.workspace = true
+bitflags.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+getrandom.workspace = true
+

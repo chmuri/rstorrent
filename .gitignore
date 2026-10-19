@@ -1,0 +1,37 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+Cargo.lock.backup
+
+# Docker runtime data & session volumes
+/data/
+/test_run/
+cookies.txt
+
+# Large test payloads / torrent media
+*.torrent
+*.iso
+
+# Logs & audit reports
+*.log
+.audit/
+repomix-output.xml
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+
+# Editor and OS files
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Internal task trackers
+.tasks/
+.ua/
+
+# Internal knowledge base (not part of the repository)
+docs/knowledge-base/

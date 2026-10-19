@@ -1,0 +1,20 @@
+# Default rTorrent configuration for Docker container
+
+# Default download directory
+directory.default.set = /downloads
+
+# Session directory (stores resume data, torrent files, and unix socket)
+session.path.set = /session
+
+# Listening port for incoming P2P BitTorrent connections
+network.port_range.set = 50000-50000
+
+# Distributed Hash Table (DHT) port
+dht.port.set = 6881
+
+# SCGI Configuration for Flood Web UI / XML-RPC clients
+# 1. SCGI over TCP (accessible by Flood within Docker network at host 'rtorrent:5000')
+network.scgi.open_port = 0.0.0.0:5000
+
+# 2. SCGI over UNIX Domain Socket (accessible via shared /session volume)
+network.scgi.open_local = /session/rtorrent.sock

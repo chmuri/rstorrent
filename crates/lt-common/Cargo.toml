@@ -1,0 +1,16 @@
+[package]
+name = "lt-common"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+bitflags.workspace = true
+flate2.workspace = true
+base64.workspace = true
+sha1.workspace = true

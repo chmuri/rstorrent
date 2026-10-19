@@ -1,0 +1,18 @@
+[package]
+name = "rt-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+lt-common.workspace = true
+rt-core.workspace = true
+rt-rpc.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+
+[dev-dependencies]
+lt-engine.workspace = true

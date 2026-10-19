@@ -1,0 +1,48 @@
+services:
+  rstorrent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rstorrent
+    restart: unless-stopped
+    ports:
+      - "50000:50000"         # P2P BitTorrent incoming connections
+      - "6881:6881/udp"       # Distributed Hash Table (DHT)
+      - "127.0.0.1:5000:5000" # SCGI TCP (available on localhost for scripts/debug)
+    volumes:
+      - ./data/downloads:/downloads
+      - ./data/session:/session
+      - ./data/config:/config
+    networks:
+      torrent-net:
+        aliases:
+          - rtorrent
+          - rstorrent
+
+  flood:
+    image: jesec/flood:master
+    container_name: flood
+    user: "0:0"
+    restart: unless-stopped
+    ports:
+      - "3000:3000"           # Flood Web UI (open http://localhost:3000)
+    volumes:
+      - ./data/flood:/data/flood
+      - ./data/downloads:/downloads
+      - ./data/session:/session
+    command:
+      - --host=0.0.0.0
+      - --port=3000
+      - --allowedpath=/downloads
+      - --rundir=/data/flood
+      - --auth=none
+      - --rthost=rstorrent
+      - --rtport=5000
+    depends_on:
+      - rstorrent
+    networks:
+      - torrent-net
+
+networks:
+  torrent-net:
+    driver: bridge

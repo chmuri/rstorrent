@@ -1,0 +1,29 @@
+[package]
+name = "rstorrent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance BitTorrent client written in Rust (modern port of rTorrent + libtorrent)"
+repository = "https://github.com/chmuri/rstorrent"
+
+
+[dependencies]
+lt-common.workspace = true
+lt-sys.workspace = true
+lt-net.workspace = true
+lt-storage.workspace = true
+lt-engine.workspace = true
+rt-core.workspace = true
+rt-rpc.workspace = true
+rt-scgi.workspace = true
+rt-grpc.workspace = true
+rt-tui.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+nix.workspace = true
+thiserror.workspace = true
+getrandom.workspace = true
