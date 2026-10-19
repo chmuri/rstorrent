@@ -612,6 +612,9 @@ mod tests {
         ))
     }
 
+    // `posix_fadvise` success counters only move on platforms that support it.
+    const FADVISE_SUCCESS: u64 = if cfg!(target_os = "linux") { 1 } else { 0 };
+
     fn open_file(manager: &mut FileManager, path: &PathBuf, hashing: bool) -> Box<File> {
         // The manager keeps a raw pointer to the File, so it must live at a
         // stable address (a Box) rather than a stack slot that is moved on
@@ -638,22 +641,22 @@ mod tests {
         manager.set_advise_random_hashing(false);
 
         let mut normal = open_file(&mut manager, &path, false);
-        assert_eq!(manager.fadvise_counter(), 1);
+        assert_eq!(manager.fadvise_counter(), FADVISE_SUCCESS);
         manager.close(&mut normal);
 
         manager.set_advise_random(false);
         let mut quiet = open_file(&mut manager, &path, false);
-        assert_eq!(manager.fadvise_counter(), 1);
+        assert_eq!(manager.fadvise_counter(), FADVISE_SUCCESS);
         manager.close(&mut quiet);
 
         manager.set_advise_random(true);
         let mut hashing_without_hint = open_file(&mut manager, &path, true);
-        assert_eq!(manager.fadvise_counter(), 1);
+        assert_eq!(manager.fadvise_counter(), FADVISE_SUCCESS);
         manager.close(&mut hashing_without_hint);
 
         manager.set_advise_random_hashing(true);
         let mut hashing = open_file(&mut manager, &path, true);
-        assert_eq!(manager.fadvise_counter(), 2);
+        assert_eq!(manager.fadvise_counter(), FADVISE_SUCCESS * 2);
         manager.close(&mut hashing);
 
         let _ = fs::remove_file(&path);
@@ -879,15 +882,15 @@ mod tests {
         assert_eq!(stats.files_opened, 1);
         assert_eq!(stats.files_closed, 0);
         assert_eq!(stats.files_failed, 0);
-        assert_eq!(stats.fadvise, 1);
+        assert_eq!(stats.fadvise, FADVISE_SUCCESS);
         assert_eq!(stats.fadvise_failures, 0);
 
         // The handle observes the same counters after the manager is moved.
         let handle_stats = handle.stats();
         assert_eq!(handle_stats.files_opened, 1);
-        assert_eq!(handle_stats.fadvise, 1);
+        assert_eq!(handle_stats.fadvise, FADVISE_SUCCESS);
         assert_eq!(handle.files_opened_counter(), 1);
-        assert_eq!(handle.fadvise_counter(), 1);
+        assert_eq!(handle.fadvise_counter(), FADVISE_SUCCESS);
 
         manager.begin_io(&file);
         assert_eq!(manager.stats().in_flight, 1);
