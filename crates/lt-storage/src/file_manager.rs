@@ -612,8 +612,11 @@ mod tests {
         ))
     }
 
-    // `posix_fadvise` success counters only move on platforms that support it.
+    // `posix_fadvise` success/failure counters only move on platforms that
+    // support the hint (Linux); elsewhere every attempt is recorded as a
+    // failure and the hint is skipped.
     const FADVISE_SUCCESS: u64 = if cfg!(target_os = "linux") { 1 } else { 0 };
+    const FADVISE_FAILURES: u64 = if cfg!(target_os = "linux") { 0 } else { 1 };
 
     fn open_file(manager: &mut FileManager, path: &PathBuf, hashing: bool) -> Box<File> {
         // The manager keeps a raw pointer to the File, so it must live at a
@@ -883,7 +886,7 @@ mod tests {
         assert_eq!(stats.files_closed, 0);
         assert_eq!(stats.files_failed, 0);
         assert_eq!(stats.fadvise, FADVISE_SUCCESS);
-        assert_eq!(stats.fadvise_failures, 0);
+        assert_eq!(stats.fadvise_failures, FADVISE_FAILURES);
 
         // The handle observes the same counters after the manager is moved.
         let handle_stats = handle.stats();
