@@ -294,6 +294,14 @@ impl Control {
                 );
             }
 
+            // `-o key=value` options are rc-style configuration commands and
+            // are applied before explicit `-O` commands.
+            for opt in &cli.options {
+                if let Err(e) = parse_command(opt, &Target::None, &map, true) {
+                    tracing::warn!("CLI -o option error in '{}': {}", opt, e);
+                }
+            }
+
             for opt in &cli.command_options {
                 if let Err(e) = parse_command(opt, &Target::None, &map, true) {
                     tracing::warn!("CLI -O command error in '{}': {}", opt, e);
