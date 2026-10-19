@@ -3,6 +3,9 @@ use lt_storage::file_manager::FileManager;
 use lt_storage::mmap_safe::Prot;
 use lt_storage::socket_file::OpenFlags;
 
+// `posix_fadvise` only exists on Linux; elsewhere the hint is skipped.
+const FADVISE_SUCCESS: u64 = if cfg!(target_os = "linux") { 1 } else { 0 };
+
 #[test]
 fn opens_with_fadvise_and_closes_idle_files() {
     let path =
@@ -26,7 +29,7 @@ fn opens_with_fadvise_and_closes_idle_files() {
     assert!(file.is_open());
     assert_eq!(manager.open_files(), 1);
     assert_eq!(manager.files_opened_counter(), 1);
-    assert_eq!(manager.files_advised_counter(), 1);
+    assert_eq!(manager.files_advised_counter(), FADVISE_SUCCESS);
 
     assert_eq!(manager.close_idle(0), 0);
     assert_eq!(manager.close_idle(u64::MAX), 1);
@@ -58,7 +61,7 @@ fn hashing_advice_is_gated_by_its_own_toggle() {
 
     manager.set_advise_random_hashing(true);
     assert!(manager.open(&mut file, true, Prot::READ | Prot::WRITE, OpenFlags::CREATE,));
-    assert_eq!(manager.files_advised_counter(), 1);
+    assert_eq!(manager.files_advised_counter(), FADVISE_SUCCESS);
     manager.close(&mut file);
 
     let _ = std::fs::remove_file(&path);
