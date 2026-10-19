@@ -74,6 +74,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - `d.directory_base` follows rstorrent's storage layout, where multi-file paths
   include the base directory; clients that add multi-file torrents with an
   explicit base path must pass the parent directory.
+- macOS builds and packages are released, but a few storage tests still assert
+  Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
 [Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.0...HEAD
 [0.10.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.0
