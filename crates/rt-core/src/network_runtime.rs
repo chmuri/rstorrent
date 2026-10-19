@@ -464,15 +464,32 @@ fn bind_socket(
         std::net::SocketAddr::V6(_) => libc::AF_INET6,
     };
 
-    let fd = unsafe {
-        libc::socket(
-            family,
-            libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
-            0,
-        )
-    };
+    // SOCK_NONBLOCK/SOCK_CLOEXEC only exist in the Linux socket API; other
+    // platforms set the same flags with fcntl() after creating the socket.
+    #[cfg(target_os = "linux")]
+    let socket_type = libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
+    #[cfg(not(target_os = "linux"))]
+    let socket_type = libc::SOCK_STREAM;
+
+    let fd = unsafe { libc::socket(family, socket_type, 0) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags >= 0 {
+            unsafe {
+                libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            }
+        }
+        let fd_flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        if fd_flags >= 0 {
+            unsafe {
+                libc::fcntl(fd, libc::F_SETFD, fd_flags | libc::FD_CLOEXEC);
+            }
+        }
     }
 
     let result = (|| -> io::Result<()> {
@@ -506,6 +523,7 @@ fn bind_socket(
             }
         }
 
+        #[cfg(target_os = "linux")]
         if !device.is_empty() {
             let name = CString::new(device).map_err(|_| {
                 io::Error::new(io::ErrorKind::InvalidInput, "bind device contains NUL")
@@ -529,6 +547,14 @@ fn bind_socket(
                     "SO_BINDTODEVICE failed; using the default route"
                 );
             }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        if !device.is_empty() {
+            debug!(
+                device,
+                "SO_BINDTODEVICE is not supported on this platform; using the default route"
+            );
         }
 
         let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
