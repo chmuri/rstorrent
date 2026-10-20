@@ -102,7 +102,7 @@ pub fn resolve_path_or_throw(input: &str) -> Result<String, RpcError> {
     Ok(canon.to_string_lossy().to_string())
 }
 
-fn expand_tilde(path: &str) -> Result<String, RpcError> {
+pub fn expand_tilde(path: &str) -> Result<String, RpcError> {
     if path == "~" || path.starts_with("~/") {
         let home = std::env::var("HOME")
             .map_err(|_| RpcError::InputError("HOME environment variable not set".to_string()))?;

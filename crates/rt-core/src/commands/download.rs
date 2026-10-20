@@ -1522,7 +1522,21 @@ fn apply_load_command(
     };
 
     if dl_arc.read().unwrap().directory().is_empty() {
-        dl_arc.write().unwrap().set_directory(".");
+        let default_dir = {
+            let map_guard = command_map.read().unwrap();
+            map_guard
+                .call_command(
+                    "directory.default",
+                    &Object::create_empty(),
+                    &Target::None,
+                    false,
+                )
+                .ok()
+                .and_then(|obj| obj.as_str().map(|s| s.to_string()).ok())
+                .unwrap_or_else(|| ".".to_string())
+        };
+        dl_arc.write().unwrap().set_directory(default_dir);
+        dl_arc.write().unwrap().queue_recheck_if_files_exist();
     }
 
     let hash = *dl_arc.read().unwrap().info_hash();

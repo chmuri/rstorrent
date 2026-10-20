@@ -88,12 +88,16 @@ impl SessionManager {
             return Ok(());
         }
 
-        let resolved = resolve_path(path);
+        let expanded = crate::commands::system::expand_tilde(path)
+            .unwrap_or_else(|_| path.to_string());
+        let _ = fs::create_dir_all(&expanded);
+
+        let resolved = resolve_path(&expanded);
         if resolved.is_empty() {
             return Err(Error::new(
                 ErrorKind::NotFound,
                 format!(
-                    "Could not resolve session path '{}'. The directory must exist.",
+                    "Could not resolve session path '{}'. The directory must exist and be accessible.",
                     path
                 ),
             ));

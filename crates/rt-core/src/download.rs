@@ -514,6 +514,14 @@ impl Download {
             .set_save_directory(&self.directory);
     }
 
+    pub fn has_existing_files(&self) -> bool {
+        self.download.lock().unwrap().has_existing_files()
+    }
+
+    pub fn queue_recheck_if_files_exist(&mut self) -> bool {
+        self.download.lock().unwrap().queue_recheck_if_files_exist()
+    }
+
     pub fn throttle_name(&self) -> &str {
         &self.throttle_name
     }
