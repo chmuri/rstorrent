@@ -58,7 +58,7 @@ nix = { version = "0.29", features = ["signal", "fs", "process", "socket", "user
 num-bigint = "0.4"
 num-traits = "0.2"
 flate2 = "1.0"
-base64 = "0.22"
+base64 = "0.23"
 sha1 = "0.11"
 rc4 = "0.1"
 getrandom = "0.2"
