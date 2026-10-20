@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-20
+
+Point release resolving interactive terminal paste issues, fixing platform-specific test failures on macOS, enabling blocking multi-platform CI, and enforcing codebase-wide formatting standards.
+
+### Added
+
+- **Bracketed Paste Support in TUI**:
+  - Implemented terminal bracketed paste event handling (`TerminalEvent::Paste`) in the main event loop.
+  - Added `insert_str` across `InputTarget`, `TextInput`, `PathInput`, and `InputManager`.
+  - Added automatic prompt activation: pasting a torrent URL or magnet link from the main download view now automatically initializes the `load.start` prompt with the pasted payload.
+  - Automatic newline and carriage return sanitization (`\r\n`) to prevent corruption of single-line input prompts.
+
+### Fixed
+
+- **macOS (Darwin) Portability & Test Suite**:
+  - Replaced hardcoded `/bin/false` and `/bin/true` process invocations in `rt-core` tests with portable PATH/prefix resolution (`bin_prog`), resolving test panics on macOS where those utilities reside in `/usr/bin`.
+  - Fixed temporary directory path assertions in `test_command_session` by canonicalizing `/var` symlinks (resolving `/private/var` mismatch on Darwin).
+  - Promoted macOS CI test runner (`macos-latest`) to fully gating/blocking (removed `continue-on-error`).
+  - Enhanced `scripts/package.sh` with automatic ad-hoc code signing (`codesign -s -`) for macOS release artifacts to prevent Gatekeeper execution failures on Apple Silicon.
+
+### Changed
+
+- **Code Formatting & CI Enforcement**:
+  - Executed a unified `cargo fmt --all` pass across the entire workspace (231 files).
+  - Made the `rustfmt` check in GitHub Actions CI strictly required and blocking.
+
 ## [0.10.0] - 2026-10-19
 
 First public release of the clean `rstorrent` repository: a pure-Rust,
@@ -77,5 +103,6 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.1
 [0.10.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.0
