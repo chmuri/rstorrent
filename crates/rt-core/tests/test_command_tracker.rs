@@ -1,7 +1,7 @@
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_core::commands::tracker::{checked_port_value, register_tracker_commands, DhtConfig};
 use rt_rpc::{CommandMap, Target};
+use std::sync::{Arc, RwLock};
 
 fn setup_tracker() -> (CommandMap, Arc<RwLock<DhtConfig>>) {
     let mut map = CommandMap::new();
@@ -22,10 +22,15 @@ fn call_set(map: &CommandMap, value: &str) -> Result<(), rt_rpc::RpcError> {
 }
 
 fn override_port(map: &CommandMap) -> u16 {
-    map.call_command("dht.override_port", &Object::create_empty(), &Target::None, true)
-        .unwrap()
-        .as_value()
-        .unwrap() as u16
+    map.call_command(
+        "dht.override_port",
+        &Object::create_empty(),
+        &Target::None,
+        true,
+    )
+    .unwrap()
+    .as_value()
+    .unwrap() as u16
 }
 
 #[test]

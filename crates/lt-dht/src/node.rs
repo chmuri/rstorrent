@@ -118,9 +118,12 @@ impl DhtNode {
             Some(IpAddr::V4(v4)) => u32::from(v4),
             _ => 0,
         };
-        map.insert_key("i", Object::create_value(ip_u32 as i64)).unwrap();
-        map.insert_key("p", Object::create_value(self.address.port() as i64)).unwrap();
-        map.insert_key("t", Object::create_value(self.last_seen as i64)).unwrap();
+        map.insert_key("i", Object::create_value(ip_u32 as i64))
+            .unwrap();
+        map.insert_key("p", Object::create_value(self.address.port() as i64))
+            .unwrap();
+        map.insert_key("t", Object::create_value(self.last_seen as i64))
+            .unwrap();
         map
     }
 }
@@ -140,15 +143,10 @@ pub fn is_persistable_address(address: &SocketAddress) -> bool {
         Some(IpAddr::V6(v6)) => {
             let octets = v6.octets();
             let unique_local = (octets[0] & 0xfe) == 0xfc; // fc00::/7
-            let link_local =
-                octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80; // fe80::/10
+            let link_local = octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80; // fe80::/10
             let multicast = octets[0] == 0xff;
 
-            !(v6.is_unspecified()
-                || v6.is_loopback()
-                || unique_local
-                || link_local
-                || multicast)
+            !(v6.is_unspecified() || v6.is_loopback() || unique_local || link_local || multicast)
         }
         None => false,
     }

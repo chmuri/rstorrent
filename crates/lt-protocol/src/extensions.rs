@@ -1,8 +1,8 @@
+use lt_common::object::{encode, Object};
+use lt_net::addr::SocketAddress;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use lt_common::object::{encode, Object};
-use lt_net::addr::SocketAddress;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExtensionType {
@@ -186,7 +186,7 @@ impl ProtocolExtension {
         let length = (2 + payload.len()) as u32;
         msg.extend_from_slice(&length.to_be_bytes());
         msg.push(20); // BT extended message ID
-        msg.push(0);  // Handshake extended ID
+        msg.push(0); // Handshake extended ID
         msg.extend_from_slice(&payload);
         msg
     }
@@ -211,8 +211,10 @@ impl ProtocolExtension {
 
     pub fn generate_ut_metadata_request(ext_id: u8, piece: u32) -> Vec<u8> {
         let mut root = Object::create_map();
-        root.insert_key("msg_type", Object::create_value(0)).unwrap();
-        root.insert_key("piece", Object::create_value(piece as i64)).unwrap();
+        root.insert_key("msg_type", Object::create_value(0))
+            .unwrap();
+        root.insert_key("piece", Object::create_value(piece as i64))
+            .unwrap();
 
         let payload = encode(&root).unwrap();
 
@@ -232,8 +234,10 @@ impl ProtocolExtension {
         data: &[u8],
     ) -> Vec<u8> {
         let mut root = Object::create_map();
-        root.insert_key("msg_type", Object::create_value(1)).unwrap();
-        root.insert_key("piece", Object::create_value(piece as i64)).unwrap();
+        root.insert_key("msg_type", Object::create_value(1))
+            .unwrap();
+        root.insert_key("piece", Object::create_value(piece as i64))
+            .unwrap();
         root.insert_key("total_size", Object::create_value(total_size as i64))
             .unwrap();
 
@@ -250,7 +254,6 @@ impl ProtocolExtension {
     }
 }
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum ExtensionError {
     #[error("Invalid ut_metadata payload: {0}")]
@@ -264,9 +267,17 @@ pub enum ExtensionError {
 /// Parsed `ut_metadata` extension message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UtMetadataMessage {
-    Request { piece: u32 },
-    Data { piece: u32, total_size: u32, data: Vec<u8> },
-    Reject { piece: u32 },
+    Request {
+        piece: u32,
+    },
+    Data {
+        piece: u32,
+        total_size: u32,
+        data: Vec<u8>,
+    },
+    Reject {
+        piece: u32,
+    },
 }
 
 impl UtMetadataMessage {
@@ -310,17 +321,22 @@ impl UtMetadataMessage {
 /// Bencoded payload for a `ut_metadata` request (without the framing bytes).
 pub fn ut_metadata_request_payload(piece: u32) -> Vec<u8> {
     let mut root = Object::create_map();
-    root.insert_key("msg_type", Object::create_value(0)).unwrap();
-    root.insert_key("piece", Object::create_value(piece as i64)).unwrap();
+    root.insert_key("msg_type", Object::create_value(0))
+        .unwrap();
+    root.insert_key("piece", Object::create_value(piece as i64))
+        .unwrap();
     encode(&root).unwrap_or_default()
 }
 
 /// Bencoded payload for a `ut_metadata` data message (without the framing bytes).
 pub fn ut_metadata_data_payload(piece: u32, total_size: u32, data: &[u8]) -> Vec<u8> {
     let mut root = Object::create_map();
-    root.insert_key("msg_type", Object::create_value(1)).unwrap();
-    root.insert_key("piece", Object::create_value(piece as i64)).unwrap();
-    root.insert_key("total_size", Object::create_value(total_size as i64)).unwrap();
+    root.insert_key("msg_type", Object::create_value(1))
+        .unwrap();
+    root.insert_key("piece", Object::create_value(piece as i64))
+        .unwrap();
+    root.insert_key("total_size", Object::create_value(total_size as i64))
+        .unwrap();
 
     let mut payload = encode(&root).unwrap_or_default();
     payload.extend_from_slice(data);
@@ -330,8 +346,10 @@ pub fn ut_metadata_data_payload(piece: u32, total_size: u32, data: &[u8]) -> Vec
 /// Bencoded payload for a `ut_metadata` reject message.
 pub fn ut_metadata_reject_payload(piece: u32) -> Vec<u8> {
     let mut root = Object::create_map();
-    root.insert_key("msg_type", Object::create_value(2)).unwrap();
-    root.insert_key("piece", Object::create_value(piece as i64)).unwrap();
+    root.insert_key("msg_type", Object::create_value(2))
+        .unwrap();
+    root.insert_key("piece", Object::create_value(piece as i64))
+        .unwrap();
     encode(&root).unwrap_or_default()
 }
 
@@ -344,21 +362,23 @@ pub fn extension_handshake_payload(
     let mut root = Object::create_map();
     let mut m = Object::create_map();
     if pex_id > 0 {
-        m.insert_key("ut_pex", Object::create_value(pex_id as i64)).unwrap();
+        m.insert_key("ut_pex", Object::create_value(pex_id as i64))
+            .unwrap();
     }
     if metadata_id > 0 {
-        m.insert_key("ut_metadata", Object::create_value(metadata_id as i64)).unwrap();
+        m.insert_key("ut_metadata", Object::create_value(metadata_id as i64))
+            .unwrap();
     }
     root.insert_key("m", m).unwrap();
     root.insert_key("reqq", Object::create_value(500)).unwrap();
     root.insert_key("v", Object::create_string(b"rstorrent 0.10.0".to_vec()))
         .unwrap();
     if let Some(size) = metadata_size {
-        root.insert_key("metadata_size", Object::create_value(size as i64)).unwrap();
+        root.insert_key("metadata_size", Object::create_value(size as i64))
+            .unwrap();
     }
     encode(&root).unwrap_or_default()
 }
-
 
 /// Parsed `ut_pex` message.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -475,10 +495,14 @@ pub fn ut_pex_payload(added: &[SocketAddress], dropped: &[SocketAddress]) -> Vec
     }
 
     let mut root = Object::create_map();
-    root.insert_key("added", Object::create_string(added_v4)).unwrap();
-    root.insert_key("added6", Object::create_string(added_v6)).unwrap();
-    root.insert_key("dropped", Object::create_string(dropped_v4)).unwrap();
-    root.insert_key("dropped6", Object::create_string(dropped_v6)).unwrap();
+    root.insert_key("added", Object::create_string(added_v4))
+        .unwrap();
+    root.insert_key("added6", Object::create_string(added_v6))
+        .unwrap();
+    root.insert_key("dropped", Object::create_string(dropped_v4))
+        .unwrap();
+    root.insert_key("dropped6", Object::create_string(dropped_v6))
+        .unwrap();
 
     encode(&root).unwrap_or_default()
 }

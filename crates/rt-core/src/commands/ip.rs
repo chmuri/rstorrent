@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
-use std::net::Ipv4Addr;
-use std::sync::{Arc, RwLock};
 use lt_common::{Extents, Object};
 use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError};
+use std::collections::BTreeMap;
+use std::net::Ipv4Addr;
+use std::sync::{Arc, RwLock};
 
 pub fn ipv4_range_parse(address: &str) -> Option<(u32, u32)> {
     let s = address.trim();
@@ -97,9 +97,9 @@ impl IpTableManager {
             .get(name)
             .ok_or_else(|| RpcError::InputError("Could not find ip table.".to_string()))?;
 
-        table.at_range(start, end).map_err(|_| {
-            RpcError::InputError("No value defined for specified IP(s).".to_string())
-        })
+        table
+            .at_range(start, end)
+            .map_err(|_| RpcError::InputError("No value defined for specified IP(s).".to_string()))
     }
 }
 
@@ -149,7 +149,9 @@ pub fn register_ip_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("Incorrect number of arguments.".to_string()));
+                return Err(RpcError::InputError(
+                    "Incorrect number of arguments.".to_string(),
+                ));
             }
             let name = to_str(&list[0])?;
             let addr = to_str(&list[1])?;
@@ -174,7 +176,9 @@ pub fn register_ip_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() != 2 {
-                return Err(RpcError::InputError("Incorrect number of arguments.".to_string()));
+                return Err(RpcError::InputError(
+                    "Incorrect number of arguments.".to_string(),
+                ));
             }
             let name = to_str(&list[0])?;
             let addr = to_str(&list[1])?;

@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use sha1::{Digest, Sha1};
+use std::collections::BTreeMap;
 
 use crate::object::flags;
 use crate::object::raw::{RawBencode, RawList, RawMap, RawString};
@@ -155,10 +155,13 @@ pub fn read_bencode_string_slice(input: &[u8]) -> Result<(&[u8], usize), Bencode
         .position(|&b| b == b':')
         .ok_or(BencodeError::InvalidStringLength)?;
 
-    let len_str = std::str::from_utf8(&input[..colon]).map_err(|_| BencodeError::InvalidStringLength)?;
+    let len_str =
+        std::str::from_utf8(&input[..colon]).map_err(|_| BencodeError::InvalidStringLength)?;
 
     // Reject non-decimal forms or numbers larger than u32/usize
-    let len: usize = len_str.parse().map_err(|_| BencodeError::InvalidStringLength)?;
+    let len: usize = len_str
+        .parse()
+        .map_err(|_| BencodeError::InvalidStringLength)?;
 
     if len > MAX_STRING_LENGTH {
         return Err(BencodeError::InvalidStringLength);
@@ -197,7 +200,9 @@ pub fn read_bencode_skip(input: &[u8]) -> Result<usize, BencodeError> {
             let (_, consumed) = read_bencode_string_slice(&input[pos..])?;
             pos += consumed;
             if pos >= input.len() {
-                return Err(BencodeError::InvalidData("Dictionary key with no value".into()));
+                return Err(BencodeError::InvalidData(
+                    "Dictionary key with no value".into(),
+                ));
             }
         }
 
@@ -241,10 +246,16 @@ pub fn read_bencode_skip(input: &[u8]) -> Result<usize, BencodeError> {
         }
     }
 
-    Err(BencodeError::InvalidData("Unexpected end of bencode data".into()))
+    Err(BencodeError::InvalidData(
+        "Unexpected end of bencode data".into(),
+    ))
 }
 
-pub fn write_bencode(obj: &Object, output: &mut Vec<u8>, skip_mask: u32) -> Result<(), BencodeError> {
+pub fn write_bencode(
+    obj: &Object,
+    output: &mut Vec<u8>,
+    skip_mask: u32,
+) -> Result<(), BencodeError> {
     if (obj.flags & skip_mask) != 0 {
         return Ok(());
     }

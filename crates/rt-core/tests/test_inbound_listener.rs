@@ -11,10 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 fn metadata() -> TorrentMetadata {
-    let info_hash = HashString::from_hex(
-        "00112233445566778899aabbccddeeff00112233",
-    )
-    .unwrap();
+    let info_hash = HashString::from_hex("00112233445566778899aabbccddeeff00112233").unwrap();
     TorrentMetadata {
         info_hash,
         name: "inbound_listener".to_string(),
@@ -54,14 +51,8 @@ async fn accepts_inbound_handshake_and_registers_peer() {
     list.insert(Arc::clone(&download));
     let list = Arc::new(RwLock::new(list));
 
-    let our_peer_id = HashString::from_hex(
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    )
-    .unwrap();
-    let remote_peer_id = HashString::from_hex(
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    )
-    .unwrap();
+    let our_peer_id = HashString::from_hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+    let remote_peer_id = HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     NetworkRuntime::spawn(Arc::clone(&list), our_peer_id, port, shutdown_rx, None);
@@ -98,7 +89,11 @@ async fn accepts_inbound_handshake_and_registers_peer() {
     let mut registered = false;
     while Instant::now() < poll_deadline {
         let guard = engine.lock().unwrap();
-        if guard.connection_list().find_by_id(&remote_peer_id).is_some() {
+        if guard
+            .connection_list()
+            .find_by_id(&remote_peer_id)
+            .is_some()
+        {
             registered = true;
             break;
         }
@@ -108,11 +103,16 @@ async fn accepts_inbound_handshake_and_registers_peer() {
     assert!(registered, "inbound peer was not registered");
 
     let stats = listener_statistics();
-    assert!(stats.open, "listener statistics should report an open socket");
-    assert!(stats.ports.contains(&port), "bound port missing from statistics");
+    assert!(
+        stats.open,
+        "listener statistics should report an open socket"
+    );
+    assert!(
+        stats.ports.contains(&port),
+        "bound port missing from statistics"
+    );
     assert!(stats.accepted >= 1);
     assert!(stats.handshakes >= 1);
 
     let _ = shutdown_tx.send(true);
 }
-

@@ -121,10 +121,7 @@ fn commit_publishes_all_stream_files() {
         "libtorrent-data"
     );
 
-    assert!(!temp
-        .dir
-        .join(format!("{}.torrent.new", HASH_A))
-        .exists());
+    assert!(!temp.dir.join(format!("{}.torrent.new", HASH_A)).exists());
 }
 
 #[test]
@@ -211,7 +208,9 @@ fn manager_commit_and_restore_roundtrip() {
     let restored = restored_manager.download_list().read().unwrap().all()[0].clone();
     assert_eq!(restored.read().unwrap().directory(), temp.path());
 
-    restored_manager.shutdown().expect("shutdown should succeed");
+    restored_manager
+        .shutdown()
+        .expect("shutdown should succeed");
 }
 
 #[test]

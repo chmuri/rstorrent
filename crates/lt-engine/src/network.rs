@@ -39,10 +39,10 @@ use tokio::time::{sleep, timeout};
 use tracing::{debug, info, warn};
 
 use crate::download::Download;
-use crate::resource_manager::GroupChokeChanges;
 use crate::peer_pool::{
     max_connecting_for, normalize_socket_addr, PeerPool, PeerPoolHandle, PeerSource,
 };
+use crate::resource_manager::GroupChokeChanges;
 
 /// Numeric peer identifier used by the choke queues and delegator.
 pub fn peer_number(peer_id: &HashString) -> usize {
@@ -112,10 +112,7 @@ pub fn peer_request_stats(
 }
 
 /// Returns the current outgoing request queue depth for one peer.
-pub fn peer_request_queue_depth(
-    info_hash: &HashString,
-    peer_id: &HashString,
-) -> Option<usize> {
+pub fn peer_request_queue_depth(info_hash: &HashString, peer_id: &HashString) -> Option<usize> {
     peer_request_stats(info_hash, peer_id).map(|stats| stats.queue_depth)
 }
 
@@ -273,14 +270,21 @@ fn reconstruct_info_bytes(download: &Download) -> Option<Vec<u8>> {
     }
 
     let mut info = Object::create_map();
-    info.insert_key("name", Object::create_string(metadata.name.as_bytes().to_vec()))
-        .ok()?;
-    info.insert_key("piece length", Object::create_value(metadata.piece_length as i64))
-        .ok()?;
+    info.insert_key(
+        "name",
+        Object::create_string(metadata.name.as_bytes().to_vec()),
+    )
+    .ok()?;
+    info.insert_key(
+        "piece length",
+        Object::create_value(metadata.piece_length as i64),
+    )
+    .ok()?;
     info.insert_key("pieces", Object::create_string(metadata.pieces.clone()))
         .ok()?;
     if metadata.is_private {
-        info.insert_key("private", Object::create_value(1i64)).ok()?;
+        info.insert_key("private", Object::create_value(1i64))
+            .ok()?;
     }
 
     if metadata.is_multi_file {
@@ -726,9 +730,7 @@ impl DownloadNetworkCoordinator {
                                     .unwrap_or(false);
 
                                 if due {
-                                    controller
-                                        .tracker_list
-                                        .send_event(index, announce_event);
+                                    controller.tracker_list.send_event(index, announce_event);
                                     controller
                                         .tracker_list
                                         .at(index)
@@ -749,12 +751,8 @@ impl DownloadNetworkCoordinator {
                         debug!(url = %tracker_url, "Announcing to tracker...");
 
                         let result = if tracker_url.starts_with("udp://") {
-                            announce_udp_detailed_with_router(
-                                tracker_url,
-                                &params,
-                                &mut udp_router,
-                            )
-                            .await
+                            announce_udp_detailed_with_router(tracker_url, &params, &mut udp_router)
+                                .await
                         } else if tracker_url.starts_with("http://")
                             || tracker_url.starts_with("https://")
                         {
@@ -787,9 +785,7 @@ impl DownloadNetworkCoordinator {
 
                                 let mut dl = download.lock().unwrap();
                                 let controller = dl.tracker_controller_mut();
-                                if let Some(index) =
-                                    controller.tracker_list.find_url(tracker_url)
-                                {
+                                if let Some(index) = controller.tracker_list.find_url(tracker_url) {
                                     {
                                         let state = controller
                                             .tracker_list
@@ -817,9 +813,7 @@ impl DownloadNetworkCoordinator {
                                 debug!(url = %tracker_url, error = %e, "Announce failed");
                                 let mut dl = download.lock().unwrap();
                                 let controller = dl.tracker_controller_mut();
-                                if let Some(index) =
-                                    controller.tracker_list.find_url(tracker_url)
-                                {
+                                if let Some(index) = controller.tracker_list.find_url(tracker_url) {
                                     controller.receive_failure(index, &e.to_string());
                                 }
                             }
@@ -954,8 +948,7 @@ impl DownloadNetworkCoordinator {
 
                         let Some(url) = url else {
                             let mut dl = download.lock().unwrap();
-                            dl.tracker_controller_mut()
-                                .receive_scrape_failure(index);
+                            dl.tracker_controller_mut().receive_scrape_failure(index);
                             continue;
                         };
 
@@ -973,16 +966,10 @@ impl DownloadNetworkCoordinator {
                                 debug!(url = %url, error = %err, "Tracker scrape failed");
                                 let mut dl = download.lock().unwrap();
                                 let controller = dl.tracker_controller_mut();
-                                let index = controller
-                                    .tracker_list
-                                    .find_url(&url)
-                                    .unwrap_or(index);
+                                let index = controller.tracker_list.find_url(&url).unwrap_or(index);
 
                                 if err.is_scrape_unsupported() {
-                                    controller.receive_scrape_unsupported(
-                                        index,
-                                        &err.to_string(),
-                                    );
+                                    controller.receive_scrape_unsupported(index, &err.to_string());
                                 } else {
                                     controller.receive_scrape_failure_with_reason(
                                         index,
@@ -1848,8 +1835,7 @@ fn download_is_private_and_pex_enabled(download: &Arc<Mutex<Download>>) -> (bool
     let private = metadata.is_private;
     // Until metadata arrives the privacy flag of a magnet is unknown: do not
     // exchange peer lists for it.
-    let pex_allowed =
-        !private && !metadata.is_meta_download && dl.client_config().is_pex_enabled();
+    let pex_allowed = !private && !metadata.is_meta_download && dl.client_config().is_pex_enabled();
     (private, pex_allowed)
 }
 
@@ -2809,11 +2795,7 @@ async fn run_peer_session(
         for record in outstanding {
             let transfer = record.transfer;
             if !dl.has_piece(transfer.piece_index) {
-                let _ = dl.cancel_block(
-                    &peer_id,
-                    transfer.piece_index,
-                    transfer.block_offset,
-                );
+                let _ = dl.cancel_block(&peer_id, transfer.piece_index, transfer.block_offset);
             }
         }
         dl.cancel_peer(&peer_id);

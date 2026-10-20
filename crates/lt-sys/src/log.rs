@@ -1,10 +1,10 @@
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use lt_common::HashString;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use lt_common::HashString;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 
 pub const LOG_GROUP_MAX_SIZE: usize = 48;
 pub const MAX_LOG_OUTPUTS: usize = 64;
@@ -134,11 +134,16 @@ fn registry() -> &'static Mutex<LogRegistry> {
 pub fn log_initialize() {
     let mut reg = registry().lock().unwrap();
 
-    reg.children.push((groups::CONNECTION, groups::CONNECTION_BIND));
-    reg.children.push((groups::CONNECTION, groups::CONNECTION_FD));
-    reg.children.push((groups::CONNECTION, groups::CONNECTION_FILTER));
-    reg.children.push((groups::CONNECTION, groups::CONNECTION_HANDSHAKE));
-    reg.children.push((groups::CONNECTION, groups::CONNECTION_LISTEN));
+    reg.children
+        .push((groups::CONNECTION, groups::CONNECTION_BIND));
+    reg.children
+        .push((groups::CONNECTION, groups::CONNECTION_FD));
+    reg.children
+        .push((groups::CONNECTION, groups::CONNECTION_FILTER));
+    reg.children
+        .push((groups::CONNECTION, groups::CONNECTION_HANDSHAKE));
+    reg.children
+        .push((groups::CONNECTION, groups::CONNECTION_LISTEN));
 
     reg.children.push((groups::DHT, groups::DHT_ERROR));
     reg.children.push((groups::DHT, groups::DHT_CONTROLLER));

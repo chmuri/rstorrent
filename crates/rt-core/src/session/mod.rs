@@ -346,21 +346,21 @@ pub fn load_session_download(
     let was_active = restore_rtorrent_state(torrent_path, &mut download);
 
     let resume_path = format!("{}.libtorrent_resume", torrent_path);
-    let (resume_loaded, resume_error, outcome) = match load_resume_for_download(
-        &resume_path,
-        &mut download,
-    ) {
-        Ok(outcome) => (true, None, outcome),
-        Err(err) if err.kind() == ErrorKind::NotFound => (false, None, ResumeApplyOutcome::default()),
-        Err(err) => {
-            tracing::warn!(
-                path = %resume_path,
-                error = %err,
-                "Could not apply session resume data; restoring torrent without saved progress."
-            );
-            (false, Some(err.to_string()), ResumeApplyOutcome::default())
-        }
-    };
+    let (resume_loaded, resume_error, outcome) =
+        match load_resume_for_download(&resume_path, &mut download) {
+            Ok(outcome) => (true, None, outcome),
+            Err(err) if err.kind() == ErrorKind::NotFound => {
+                (false, None, ResumeApplyOutcome::default())
+            }
+            Err(err) => {
+                tracing::warn!(
+                    path = %resume_path,
+                    error = %err,
+                    "Could not apply session resume data; restoring torrent without saved progress."
+                );
+                (false, Some(err.to_string()), ResumeApplyOutcome::default())
+            }
+        };
 
     // Restored downloads must not be active before the manager decides to
     // start them; otherwise `DownloadList::start` cannot emit the legacy

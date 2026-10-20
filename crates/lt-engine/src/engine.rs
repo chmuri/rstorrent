@@ -6,10 +6,10 @@ use lt_common::object::Object;
 use lt_dht::controller::DhtController;
 
 use crate::choke_group::ChokeGroup;
-use crate::resource_manager::{GroupChokeChanges, ResourceManager};
 use crate::constructor::{DownloadConstructor, TorrentMetadata};
 use crate::download::Download;
 use crate::network::apply_choke_changes_to_download;
+use crate::resource_manager::{GroupChokeChanges, ResourceManager};
 
 /// EngineManager acts as the central coordinator for all active downloads,
 /// peer routing, DHT integration, and bandwidth throttling.
@@ -272,10 +272,16 @@ mod tests {
         assert_eq!(dl.lock().unwrap().name(), "Test");
 
         manager.start_all();
-        assert_eq!(dl.lock().unwrap().state(), &crate::download::DownloadState::Downloading);
+        assert_eq!(
+            dl.lock().unwrap().state(),
+            &crate::download::DownloadState::Downloading
+        );
 
         manager.stop_all();
-        assert_eq!(dl.lock().unwrap().state(), &crate::download::DownloadState::Stopped);
+        assert_eq!(
+            dl.lock().unwrap().state(),
+            &crate::download::DownloadState::Stopped
+        );
 
         assert!(manager.remove_torrent(&hash));
         assert_eq!(manager.download_count(), 0);

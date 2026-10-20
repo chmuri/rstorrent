@@ -1,14 +1,14 @@
-use std::fs;
 use lt_common::object::bencode;
 use lt_storage::resume::ResumeData;
-use std::io::{self, Error, ErrorKind};
-use std::os::fd::RawFd;
-use std::path::Path;
 use nix::fcntl::{open, OFlag};
 use nix::sys::stat::Mode;
 #[cfg(target_os = "linux")]
 use nix::unistd::fdatasync;
 use nix::unistd::{fsync, write};
+use std::fs;
+use std::io::{self, Error, ErrorKind};
+use std::os::fd::RawFd;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryEntry {
@@ -29,7 +29,9 @@ pub fn is_correct_format(f: &str) -> bool {
 
     // Work on bytes: slicing a UTF-8 string at a fixed byte offset can panic
     // when the directory contains a non-ASCII file name.
-    f.as_bytes()[..40].iter().all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(b))
+    f.as_bytes()[..40]
+        .iter()
+        .all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(b))
 }
 
 /// Loads a `.libtorrent_resume` file.
@@ -213,11 +215,7 @@ fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
 
     let raw_fd: RawFd = open(
         path,
-        OFlag::O_WRONLY
-            | OFlag::O_CREAT
-            | OFlag::O_EXCL
-            | OFlag::O_NOFOLLOW
-            | OFlag::O_CLOEXEC,
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::from_bits_truncate(0o600),
     )
     .map_err(|e| Error::from_raw_os_error(e as i32))?;
@@ -292,18 +290,18 @@ impl DownloadStorer {
                 "DownloadStorer::build_path() session path missing trailing slash.",
             ));
         }
-        if info_hash_hex.len() != 40
-            || !info_hash_hex
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
-        {
+        if info_hash_hex.len() != 40 || !info_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "DownloadStorer::build_path() requires a 40-character hexadecimal info hash.",
             ));
         }
 
-        Ok(format!("{}{}.torrent", session_path, info_hash_hex.to_uppercase()))
+        Ok(format!(
+            "{}{}.torrent",
+            session_path,
+            info_hash_hex.to_uppercase()
+        ))
     }
 
     pub fn unlink_files(base_path: &str) {
@@ -398,15 +396,15 @@ impl DownloadStorer {
     }
 
     /// Loads a `.libtorrent_resume` file.
-pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
-    let bytes = fs::read(path)?;
-    let object = bencode::decode(&bytes)
-        .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))?;
-    ResumeData::from_object(&object)
-        .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))
-}
+    pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
+        let bytes = fs::read(path)?;
+        let object = bencode::decode(&bytes)
+            .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))?;
+        ResumeData::from_object(&object)
+            .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))
+    }
 
-pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntry>> {
+    pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntry>> {
         crate::session::storer::get_formatted_entries(session_path)
     }
 }

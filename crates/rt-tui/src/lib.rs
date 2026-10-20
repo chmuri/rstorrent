@@ -27,5 +27,11 @@ pub use input::{
     KEY_HOME, KEY_LEFT, KEY_RIGHT,
 };
 
-pub use ui::{create_filter_command, create_filter_pattern, ActiveScreen, DownloadListUI, InputPromptMode, RootUI};
-pub use windows::{DetailTab, WindowDownloadDetails, WindowDownloadList, WindowInput, WindowLog, WindowStatusbar, WindowTitle};
+pub use ui::{
+    create_filter_command, create_filter_pattern, ActiveScreen, DownloadListUI, InputPromptMode,
+    RootUI,
+};
+pub use windows::{
+    DetailTab, WindowDownloadDetails, WindowDownloadList, WindowInput, WindowLog, WindowStatusbar,
+    WindowTitle,
+};

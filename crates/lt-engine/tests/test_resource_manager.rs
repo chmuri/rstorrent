@@ -4,9 +4,7 @@ use lt_engine::choke_queue::{ChokeEntry, WeightedPeer};
 use lt_engine::constructor::{TorrentFileEntry, TorrentMetadata};
 use lt_engine::engine::EngineManager;
 use lt_engine::network::{apply_choke_changes_to_download, peer_number};
-use lt_engine::resource_manager::{
-    allocate_quotas, allocate_quotas_with_min, GroupChokeChanges,
-};
+use lt_engine::resource_manager::{allocate_quotas, allocate_quotas_with_min, GroupChokeChanges};
 use lt_net::addr::SocketAddress;
 use lt_protocol::connection::PeerConnection;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -65,12 +63,7 @@ fn tick_keeps_global_quota_within_limits() {
     assert_eq!(engine.resource_manager().max_upload_unchoked(), 10);
     assert_eq!(engine.resource_manager().max_download_unchoked(), 5);
     assert!(engine.resource_manager().currently_upload_unchoked() <= 10);
-    assert!(
-        engine
-            .resource_manager()
-            .currently_download_unchoked()
-            <= 5
-    );
+    assert!(engine.resource_manager().currently_download_unchoked() <= 5);
 }
 
 #[test]
@@ -79,10 +72,7 @@ fn allocation_handles_min_max_unlimited_weights_and_empty_groups() {
     assert_eq!(allocate_quotas(&[0, 5, 0], &[1, 1, 1], 3), vec![0, 3, 0]);
 
     // Maximum caps demand and weights break ties deterministically.
-    assert_eq!(
-        allocate_quotas(&[5, 5], &[3, 1], 4),
-        vec![3, 1]
-    );
+    assert_eq!(allocate_quotas(&[5, 5], &[3, 1], 4), vec![3, 1]);
 
     // Minimums are filled before weighted distribution.
     assert_eq!(
@@ -105,21 +95,24 @@ fn engine_tick_drives_group_balance_and_rotation() {
     let mut engine = EngineManager::new(6881);
     engine.choke_group_mut().set_up_max(2);
     engine.choke_group_mut().set_down_max(2);
-    engine.choke_group_mut().up_queue_mut().add_entry(ChokeEntry::new());
+    engine
+        .choke_group_mut()
+        .up_queue_mut()
+        .add_entry(ChokeEntry::new());
     engine
         .choke_group_mut()
         .down_queue_mut()
         .add_entry(ChokeEntry::new());
 
     for peer in 0..4 {
-        engine.choke_group_mut().up_queue_mut().set_queued(
-            0,
-            WeightedPeer::new(peer),
-        );
-        engine.choke_group_mut().down_queue_mut().set_queued(
-            0,
-            WeightedPeer::new(peer),
-        );
+        engine
+            .choke_group_mut()
+            .up_queue_mut()
+            .set_queued(0, WeightedPeer::new(peer));
+        engine
+            .choke_group_mut()
+            .down_queue_mut()
+            .set_queued(0, WeightedPeer::new(peer));
     }
 
     engine.resource_manager_mut().set_max_upload_unchoked(2);
@@ -209,11 +202,13 @@ fn choke_decisions_update_peer_state_without_panicking() {
         let mut download = download.lock().unwrap();
         let (changed, _) = apply_choke_changes_to_download(&mut download, &change);
         assert_eq!(changed, 1);
-        assert!(!download
-            .connection_list()
-            .find_by_id(&peer_id)
-            .unwrap()
-            .is_choked);
+        assert!(
+            !download
+                .connection_list()
+                .find_by_id(&peer_id)
+                .unwrap()
+                .is_choked
+        );
     }
 
     let change = GroupChokeChanges {
@@ -230,11 +225,13 @@ fn choke_decisions_update_peer_state_without_panicking() {
         let (changed, cancelled) = apply_choke_changes_to_download(&mut download, &change);
         assert_eq!(changed, 1);
         assert_eq!(cancelled, 1);
-        assert!(download
-            .connection_list()
-            .find_by_id(&peer_id)
-            .unwrap()
-            .is_choked);
+        assert!(
+            download
+                .connection_list()
+                .find_by_id(&peer_id)
+                .unwrap()
+                .is_choked
+        );
     }
 
     // Stale peer ids are ignored.
@@ -247,5 +244,8 @@ fn choke_decisions_update_peer_state_without_panicking() {
     };
     let download = engine.get_download(&hash).unwrap();
     let mut download = download.lock().unwrap();
-    assert_eq!(apply_choke_changes_to_download(&mut download, &stale), (0, 0));
+    assert_eq!(
+        apply_choke_changes_to_download(&mut download, &stale),
+        (0, 0)
+    );
 }

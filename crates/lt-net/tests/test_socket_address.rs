@@ -181,14 +181,28 @@ fn test_make() {
 fn test_sa_equal() {
     let sa = DefaultSa::new();
 
-    assert!(SocketAddress::new_unspec().equal(&SocketAddress::new_unspec()).unwrap());
-    assert!(SocketAddress::new_inet_any().equal(&SocketAddress::new_inet_any()).unwrap());
-    assert!(SocketAddress::new_inet6_any().equal(&SocketAddress::new_inet6_any()).unwrap());
+    assert!(SocketAddress::new_unspec()
+        .equal(&SocketAddress::new_unspec())
+        .unwrap());
+    assert!(SocketAddress::new_inet_any()
+        .equal(&SocketAddress::new_inet_any())
+        .unwrap());
+    assert!(SocketAddress::new_inet6_any()
+        .equal(&SocketAddress::new_inet6_any())
+        .unwrap());
 
-    assert!(!SocketAddress::new_unspec().equal(&SocketAddress::new_inet_any()).unwrap());
-    assert!(!SocketAddress::new_unspec().equal(&SocketAddress::new_inet6_any()).unwrap());
-    assert!(!SocketAddress::new_inet_any().equal(&SocketAddress::new_inet6_any()).unwrap());
-    assert!(!SocketAddress::new_inet6_any().equal(&SocketAddress::new_inet_any()).unwrap());
+    assert!(!SocketAddress::new_unspec()
+        .equal(&SocketAddress::new_inet_any())
+        .unwrap());
+    assert!(!SocketAddress::new_unspec()
+        .equal(&SocketAddress::new_inet6_any())
+        .unwrap());
+    assert!(!SocketAddress::new_inet_any()
+        .equal(&SocketAddress::new_inet6_any())
+        .unwrap());
+    assert!(!SocketAddress::new_inet6_any()
+        .equal(&SocketAddress::new_inet_any())
+        .unwrap());
 
     assert!(sa.sin_1.equal(&sa.sin_1).unwrap());
     assert!(!sa.sin_1.equal(&sa.sin_2).unwrap());
@@ -215,14 +229,28 @@ fn test_sa_equal() {
 fn test_sa_equal_addr() {
     let sa = DefaultSa::new();
 
-    assert!(SocketAddress::new_unspec().equal_addr(&SocketAddress::new_unspec()).unwrap());
-    assert!(SocketAddress::new_inet_any().equal_addr(&SocketAddress::new_inet_any()).unwrap());
-    assert!(SocketAddress::new_inet6_any().equal_addr(&SocketAddress::new_inet6_any()).unwrap());
+    assert!(SocketAddress::new_unspec()
+        .equal_addr(&SocketAddress::new_unspec())
+        .unwrap());
+    assert!(SocketAddress::new_inet_any()
+        .equal_addr(&SocketAddress::new_inet_any())
+        .unwrap());
+    assert!(SocketAddress::new_inet6_any()
+        .equal_addr(&SocketAddress::new_inet6_any())
+        .unwrap());
 
-    assert!(!SocketAddress::new_unspec().equal_addr(&SocketAddress::new_inet_any()).unwrap());
-    assert!(!SocketAddress::new_unspec().equal_addr(&SocketAddress::new_inet6_any()).unwrap());
-    assert!(!SocketAddress::new_inet_any().equal_addr(&SocketAddress::new_inet6_any()).unwrap());
-    assert!(!SocketAddress::new_inet6_any().equal_addr(&SocketAddress::new_inet_any()).unwrap());
+    assert!(!SocketAddress::new_unspec()
+        .equal_addr(&SocketAddress::new_inet_any())
+        .unwrap());
+    assert!(!SocketAddress::new_unspec()
+        .equal_addr(&SocketAddress::new_inet6_any())
+        .unwrap());
+    assert!(!SocketAddress::new_inet_any()
+        .equal_addr(&SocketAddress::new_inet6_any())
+        .unwrap());
+    assert!(!SocketAddress::new_inet6_any()
+        .equal_addr(&SocketAddress::new_inet_any())
+        .unwrap());
 
     assert!(sa.sin_1.equal_addr(&sa.sin_1).unwrap());
     assert!(!sa.sin_1.equal_addr(&sa.sin_2).unwrap());
@@ -249,35 +277,104 @@ fn test_sa_equal_addr() {
 fn test_sa_copy_addr() {
     let sa = DefaultSa::new();
 
-    assert!(SocketAddress::new_unspec().copy_addr(0).unwrap().equal(&SocketAddress::new_unspec()).unwrap());
-    assert!(SocketAddress::new_inet_any().copy_addr(0).unwrap().equal(&sa.sin_any).unwrap());
-    assert!(SocketAddress::new_inet6_any().copy_addr(0).unwrap().equal(&sa.sin6_any).unwrap());
-    assert!(SocketAddress::new_unspec().copy_addr(5000).unwrap().equal(&SocketAddress::new_unspec()).unwrap());
-    assert!(SocketAddress::new_inet_any().copy_addr(5000).unwrap().equal(&sa.sin_any_5000).unwrap());
-    assert!(SocketAddress::new_inet6_any().copy_addr(5000).unwrap().equal(&sa.sin6_any_5000).unwrap());
+    assert!(SocketAddress::new_unspec()
+        .copy_addr(0)
+        .unwrap()
+        .equal(&SocketAddress::new_unspec())
+        .unwrap());
+    assert!(SocketAddress::new_inet_any()
+        .copy_addr(0)
+        .unwrap()
+        .equal(&sa.sin_any)
+        .unwrap());
+    assert!(SocketAddress::new_inet6_any()
+        .copy_addr(0)
+        .unwrap()
+        .equal(&sa.sin6_any)
+        .unwrap());
+    assert!(SocketAddress::new_unspec()
+        .copy_addr(5000)
+        .unwrap()
+        .equal(&SocketAddress::new_unspec())
+        .unwrap());
+    assert!(SocketAddress::new_inet_any()
+        .copy_addr(5000)
+        .unwrap()
+        .equal(&sa.sin_any_5000)
+        .unwrap());
+    assert!(SocketAddress::new_inet6_any()
+        .copy_addr(5000)
+        .unwrap()
+        .equal(&sa.sin6_any_5000)
+        .unwrap());
 
     assert!(sa.sin_1.copy_addr(0).unwrap().equal(&sa.sin_1).unwrap());
-    assert!(sa.sin_1.copy_addr(5000).unwrap().equal(&sa.sin_1_5000).unwrap());
+    assert!(sa
+        .sin_1
+        .copy_addr(5000)
+        .unwrap()
+        .equal(&sa.sin_1_5000)
+        .unwrap());
     assert!(sa.sin6_1.copy_addr(0).unwrap().equal(&sa.sin6_1).unwrap());
-    assert!(sa.sin6_1.copy_addr(5000).unwrap().equal(&sa.sin6_1_5000).unwrap());
+    assert!(sa
+        .sin6_1
+        .copy_addr(5000)
+        .unwrap()
+        .equal(&sa.sin6_1_5000)
+        .unwrap());
 
-    assert!(sa.sin_1_5000.copy_addr(0).unwrap().equal(&sa.sin_1).unwrap());
-    assert!(sa.sin6_1_5000.copy_addr(0).unwrap().equal(&sa.sin6_1).unwrap());
-    assert!(sa.sin_1_5000.copy_addr(5100).unwrap().equal(&sa.sin_1_5100).unwrap());
-    assert!(sa.sin6_1_5000.copy_addr(5100).unwrap().equal(&sa.sin6_1_5100).unwrap());
+    assert!(sa
+        .sin_1_5000
+        .copy_addr(0)
+        .unwrap()
+        .equal(&sa.sin_1)
+        .unwrap());
+    assert!(sa
+        .sin6_1_5000
+        .copy_addr(0)
+        .unwrap()
+        .equal(&sa.sin6_1)
+        .unwrap());
+    assert!(sa
+        .sin_1_5000
+        .copy_addr(5100)
+        .unwrap()
+        .equal(&sa.sin_1_5100)
+        .unwrap());
+    assert!(sa
+        .sin6_1_5000
+        .copy_addr(5100)
+        .unwrap()
+        .equal(&sa.sin6_1_5100)
+        .unwrap());
 }
 
 #[test]
 fn test_sa_from_v4mapped() {
     let sa = DefaultSa::new();
 
-    assert!(sa.sin6_v4_any.from_v4mapped().unwrap().equal_addr(&sa.sin_any).unwrap());
+    assert!(sa
+        .sin6_v4_any
+        .from_v4mapped()
+        .unwrap()
+        .equal_addr(&sa.sin_any)
+        .unwrap());
     assert!(sa.sin6_v4_any.from_v4mapped().unwrap().is_port_any());
 
-    assert!(sa.sin6_v4_1.from_v4mapped().unwrap().equal_addr(&sa.sin_1).unwrap());
+    assert!(sa
+        .sin6_v4_1
+        .from_v4mapped()
+        .unwrap()
+        .equal_addr(&sa.sin_1)
+        .unwrap());
     assert!(sa.sin6_v4_1.from_v4mapped().unwrap().is_port_any());
 
-    assert!(sa.sin6_v4_bc.from_v4mapped().unwrap().equal_addr(&sa.sin_bc).unwrap());
+    assert!(sa
+        .sin6_v4_bc
+        .from_v4mapped()
+        .unwrap()
+        .equal_addr(&sa.sin_bc)
+        .unwrap());
     assert!(sa.sin6_v4_bc.from_v4mapped().unwrap().is_port_any());
 
     assert!(SocketAddress::new_unspec().from_v4mapped().is_err());
@@ -292,15 +389,30 @@ fn test_sa_from_v4mapped() {
 fn test_sa_to_v4mapped() {
     let sa = DefaultSa::new();
 
-    assert!(sa.sin_any.to_v4mapped().unwrap().equal_addr(&sa.sin6_v4_any).unwrap());
+    assert!(sa
+        .sin_any
+        .to_v4mapped()
+        .unwrap()
+        .equal_addr(&sa.sin6_v4_any)
+        .unwrap());
     assert!(sa.sin_any.to_v4mapped().unwrap().is_v4mapped());
     assert!(sa.sin_any.to_v4mapped().unwrap().is_port_any());
 
-    assert!(sa.sin_bc.to_v4mapped().unwrap().equal_addr(&sa.sin6_v4_bc).unwrap());
+    assert!(sa
+        .sin_bc
+        .to_v4mapped()
+        .unwrap()
+        .equal_addr(&sa.sin6_v4_bc)
+        .unwrap());
     assert!(sa.sin_bc.to_v4mapped().unwrap().is_v4mapped());
     assert!(sa.sin_bc.to_v4mapped().unwrap().is_port_any());
 
-    assert!(sa.sin_1.to_v4mapped().unwrap().equal_addr(&sa.sin6_v4_1).unwrap());
+    assert!(sa
+        .sin_1
+        .to_v4mapped()
+        .unwrap()
+        .equal_addr(&sa.sin6_v4_1)
+        .unwrap());
     assert!(sa.sin_1.to_v4mapped().unwrap().is_v4mapped());
     assert!(sa.sin_1.to_v4mapped().unwrap().is_port_any());
 
@@ -363,10 +475,13 @@ fn test_network_config() {
     let best = nc.bind_address_best_match();
     assert_eq!(best.addr_str(), "127.0.0.1");
 
-    nc.set_encryption_modes(EncryptionMode::Allow, EncryptionMode::Allow).unwrap();
+    nc.set_encryption_modes(EncryptionMode::Allow, EncryptionMode::Allow)
+        .unwrap();
     let (h, s) = nc.encryption_modes();
     assert_eq!(h, EncryptionMode::Allow);
     assert_eq!(s, EncryptionMode::Allow);
 
-    assert!(nc.set_encryption_modes(EncryptionMode::Deny, EncryptionMode::Require).is_err());
+    assert!(nc
+        .set_encryption_modes(EncryptionMode::Deny, EncryptionMode::Require)
+        .is_err());
 }

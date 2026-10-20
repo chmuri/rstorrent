@@ -242,12 +242,7 @@ impl ResourceManager {
     ///
     /// The group index is clamped to the global group when it is out of range
     /// so a stale index can never panic the allocator.
-    pub fn insert_entry(
-        &mut self,
-        download_id: HashString,
-        priority: u16,
-        group: u16,
-    ) -> bool {
+    pub fn insert_entry(&mut self, download_id: HashString, priority: u16, group: u16) -> bool {
         let group = if (group as usize) < self.groups.len() {
             group
         } else {
@@ -492,7 +487,9 @@ impl ResourceManager {
                     .entries
                     .iter()
                     .filter(|entry| entry.group as usize == index)
-                    .fold(0u32, |sum, entry| sum.saturating_add(u32::from(entry.priority)));
+                    .fold(0u32, |sum, entry| {
+                        sum.saturating_add(u32::from(entry.priority))
+                    });
                 if sum > 0 {
                     sum
                 } else {
@@ -669,7 +666,10 @@ pub fn allocate_quotas_with_min(
 
     // Demand is bounded by the global budget: no single group can use more
     // than all available slots.
-    let demand: Vec<u32> = requested.iter().map(|request| (*request).min(max)).collect();
+    let demand: Vec<u32> = requested
+        .iter()
+        .map(|request| (*request).min(max))
+        .collect();
 
     let mut remaining = max;
     for index in 0..count {
@@ -688,12 +688,7 @@ pub fn allocate_quotas_with_min(
 }
 
 /// Shares `remaining` slots proportionally to `weights`, respecting demand.
-fn distribute_remaining(
-    quotas: &mut [u32],
-    demand: &[u32],
-    weights: &[u32],
-    remaining: &mut u32,
-) {
+fn distribute_remaining(quotas: &mut [u32], demand: &[u32], weights: &[u32], remaining: &mut u32) {
     while *remaining > 0 {
         let mut active: Vec<usize> = (0..quotas.len())
             .filter(|index| quotas[*index] < demand[*index])
@@ -775,20 +770,18 @@ mod tests {
             .up_queue_mut()
             .add_entry(crate::choke_queue::ChokeEntry::new());
         for peer in 0..up {
-            group.up_queue_mut().set_queued(
-                0,
-                crate::choke_queue::WeightedPeer::new(peer as usize),
-            );
+            group
+                .up_queue_mut()
+                .set_queued(0, crate::choke_queue::WeightedPeer::new(peer as usize));
         }
 
         group
             .down_queue_mut()
             .add_entry(crate::choke_queue::ChokeEntry::new());
         for peer in 0..down {
-            group.down_queue_mut().set_queued(
-                0,
-                crate::choke_queue::WeightedPeer::new(peer as usize),
-            );
+            group
+                .down_queue_mut()
+                .set_queued(0, crate::choke_queue::WeightedPeer::new(peer as usize));
         }
         index
     }

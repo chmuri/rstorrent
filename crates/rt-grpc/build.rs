@@ -10,7 +10,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let generated = out_dir.join("rstorrent.v1.rs");
     if generated.exists() {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
-        let dest = std::path::Path::new(&manifest_dir).join("src").join("proto.rs");
+        let dest = std::path::Path::new(&manifest_dir)
+            .join("src")
+            .join("proto.rs");
         std::fs::copy(&generated, &dest)?;
     }
 

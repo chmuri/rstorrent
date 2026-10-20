@@ -66,10 +66,7 @@ fn stats_and_invalidation_follow_writes_and_renames() {
     // Both sides of a rename are invalidated when cached.
     cache.stat(&renamed_from).unwrap();
     fs::rename(&renamed_from, &renamed_to).unwrap();
-    assert_eq!(
-        cache.invalidate_after_rename(&renamed_from, &renamed_to),
-        1
-    );
+    assert_eq!(cache.invalidate_after_rename(&renamed_from, &renamed_to), 1);
     assert!(cache.get(&renamed_from).is_none());
     assert_eq!(cache.stat(&renamed_to).unwrap().size, 3);
     assert_eq!(cache.invalidations(), 2);

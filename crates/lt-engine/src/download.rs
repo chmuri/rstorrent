@@ -34,8 +34,8 @@ use lt_tracker::list::TrackerList;
 use thiserror::Error;
 
 use crate::chunk_selector::ChunkSelector;
-use crate::client_config::ClientConfig;
 use crate::chunk_statistics::ChunkStatistics;
+use crate::client_config::ClientConfig;
 use crate::constructor::{DownloadConstructor, TorrentMetadata};
 use crate::delegator::Delegator;
 
@@ -320,9 +320,7 @@ impl Download {
                 .map(|f| lt_storage::TargetFileInfo {
                     // Torrent paths are stored as "/dir/file"; strip the leading
                     // slash so they remain relative to the save directory.
-                    path: std::path::PathBuf::from(
-                        f.path.as_string().trim_start_matches('/'),
-                    ),
+                    path: std::path::PathBuf::from(f.path.as_string().trim_start_matches('/')),
                     length: f.length,
                     offset: f.offset,
                 })
@@ -453,10 +451,7 @@ impl Download {
                         "Could not retry queued disk write; piece will be requested again"
                     );
                     self.chunk_selector.not_using_index(queued.piece_index);
-                    let _ = self
-                        .delegator
-                        .transfers_mut()
-                        .erase(queued.piece_index);
+                    let _ = self.delegator.transfers_mut().erase(queued.piece_index);
                 }
             }
         }
@@ -754,16 +749,14 @@ impl Download {
                         .hash_check_queue
                         .complete_token(pending.piece_index, pending.token)
                     {
-                        self.discarded_hash_results =
-                            self.discarded_hash_results.saturating_add(1);
+                        self.discarded_hash_results = self.discarded_hash_results.saturating_add(1);
                         continue;
                     }
 
                     if result.generation != self.disk_generation
                         || pending.generation != self.disk_generation
                     {
-                        self.discarded_hash_results =
-                            self.discarded_hash_results.saturating_add(1);
+                        self.discarded_hash_results = self.discarded_hash_results.saturating_add(1);
                         continue;
                     }
 
@@ -791,8 +784,7 @@ impl Download {
                         .hash_check_queue
                         .fail_token(pending.piece_index, pending.token);
                     if !live {
-                        self.discarded_hash_results =
-                            self.discarded_hash_results.saturating_add(1);
+                        self.discarded_hash_results = self.discarded_hash_results.saturating_add(1);
                         continue;
                     }
                     tracing::error!(
@@ -860,16 +852,14 @@ impl Download {
         }
 
         if let Some(base_bitfield) = &resume.bitfield {
-            let (verified, pending) =
-                self.validate_resume_bitfield(resume, base_bitfield);
+            let (verified, pending) = self.validate_resume_bitfield(resume, base_bitfield);
 
             // Apply the trusted part of the bitfield now. Pieces belonging to
             // changed files are left unset and exposed through
             // `take_pending_hash_pieces` so the caller can queue a partial
             // recheck without discarding the rest of the progress.
             self.pending_hash_pieces = pending;
-            self.hash_checked =
-                self.pending_hash_pieces.is_empty();
+            self.hash_checked = self.pending_hash_pieces.is_empty();
             self.hash_failed = false;
             self.hash_failed_pieces.clear();
 
@@ -1007,16 +997,13 @@ impl Download {
 
         let first = file.offset / piece_length as u64;
         let end = file.offset.saturating_add(file.length);
-        let last = end
-            .saturating_add(piece_length as u64 - 1)
-            / piece_length as u64;
+        let last = end.saturating_add(piece_length as u64 - 1) / piece_length as u64;
 
         (
             first.min(num_pieces as u64) as u32,
             last.min(num_pieces as u64) as u32,
         )
     }
-
 
     /// Captures the current state for `.libtorrent_resume`.
     pub fn to_resume_data(&self) -> ResumeData {
@@ -1180,9 +1167,7 @@ impl Download {
                 .files
                 .iter()
                 .map(|file| lt_storage::TargetFileInfo {
-                    path: std::path::PathBuf::from(
-                        file.path.as_string().trim_start_matches('/'),
-                    ),
+                    path: std::path::PathBuf::from(file.path.as_string().trim_start_matches('/')),
                     length: file.length,
                     offset: file.offset,
                 })
@@ -1254,13 +1239,9 @@ impl Download {
         announce: Option<String>,
         announce_list: Vec<Vec<String>>,
     ) -> Result<(), String> {
-        let metadata = DownloadConstructor::from_info_bytes(
-            info_bytes,
-            info_hash,
-            announce,
-            announce_list,
-        )
-        .map_err(|err| err.to_string())?;
+        let metadata =
+            DownloadConstructor::from_info_bytes(info_bytes, info_hash, announce, announce_list)
+                .map_err(|err| err.to_string())?;
 
         self.apply_metadata(metadata)
     }
@@ -1318,9 +1299,7 @@ impl Download {
     /// True once a hash pass has completed without being cancelled and no
     /// piece is still waiting for a resume-triggered recheck.
     pub fn is_hash_checked(&self) -> bool {
-        self.hash_checked
-            && self.pending_hash_pieces.is_empty()
-            && !self.state.is_checking()
+        self.hash_checked && self.pending_hash_pieces.is_empty() && !self.state.is_checking()
     }
 
     /// True while a resume validation left pieces awaiting verification.
@@ -1434,7 +1413,9 @@ impl Download {
     }
 
     pub fn initial_seed_chunks_left(&self) -> Option<usize> {
-        self.initial_seeding.as_ref().map(InitialSeeding::chunks_left)
+        self.initial_seeding
+            .as_ref()
+            .map(InitialSeeding::chunks_left)
     }
 
     /// Offers the next piece to an initial-seed peer.
@@ -1538,12 +1519,7 @@ impl Download {
     ///
     /// Pending blocks in `piece_data_cache` are preferred so a just-written
     /// piece can be uploaded before the disk worker flushes it.
-    pub fn read_piece_block(
-        &self,
-        index: u32,
-        begin: u32,
-        length: u32,
-    ) -> Result<Vec<u8>, String> {
+    pub fn read_piece_block(&self, index: u32, begin: u32, length: u32) -> Result<Vec<u8>, String> {
         if index >= self.total_chunks() as u32 {
             return Err("piece index out of range".to_string());
         }
@@ -1737,10 +1713,7 @@ impl Download {
         }
 
         if !self.transition_to(next) {
-            return Err(format!(
-                "illegal transition from {:?} to start",
-                self.state
-            ));
+            return Err(format!("illegal transition from {:?} to start", self.state));
         }
 
         self.tracker_controller.enable(0);
@@ -2154,10 +2127,7 @@ impl Download {
     }
 
     /// Snapshot of the peer at `address`.
-    pub fn peer_info_by_address(
-        &self,
-        address: &lt_net::addr::SocketAddress,
-    ) -> Option<PeerInfo> {
+    pub fn peer_info_by_address(&self, address: &lt_net::addr::SocketAddress) -> Option<PeerInfo> {
         let peer_id = self.connection_list.find_by_address(address)?.peer_id;
         self.peer_info(&peer_id)
     }
@@ -2353,11 +2323,8 @@ impl Download {
         piece_index: u32,
         block_offset: u32,
     ) -> bool {
-        self.delegator.cancel_block(
-            Self::peer_number(peer_id),
-            piece_index,
-            block_offset,
-        )
+        self.delegator
+            .cancel_block(Self::peer_number(peer_id), piece_index, block_offset)
     }
 
     pub fn delegate_for_peer(&mut self, peer_id: &HashString, max_pieces: usize) -> Vec<Piece> {
@@ -2411,10 +2378,7 @@ impl Download {
     ///
     /// A pre-set flag cancels before the first piece is read, which is useful
     /// for tests and for supervisors that queue a cancelled job.
-    pub fn recheck_with_cancel(
-        &mut self,
-        cancel: Arc<AtomicBool>,
-    ) -> Result<HashResult, String> {
+    pub fn recheck_with_cancel(&mut self, cancel: Arc<AtomicBool>) -> Result<HashResult, String> {
         self.recheck_internal(None, Some(cancel))
     }
 
@@ -2487,9 +2451,7 @@ impl Download {
             self.pending_hash_pieces = selected_pieces;
             self.pending_hash_pieces.sort_unstable();
             self.pending_hash_pieces.dedup();
-            return Err(format!(
-                "could not flush disk before hash check: {err}"
-            ));
+            return Err(format!("could not flush disk before hash check: {err}"));
         }
 
         let previous_state = self.state.clone();
@@ -2610,12 +2572,20 @@ impl Download {
         self.finish_recheck(prepared, result)
     }
 
-    pub fn receive_block(&mut self, piece_index: u32, block_offset: u32, data: &[u8]) -> Result<bool, String> {
+    pub fn receive_block(
+        &mut self,
+        piece_index: u32,
+        block_offset: u32,
+        data: &[u8],
+    ) -> Result<bool, String> {
         self.downloaded_bytes = self.downloaded_bytes.saturating_add(data.len() as u64);
         self.rate_down.insert(data.len() as u64);
 
         let piece_len = self.chunk_size(piece_index) as usize;
-        let piece_buf = self.piece_data_cache.entry(piece_index).or_insert_with(|| vec![0u8; piece_len]);
+        let piece_buf = self
+            .piece_data_cache
+            .entry(piece_index)
+            .or_insert_with(|| vec![0u8; piece_len]);
 
         let start = block_offset as usize;
         let end = (start + data.len()).min(piece_buf.len());
@@ -2666,11 +2636,7 @@ impl Download {
     /// immediately. With no configured worker the piece is written through
     /// the process-wide worker and awaited by the caller; file I/O is never
     /// performed inline on the reactor thread.
-    fn persist_or_complete_piece(
-        &mut self,
-        piece_index: u32,
-        data: Vec<u8>,
-    ) -> Result<(), String> {
+    fn persist_or_complete_piece(&mut self, piece_index: u32, data: Vec<u8>) -> Result<(), String> {
         let needs_disk_write =
             !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty();
 
@@ -2830,7 +2796,8 @@ impl RecheckContext {
                     if index >= self.metadata.num_pieces {
                         0
                     } else if index == self.metadata.num_pieces.saturating_sub(1) {
-                        let remainder = (self.metadata.total_size % (self.metadata.piece_length as u64)) as u32;
+                        let remainder =
+                            (self.metadata.total_size % (self.metadata.piece_length as u64)) as u32;
                         if remainder == 0 {
                             self.metadata.piece_length
                         } else {
@@ -2954,9 +2921,7 @@ mod tests {
         download.try_start().unwrap();
         for index in 0..pieces_count {
             let payload = vec![index as u8; piece_length as usize];
-            assert!(download
-                .receive_block(index as u32, 0, &payload)
-                .unwrap());
+            assert!(download.receive_block(index as u32, 0, &payload).unwrap());
         }
         assert!(download.is_seeder());
         download

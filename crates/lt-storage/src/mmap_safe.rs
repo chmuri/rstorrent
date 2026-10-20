@@ -155,7 +155,12 @@ impl MappedMemory {
     }
 
     /// Query page residency in memory using `mincore`.
-    pub fn mincore(&self, offset: usize, length: usize, vec: &mut [u8]) -> Result<(), StorageError> {
+    pub fn mincore(
+        &self,
+        offset: usize,
+        length: usize,
+        vec: &mut [u8],
+    ) -> Result<(), StorageError> {
         if !self.is_mmap {
             // Heap buffer is always in core
             vec.fill(1);
@@ -185,7 +190,12 @@ impl MappedMemory {
     }
 
     /// Advise kernel on memory access patterns using `madvise`.
-    pub fn madvise(&self, offset: usize, length: usize, advice: Advice) -> Result<(), StorageError> {
+    pub fn madvise(
+        &self,
+        offset: usize,
+        length: usize,
+        advice: Advice,
+    ) -> Result<(), StorageError> {
         if !self.is_mmap {
             return Ok(());
         }
@@ -214,7 +224,12 @@ impl MappedMemory {
     }
 
     /// Synchronize mapped memory to disk using `msync`.
-    pub fn msync(&self, offset: usize, length: usize, flags: SyncFlags) -> Result<(), StorageError> {
+    pub fn msync(
+        &self,
+        offset: usize,
+        length: usize,
+        flags: SyncFlags,
+    ) -> Result<(), StorageError> {
         if !self.is_mmap {
             return Ok(());
         }

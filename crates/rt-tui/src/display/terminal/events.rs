@@ -561,9 +561,7 @@ impl TerminalEventReader {
 
         let mut read_count = 0;
         let mut translated = 0;
-        while read_count < self.max_events_per_poll
-            && crossterm::event::poll(Duration::ZERO)?
-        {
+        while read_count < self.max_events_per_poll && crossterm::event::poll(Duration::ZERO)? {
             read_count += 1;
             let raw = crossterm::event::read()?;
             if let Some(event) = self.translator.translate(raw) {
@@ -619,10 +617,7 @@ mod tests {
             queue.push(TerminalEvent::Key(1)),
             EventPushOutcome::Enqueued
         );
-        assert_eq!(
-            queue.push(TerminalEvent::Key(2)),
-            EventPushOutcome::Dropped
-        );
+        assert_eq!(queue.push(TerminalEvent::Key(2)), EventPushOutcome::Dropped);
         assert_eq!(queue.stats().dropped, 1);
         assert_eq!(queue.pop(), Some(TerminalEvent::Key(1)));
     }

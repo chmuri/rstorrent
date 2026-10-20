@@ -31,8 +31,16 @@ fn recheck_rebuilds_bitfield_from_disk() {
         total_size: 16,
         is_multi_file: true,
         files: vec![
-            TorrentFileEntry { path: torrent_path("dir/a.bin"), length: 5, offset: 0 },
-            TorrentFileEntry { path: torrent_path("dir/b.bin"), length: 11, offset: 5 },
+            TorrentFileEntry {
+                path: torrent_path("dir/a.bin"),
+                length: 5,
+                offset: 0,
+            },
+            TorrentFileEntry {
+                path: torrent_path("dir/b.bin"),
+                length: 11,
+                offset: 5,
+            },
         ],
         announce: None,
         announce_list: Vec::new(),
@@ -40,10 +48,7 @@ fn recheck_rebuilds_bitfield_from_disk() {
         is_meta_download: false,
     };
 
-    let root = std::env::temp_dir().join(format!(
-        "rtorrent_engine_recheck_{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("rtorrent_engine_recheck_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
 
@@ -122,9 +127,7 @@ fn three_piece_download(root: &std::path::Path) -> Download {
         .files
         .iter()
         .map(|file| lt_storage::TargetFileInfo {
-            path: std::path::PathBuf::from(
-                file.path.as_string().trim_start_matches('/'),
-            ),
+            path: std::path::PathBuf::from(file.path.as_string().trim_start_matches('/')),
             length: file.length,
             offset: file.offset,
         })
@@ -132,14 +135,7 @@ fn three_piece_download(root: &std::path::Path) -> Download {
 
     let bytes = b"AAAAAAAABBBBBBBBCCCCCCCC";
     for (index, chunk) in bytes.chunks(8).enumerate() {
-        lt_storage::write_piece_to_disk(
-            root,
-            &target_files,
-            8,
-            index as u32,
-            chunk,
-        )
-        .unwrap();
+        lt_storage::write_piece_to_disk(root, &target_files, 8, index as u32, chunk).unwrap();
     }
 
     let mut download = Download::new(metadata);
@@ -227,9 +223,7 @@ fn cancelled_partial_recheck_preserves_unselected_bits() {
     download.recheck().unwrap();
 
     let cancel = Arc::new(AtomicBool::new(true));
-    let result = download
-        .recheck_pieces_with_cancel(&[1], cancel)
-        .unwrap();
+    let result = download.recheck_pieces_with_cancel(&[1], cancel).unwrap();
 
     assert!(result.cancelled);
     assert_eq!(result.unchecked_pieces, vec![1]);

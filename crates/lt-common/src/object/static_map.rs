@@ -1,6 +1,8 @@
 use std::ops::{Index, IndexMut};
 
-use crate::object::bencode::{encode, read_bencode_c, read_bencode_skip, read_bencode_string_slice};
+use crate::object::bencode::{
+    encode, read_bencode_c, read_bencode_skip, read_bencode_string_slice,
+};
 use crate::object::{BencodeError, Object};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +62,9 @@ fn read_dict_recursive<const N: usize>(
     prefix: &str,
 ) -> Result<(), BencodeError> {
     if *pos >= input.len() || input[*pos] != b'd' {
-        return Err(BencodeError::InvalidData("Expected 'd' for dictionary".into()));
+        return Err(BencodeError::InvalidData(
+            "Expected 'd' for dictionary".into(),
+        ));
     }
     *pos += 1;
 
@@ -86,9 +90,12 @@ fn read_dict_recursive<const N: usize>(
         let list_prefix = format!("{curr_path}[]");
 
         // Check if there is an exact mapping
-        let exact_match = mappings
-            .iter()
-            .find(|m| m.path == curr_path || m.path.strip_prefix(&curr_path).map_or(false, |s| s.starts_with('*')));
+        let exact_match = mappings.iter().find(|m| {
+            m.path == curr_path
+                || m.path
+                    .strip_prefix(&curr_path)
+                    .map_or(false, |s| s.starts_with('*'))
+        });
 
         if let Some(m) = exact_match {
             if m.path.contains('*') {

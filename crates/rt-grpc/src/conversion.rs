@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
+use crate::proto::*;
 use lt_common::object::ObjectVal;
 use lt_common::Object;
 use lt_engine::download::DownloadState;
 use rt_core::download::Download;
-use crate::proto::*;
+use std::collections::BTreeMap;
 
 pub fn object_to_proto(obj: &Object) -> ObjectValue {
     let kind = match &obj.val {

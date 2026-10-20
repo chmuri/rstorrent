@@ -31,11 +31,7 @@ impl Default for RatioConfig {
 ///
 /// `downloaded == 0` only requires the minimum upload threshold, avoiding a
 /// division by zero. `max <= 0` disables the maximum-ratio branch.
-pub fn ratio_reached(
-    uploaded: i64,
-    downloaded: i64,
-    config: &RatioConfig,
-) -> bool {
+pub fn ratio_reached(uploaded: i64, downloaded: i64, config: &RatioConfig) -> bool {
     if !config.enabled {
         return false;
     }
@@ -121,13 +117,7 @@ pub fn register_ratio_commands(map: &mut CommandMap) -> Result<(), RpcError> {
         ),
     ] {
         add_value(map, &config, name, get, set)?;
-        add_value(
-            map,
-            &config,
-            &format!("group.seeding.{}", name),
-            get,
-            set,
-        )?;
+        add_value(map, &config, &format!("group.seeding.{}", name), get, set)?;
     }
 
     let config_get = Arc::clone(&config);

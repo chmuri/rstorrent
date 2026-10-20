@@ -67,7 +67,9 @@ impl DownloadConstructor {
     }
 
     fn get_str<'a>(obj: &'a Object, key: &str) -> Option<&'a str> {
-        obj.get_key_string(key).ok().and_then(|b| std::str::from_utf8(b).ok())
+        obj.get_key_string(key)
+            .ok()
+            .and_then(|b| std::str::from_utf8(b).ok())
     }
 
     fn get_int(obj: &Object, key: &str) -> Option<i64> {
@@ -79,7 +81,9 @@ impl DownloadConstructor {
     }
 
     pub fn from_object(b: &Object) -> Result<TorrentMetadata, ConstructorError> {
-        let info_obj = b.get_key("info").map_err(|_| ConstructorError::InvalidInfoDict)?;
+        let info_obj = b
+            .get_key("info")
+            .map_err(|_| ConstructorError::InvalidInfoDict)?;
 
         // Calculate info hash: serialize the info dictionary back to bencode and hash it
         let raw_info_bytes = lt_common::object::bencode::encode(info_obj)
@@ -193,7 +197,12 @@ impl DownloadConstructor {
                 if let Ok(trackers) = tier.as_list() {
                     let tier_urls: Vec<String> = trackers
                         .iter()
-                        .filter_map(|t| t.as_string().ok().and_then(|b| std::str::from_utf8(b).ok()).map(|s| s.trim().to_string()))
+                        .filter_map(|t| {
+                            t.as_string()
+                                .ok()
+                                .and_then(|b| std::str::from_utf8(b).ok())
+                                .map(|s| s.trim().to_string())
+                        })
                         .collect();
                     if !tier_urls.is_empty() {
                         announce_list.push(tier_urls);
@@ -259,13 +268,15 @@ impl DownloadConstructor {
                     let hash_str = &val[9..];
                     if hash_str.len() == 40 {
                         // 40-char Hex
-                        let hash = HashString::from_hex(hash_str)
-                            .ok_or_else(|| ConstructorError::InvalidMagnet("Invalid hex hash".into()))?;
+                        let hash = HashString::from_hex(hash_str).ok_or_else(|| {
+                            ConstructorError::InvalidMagnet("Invalid hex hash".into())
+                        })?;
                         info_hash_opt = Some(hash);
                     } else if hash_str.len() == 32 {
                         // 32-char Base32
-                        let hash = Self::decode_base32(hash_str)
-                            .ok_or_else(|| ConstructorError::InvalidMagnet("Invalid base32 hash".into()))?;
+                        let hash = Self::decode_base32(hash_str).ok_or_else(|| {
+                            ConstructorError::InvalidMagnet("Invalid base32 hash".into())
+                        })?;
                         info_hash_opt = Some(hash);
                     }
                 } else if key == "dn" {
@@ -279,7 +290,8 @@ impl DownloadConstructor {
             }
         }
 
-        let info_hash = info_hash_opt.ok_or_else(|| ConstructorError::InvalidMagnet("Missing xt urn:btih".into()))?;
+        let info_hash = info_hash_opt
+            .ok_or_else(|| ConstructorError::InvalidMagnet("Missing xt urn:btih".into()))?;
 
         let announce = trackers.first().cloned();
         let announce_list = if trackers.is_empty() {
@@ -314,7 +326,9 @@ impl DownloadConstructor {
                     std::str::from_utf8(&bytes[i + 1..i + 2]),
                     std::str::from_utf8(&bytes[i + 2..i + 3]),
                 ) {
-                    if let (Ok(high), Ok(low)) = (u8::from_str_radix(h, 16), u8::from_str_radix(l, 16)) {
+                    if let (Ok(high), Ok(low)) =
+                        (u8::from_str_radix(h, 16), u8::from_str_radix(l, 16))
+                    {
                         result.push((high << 4) | low);
                         i += 3;
                         continue;
@@ -376,17 +390,26 @@ mod tests {
         let uri = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Ubuntu+ISO&tr=http%3A%2F%2Ftracker.example.com%2Fannounce";
         let meta = DownloadConstructor::from_magnet_uri(uri).unwrap();
         assert_eq!(meta.name, "Ubuntu ISO");
-        assert_eq!(meta.info_hash.to_hex(), "0123456789abcdef0123456789abcdef01234567");
-        assert_eq!(meta.announce, Some("http://tracker.example.com/announce".into()));
+        assert_eq!(
+            meta.info_hash.to_hex(),
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+        assert_eq!(
+            meta.announce,
+            Some("http://tracker.example.com/announce".into())
+        );
         assert!(meta.is_meta_download);
     }
 
     #[test]
     fn test_from_info_bytes() {
         let mut info = Object::create_map();
-        info.insert_key("name", Object::from("metadata-dir")).unwrap();
-        info.insert_key("piece length", Object::from(16384i64)).unwrap();
-        info.insert_key("pieces", Object::create_string(vec![0u8; 20])).unwrap();
+        info.insert_key("name", Object::from("metadata-dir"))
+            .unwrap();
+        info.insert_key("piece length", Object::from(16384i64))
+            .unwrap();
+        info.insert_key("pieces", Object::create_string(vec![0u8; 20]))
+            .unwrap();
         info.insert_key("length", Object::from(16384i64)).unwrap();
 
         let bytes = lt_common::object::bencode::encode(&info).unwrap();

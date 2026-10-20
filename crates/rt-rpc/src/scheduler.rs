@@ -1,10 +1,10 @@
-use std::time::Duration;
-use lt_common::object::flags as obj_flags;
-use lt_common::Object;
 use crate::command_map::CommandMap;
 use crate::error::RpcError;
 use crate::parse_commands::{parse_command, parse_command_execute};
 use crate::target::Target;
+use lt_common::object::flags as obj_flags;
+use lt_common::Object;
+use std::time::Duration;
 
 /// Rounds a cached time up to whole seconds.
 ///
@@ -336,8 +336,7 @@ impl CommandScheduler {
                 let hour = (current_secs / 3600) % 24;
                 let min = (current_secs / 60) % 60;
                 let sec = current_secs % 60;
-                let diff =
-                    (secs % 86400 + 86400 - (3600 * hour + 60 * min + sec) % 86400) % 86400;
+                let diff = (secs % 86400 + 86400 - (3600 * hour + 60 * min + sec) % 86400) % 86400;
                 Ok(diff as u32)
             }
             _ => Err(RpcError::InputError(
@@ -684,9 +683,7 @@ mod tests {
         assert!(!scheduler.find("key").unwrap().is_queued());
 
         // A command is allowed to replace itself before completion.
-        scheduler
-            .parse("key", "1", "7", command())
-            .unwrap();
+        scheduler.parse("key", "1", "7", command()).unwrap();
         scheduler.complete_command(Duration::from_secs(2), "key");
         assert_eq!(
             scheduler.find("key").unwrap().interval(),

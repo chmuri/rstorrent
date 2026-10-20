@@ -1,10 +1,10 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 use lt_net::addr::AddressList;
 use lt_tracker::controller::{ControllerFlags, TrackerController};
 use lt_tracker::list::TrackerList;
 use lt_tracker::state::TrackerEvent;
 use lt_tracker::tracker::Tracker;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 #[test]
 fn test_controller_lifecycle() {
@@ -136,7 +136,13 @@ fn test_scrape_scheduling() {
     controller.receive_scrape_success(0);
     assert!(!controller.tracker_list.at(0).unwrap().is_requesting());
     assert_eq!(
-        controller.tracker_list.at(0).unwrap().state().counters.scrape_counter,
+        controller
+            .tracker_list
+            .at(0)
+            .unwrap()
+            .state()
+            .counters
+            .scrape_counter,
         1
     );
 }

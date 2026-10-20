@@ -12,11 +12,7 @@ pub enum StorageError {
     NoProtectionFlags,
 
     #[error("Invalid range: offset {offset}, length {length}, file/chunk size {size}")]
-    InvalidRange {
-        offset: u64,
-        length: u64,
-        size: u64,
-    },
+    InvalidRange { offset: u64, length: u64, size: u64 },
 
     #[error("MemoryChunk alignment error: page size {page_size}, align {align}")]
     AlignmentError { page_size: usize, align: usize },

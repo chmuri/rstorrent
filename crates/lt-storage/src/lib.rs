@@ -11,9 +11,9 @@ pub mod error;
 pub mod file;
 pub mod file_list;
 pub mod file_list_iterator;
-pub mod file_utils;
 pub mod file_manager;
 pub mod file_status_cache;
+pub mod file_utils;
 pub mod hash_check_queue;
 pub mod hash_chunk;
 pub mod hash_queue;
@@ -43,8 +43,8 @@ pub use file::{File, FileFlags, Priority};
 pub use file_list::FileList;
 pub use file_manager::FileManager;
 pub use file_status_cache::{FileStatus, FileStatusCache};
-pub use hash_chunk::HashChunk;
 pub use hash_check_queue::{HashCheckQueue, FLAG_NEED, FLAG_WILL_NEED};
+pub use hash_chunk::HashChunk;
 pub use hash_queue::{HashQueue, HashQueueNode};
 pub use hash_torrent::{HashResult, HashTorrent};
 pub use memory_chunk::MemoryChunk;
@@ -112,12 +112,9 @@ mod tests {
 
     #[test]
     fn test_anonymous_padding_chunk() {
-        let mut chunk = SocketFile::create_padding_chunk(
-            8192,
-            Prot::READ | Prot::WRITE,
-            MapFlags::SHARED,
-        )
-        .unwrap();
+        let mut chunk =
+            SocketFile::create_padding_chunk(8192, Prot::READ | Prot::WRITE, MapFlags::SHARED)
+                .unwrap();
 
         assert!(chunk.is_valid());
         assert_eq!(chunk.size(), 8192);
@@ -487,7 +484,9 @@ mod tests {
         assert!(handle_0.is_valid());
         assert!(handle_1.is_valid());
 
-        let address = chunk_list.node(1).chunk().unwrap().parts()[0].chunk().begin();
+        let address = chunk_list.node(1).chunk().unwrap().parts()[0]
+            .chunk()
+            .begin();
         let result = chunk_list.find_address(address);
 
         assert_eq!(result, Some((1, 0)));
@@ -557,14 +556,18 @@ mod tests {
         assert!(!file_list.is_done());
 
         // Chunk 0 (0..1024) spans File 1 (0..1000) and File 2 (1000..1024)
-        let chunk0 = file_list.create_chunk_index(0, Prot::READ | Prot::WRITE).unwrap();
+        let chunk0 = file_list
+            .create_chunk_index(0, Prot::READ | Prot::WRITE)
+            .unwrap();
         assert_eq!(chunk0.chunk_size(), 1024);
         assert_eq!(chunk0.parts().len(), 2);
         assert_eq!(chunk0.parts()[0].size(), 1000);
         assert_eq!(chunk0.parts()[1].size(), 24);
 
         // Chunk 3 (3072..3500 = 428 bytes) is entirely within File 2
-        let chunk3 = file_list.create_chunk_index(3, Prot::READ | Prot::WRITE).unwrap();
+        let chunk3 = file_list
+            .create_chunk_index(3, Prot::READ | Prot::WRITE)
+            .unwrap();
         assert_eq!(chunk3.chunk_size(), 428);
         assert_eq!(chunk3.parts().len(), 1);
 
@@ -705,7 +708,10 @@ mod tests {
         assert_eq!(block.size_not_stalled(), 1);
 
         // Adjust position and complete block with leader
-        block.get_transfer_mut(leader_idx).unwrap().adjust_position(16);
+        block
+            .get_transfer_mut(leader_idx)
+            .unwrap()
+            .adjust_position(16);
         assert!(block.completed(leader_idx));
         assert!(block.is_finished());
 
@@ -730,8 +736,14 @@ mod tests {
         let loaded = ResumeData::from_object(&obj).unwrap();
 
         assert_eq!(loaded.completed_bytes, 40960);
-        assert_eq!(loaded.file_priorities, vec![Priority::Normal, Priority::Off, Priority::High]);
-        assert_eq!(loaded.file_mtimes, vec![1680000000, MTIME_SKIPPED, MTIME_RECHECK]);
+        assert_eq!(
+            loaded.file_priorities,
+            vec![Priority::Normal, Priority::Off, Priority::High]
+        );
+        assert_eq!(
+            loaded.file_mtimes,
+            vec![1680000000, MTIME_SKIPPED, MTIME_RECHECK]
+        );
 
         let loaded_bf = loaded.bitfield.unwrap();
         assert!(loaded_bf.get(0));
@@ -741,4 +753,3 @@ mod tests {
         assert!(loaded_bf.get(5));
     }
 }
-

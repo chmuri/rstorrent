@@ -188,7 +188,12 @@ impl MemoryChunk {
         *offset -= rem;
     }
 
-    pub fn incore(&self, buf: &mut [u8], mut offset: usize, mut length: usize) -> Result<(), StorageError> {
+    pub fn incore(
+        &self,
+        buf: &mut [u8],
+        mut offset: usize,
+        mut length: usize,
+    ) -> Result<(), StorageError> {
         let inner = self.inner.as_ref().ok_or(StorageError::InvalidChunk)?;
         if !self.is_valid_range(offset, length) {
             return Err(StorageError::InvalidRange {
@@ -209,7 +214,12 @@ impl MemoryChunk {
         Ok(buf.iter().all(|&b| (b & 1) != 0 || b != 0))
     }
 
-    pub fn advise(&self, mut offset: usize, mut length: usize, advice: Advice) -> Result<(), StorageError> {
+    pub fn advise(
+        &self,
+        mut offset: usize,
+        mut length: usize,
+        advice: Advice,
+    ) -> Result<(), StorageError> {
         let inner = self.inner.as_ref().ok_or(StorageError::InvalidChunk)?;
         if !self.is_valid_range(offset, length) {
             return Err(StorageError::InvalidRange {
@@ -223,7 +233,12 @@ impl MemoryChunk {
         inner.madvise(offset, length, advice)
     }
 
-    pub fn sync(&self, mut offset: usize, mut length: usize, flags: SyncFlags) -> Result<(), StorageError> {
+    pub fn sync(
+        &self,
+        mut offset: usize,
+        mut length: usize,
+        flags: SyncFlags,
+    ) -> Result<(), StorageError> {
         let inner = self.inner.as_ref().ok_or(StorageError::InvalidChunk)?;
         if !self.is_valid_range(offset, length) {
             return Err(StorageError::InvalidRange {

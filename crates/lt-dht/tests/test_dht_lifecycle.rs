@@ -43,8 +43,7 @@ async fn bootstrap_adds_responding_node() {
         tokio::spawn(async move { server.run(shutdown_a_rx).await })
     };
 
-    let bootstrap_address =
-        SocketAddress::new_inet(Ipv4Addr::LOCALHOST, port_b);
+    let bootstrap_address = SocketAddress::new_inet(Ipv4Addr::LOCALHOST, port_b);
 
     let mut replied = 0;
     for _ in 0..20 {
@@ -100,10 +99,7 @@ async fn cache_round_trip_preserves_self_id_and_nodes() {
     assert_eq!(router.lock().await.own_id, id_a);
 
     // File round-trip.
-    let path = std::env::temp_dir().join(format!(
-        "rtorrent_dht_cache_{}.bin",
-        std::process::id()
-    ));
+    let path = std::env::temp_dir().join(format!("rtorrent_dht_cache_{}.bin", std::process::id()));
     let _ = std::fs::remove_file(&path);
     controller.save_cache_to(&path).unwrap();
 

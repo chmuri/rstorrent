@@ -49,8 +49,11 @@ fn push_respects_max_size_and_reports_admission() {
     ));
 
     // `push_unchecked` is the explicit escape hatch used by tests/importers.
-    connection_list
-        .push_unchecked(PeerConnection::new(HashString::new([0x04; 20]), SocketAddress::default(), 1));
+    connection_list.push_unchecked(PeerConnection::new(
+        HashString::new([0x04; 20]),
+        SocketAddress::default(),
+        1,
+    ));
     assert_eq!(connection_list.size(), 2);
 }
 

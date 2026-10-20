@@ -65,7 +65,8 @@ impl HashQueue {
         F: Fn(ChunkHandle, Option<HashString>) + Send + Sync + 'static,
     {
         let hash_chunk = HashChunk::new(handle, data);
-        self.queue.push_back(HashQueueNode::new(id, hash_chunk, Box::new(on_done)));
+        self.queue
+            .push_back(HashQueueNode::new(id, hash_chunk, Box::new(on_done)));
     }
 
     pub fn has(&self, id: usize) -> bool {
@@ -73,7 +74,9 @@ impl HashQueue {
     }
 
     pub fn has_index(&self, id: usize, index: u32) -> bool {
-        self.queue.iter().any(|n| n.id() == id && n.handle().index() == index)
+        self.queue
+            .iter()
+            .any(|n| n.id() == id && n.handle().index() == index)
     }
 
     pub fn remove(&mut self, id: usize) {

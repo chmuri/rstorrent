@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{watch, Mutex, Notify};
-use tokio::time::Instant;
 use tokio::task::JoinSet;
+use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
 use lt_common::hash_string::HashString;
@@ -324,7 +324,11 @@ impl DhtController {
             }
         }
 
-        info!(port = self.server.port(), mode = self.mode().as_str(), "DHT started");
+        info!(
+            port = self.server.port(),
+            mode = self.mode().as_str(),
+            "DHT started"
+        );
 
         let maintenance = tokio::spawn(maintenance_loop(
             self.server(),
@@ -358,11 +362,8 @@ impl DhtController {
     /// Failures are counted but never retried here: a single call is bounded
     /// by the per-query timeout and returns success with `0` replies.
     pub async fn bootstrap(&self, nodes: &[SocketAddress]) -> Result<usize, DhtError> {
-        let targets: Vec<SocketAddress> = nodes
-            .iter()
-            .take(MAX_BOOTSTRAP_CONTACTS)
-            .cloned()
-            .collect();
+        let targets: Vec<SocketAddress> =
+            nodes.iter().take(MAX_BOOTSTRAP_CONTACTS).cloned().collect();
         self.bootstrap_targets(targets).await
     }
 
@@ -379,14 +380,7 @@ impl DhtController {
         }
 
         let own_id = self.router.lock().await.own_id;
-        let replied = query_find_node(
-            self.server(),
-            self.router(),
-            targets,
-            own_id,
-            true,
-        )
-        .await;
+        let replied = query_find_node(self.server(), self.router(), targets, own_id, true).await;
 
         self.update_population_state();
         Ok(replied)
@@ -745,8 +739,8 @@ impl DhtController {
         let mut stats = ControllerStatistics::from(self.server.statistics());
         let active = self.is_active();
         let server_active = self.server.is_active();
-        let populated = self.nodes_populated.load(Ordering::Relaxed)
-            || num_nodes >= BOOTSTRAP_COMPLETE_NODES;
+        let populated =
+            self.nodes_populated.load(Ordering::Relaxed) || num_nodes >= BOOTSTRAP_COMPLETE_NODES;
 
         stats.cycle = if !active || !server_active {
             0
@@ -803,19 +797,10 @@ impl DhtController {
             Object::create_value(stats.errors_caught as i64),
         );
         let _ = map.insert_key("nodes", Object::create_value(stats.num_nodes as i64));
-        let _ = map.insert_key(
-            "buckets",
-            Object::create_value(stats.num_buckets as i64),
-        );
+        let _ = map.insert_key("buckets", Object::create_value(stats.num_buckets as i64));
         let _ = map.insert_key("peers", Object::create_value(stats.num_peers as i64));
-        let _ = map.insert_key(
-            "peers_max",
-            Object::create_value(stats.max_peers as i64),
-        );
-        let _ = map.insert_key(
-            "torrents",
-            Object::create_value(stats.num_trackers as i64),
-        );
+        let _ = map.insert_key("peers_max", Object::create_value(stats.max_peers as i64));
+        let _ = map.insert_key("torrents", Object::create_value(stats.num_trackers as i64));
         map
     }
 }
@@ -908,9 +893,14 @@ async fn maintenance_loop(
                     .cloned()
                     .collect();
                 let own_id = router.lock().await.own_id;
-                let replied =
-                    query_find_node(Arc::clone(&server), Arc::clone(&router), targets, own_id, true)
-                        .await;
+                let replied = query_find_node(
+                    Arc::clone(&server),
+                    Arc::clone(&router),
+                    targets,
+                    own_id,
+                    true,
+                )
+                .await;
                 debug!(replied, "DHT bootstrap attempt finished");
 
                 let node_count = router.lock().await.get_statistics().num_nodes;
@@ -983,9 +973,7 @@ async fn query_find_node(
             };
 
             match response {
-                Ok(KrpcResponse::FindNode { id, nodes }) => {
-                    (address, Some((id, nodes)))
-                }
+                Ok(KrpcResponse::FindNode { id, nodes }) => (address, Some((id, nodes))),
                 _ => (address, None),
             }
         });

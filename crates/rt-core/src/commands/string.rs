@@ -1,7 +1,7 @@
-use std::collections::BTreeSet;
 use lt_common::Object;
 use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError};
+use std::collections::BTreeSet;
 
 const MAX_STRING_PAD_SIZE: usize = 1 << 14;
 const WHITESPACE_CHARACTERS: &str = " \t\n\r\x0C\x0B";
@@ -213,11 +213,7 @@ pub fn register_string_commands(map: &mut CommandMap) -> Result<(), RpcError> {
             let offsets = utf8_offsets(&text);
             let text_len = (offsets.len() - 1) as i64;
 
-            let mut position = if args.len() > 1 {
-                to_val(&args[1])?
-            } else {
-                0
-            };
+            let mut position = if args.len() > 1 { to_val(&args[1])? } else { 0 };
             let fallback = if args.len() > 3 {
                 to_str(&args[3])?
             } else {
@@ -437,7 +433,10 @@ fn pad_string(
     }
     let needed = (pad_size - text_len) as usize;
     if needed > MAX_STRING_PAD_SIZE {
-        return Err(RpcError::InputError(format!("{}: padding is too large.", name)));
+        return Err(RpcError::InputError(format!(
+            "{}: padding is too large.",
+            name
+        )));
     }
 
     let padding_offsets = utf8_offsets(padding);
@@ -482,10 +481,16 @@ fn strip_string(
     let mut first = 0;
     let mut last = offsets.len() - 1;
 
-    while strip_start && first < last && characters.contains(utf8_substr(&text, &offsets, first, first + 1)) {
+    while strip_start
+        && first < last
+        && characters.contains(utf8_substr(&text, &offsets, first, first + 1))
+    {
         first += 1;
     }
-    while strip_end && last > first && characters.contains(utf8_substr(&text, &offsets, last - 1, last)) {
+    while strip_end
+        && last > first
+        && characters.contains(utf8_substr(&text, &offsets, last - 1, last))
+    {
         last -= 1;
     }
 

@@ -132,10 +132,12 @@ impl<'de> Deserialize<'de> for HashString {
     {
         if deserializer.is_human_readable() {
             let s = String::deserialize(deserializer)?;
-            Self::from_hex(&s).ok_or_else(|| serde::de::Error::custom("invalid hex string for HashString"))
+            Self::from_hex(&s)
+                .ok_or_else(|| serde::de::Error::custom("invalid hex string for HashString"))
         } else {
             let bytes = <&[u8]>::deserialize(deserializer)?;
-            Self::from_slice(bytes).ok_or_else(|| serde::de::Error::custom("expected 20 bytes for HashString"))
+            Self::from_slice(bytes)
+                .ok_or_else(|| serde::de::Error::custom("expected 20 bytes for HashString"))
         }
     }
 }

@@ -187,7 +187,9 @@ impl SocketAddress {
                 v6.set_port(port);
                 Ok(())
             }
-            _ => Err(NetError::Internal("Cannot set port on non-inet address".into())),
+            _ => Err(NetError::Internal(
+                "Cannot set port on non-inet address".into(),
+            )),
         }
     }
 
@@ -195,7 +197,12 @@ impl SocketAddress {
         match self {
             SocketAddress::Unspec => Ok(SocketAddress::Unspec),
             SocketAddress::Inet(v4) => Ok(SocketAddress::Inet(SocketAddrV4::new(*v4.ip(), port))),
-            SocketAddress::Inet6(v6) => Ok(SocketAddress::Inet6(SocketAddrV6::new(*v6.ip(), port, 0, 0))),
+            SocketAddress::Inet6(v6) => Ok(SocketAddress::Inet6(SocketAddrV6::new(
+                *v6.ip(),
+                port,
+                0,
+                0,
+            ))),
             SocketAddress::Unix(p) => Ok(SocketAddress::Unix(p.clone())),
         }
     }
@@ -204,9 +211,16 @@ impl SocketAddress {
         match self {
             SocketAddress::Inet(v4) => {
                 let v6_ip = v4.ip().to_ipv6_mapped();
-                Ok(SocketAddress::Inet6(SocketAddrV6::new(v6_ip, v4.port(), 0, 0)))
+                Ok(SocketAddress::Inet6(SocketAddrV6::new(
+                    v6_ip,
+                    v4.port(),
+                    0,
+                    0,
+                )))
             }
-            _ => Err(NetError::Internal("sa_to_v4mapped: address is not inet".into())),
+            _ => Err(NetError::Internal(
+                "sa_to_v4mapped: address is not inet".into(),
+            )),
         }
     }
 
@@ -216,10 +230,14 @@ impl SocketAddress {
                 if let Some(v4) = self.v4_mapped_ip() {
                     Ok(SocketAddress::Inet(SocketAddrV4::new(v4, v6.port())))
                 } else {
-                    Err(NetError::Internal("sa_from_v4mapped: address is not v4mapped".into()))
+                    Err(NetError::Internal(
+                        "sa_from_v4mapped: address is not v4mapped".into(),
+                    ))
                 }
             }
-            _ => Err(NetError::Internal("sa_from_v4mapped: address is not inet6".into())),
+            _ => Err(NetError::Internal(
+                "sa_from_v4mapped: address is not inet6".into(),
+            )),
         }
     }
 
@@ -255,7 +273,9 @@ impl SocketAddress {
 
     pub fn equal(&self, other: &Self) -> Result<bool, NetError> {
         if self.is_unix() || other.is_unix() {
-            return Err(NetError::Internal("sa_equal: unix sockaddr is not supported".into()));
+            return Err(NetError::Internal(
+                "sa_equal: unix sockaddr is not supported".into(),
+            ));
         }
 
         match (self, other) {
@@ -274,7 +294,9 @@ impl SocketAddress {
 
     pub fn equal_addr(&self, other: &Self) -> Result<bool, NetError> {
         if self.is_unix() || other.is_unix() {
-            return Err(NetError::Internal("sa_equal_addr: unix sockaddr is not supported".into()));
+            return Err(NetError::Internal(
+                "sa_equal_addr: unix sockaddr is not supported".into(),
+            ));
         }
 
         match (self, other) {
@@ -287,7 +309,9 @@ impl SocketAddress {
 
     pub fn less(&self, other: &Self) -> Result<bool, NetError> {
         if !self.is_inet_inet6() || !other.is_inet_inet6() {
-            return Err(NetError::Internal("sa_less: address is not inet or inet6".into()));
+            return Err(NetError::Internal(
+                "sa_less: address is not inet or inet6".into(),
+            ));
         }
 
         match (self, other) {
@@ -317,7 +341,9 @@ impl SocketAddress {
 
     pub fn less_addr(&self, other: &Self) -> Result<bool, NetError> {
         if !self.is_inet_inet6() || !other.is_inet_inet6() {
-            return Err(NetError::Internal("sa_less_addr: address is not inet or inet6".into()));
+            return Err(NetError::Internal(
+                "sa_less_addr: address is not inet or inet6".into(),
+            ));
         }
 
         match (self, other) {
@@ -349,7 +375,10 @@ impl SocketAddress {
         }
     }
 
-    pub fn lookup_numeric(address_str: &str, family: AddressFamily) -> Result<(Option<Self>, bool), NetError> {
+    pub fn lookup_numeric(
+        address_str: &str,
+        family: AddressFamily,
+    ) -> Result<(Option<Self>, bool), NetError> {
         let (v4, v6) = Self::try_lookup_numeric(address_str)?;
         match family {
             AddressFamily::Unspec => {
@@ -379,7 +408,9 @@ impl SocketAddress {
                     Ok((None, true))
                 }
             }
-            AddressFamily::Unix => Err(NetError::Internal("lookup_numeric: unix invalid family".into())),
+            AddressFamily::Unix => Err(NetError::Internal(
+                "lookup_numeric: unix invalid family".into(),
+            )),
         }
     }
 
@@ -420,7 +451,10 @@ impl SocketAddress {
 
         // Fallback to std::net::ToSocketAddrs for DNS / system resolution
         use std::net::ToSocketAddrs;
-        let host_port = if address_str.contains(':') && !address_str.contains("::") && !address_str.starts_with('[') {
+        let host_port = if address_str.contains(':')
+            && !address_str.contains("::")
+            && !address_str.starts_with('[')
+        {
             address_str.to_string()
         } else if address_str.starts_with('[') && address_str.contains("]:") {
             address_str.to_string()
@@ -441,9 +475,15 @@ impl SocketAddress {
                         _ => continue,
                     }
                 }
-                Err(NetError::Input(format!("Could not get address info for family: {}", address_str)))
+                Err(NetError::Input(format!(
+                    "Could not get address info for family: {}",
+                    address_str
+                )))
             }
-            Err(e) => Err(NetError::Input(format!("Could not get address info: {}: {}", address_str, e))),
+            Err(e) => Err(NetError::Input(format!(
+                "Could not get address info: {}: {}",
+                address_str, e
+            ))),
         }
     }
 }
@@ -486,7 +526,10 @@ impl FromStr for SocketAddress {
             };
         }
 
-        Err(NetError::Input(format!("Invalid socket address format: {}", s)))
+        Err(NetError::Input(format!(
+            "Invalid socket address format: {}",
+            s
+        )))
     }
 }
 
@@ -621,4 +664,3 @@ impl std::ops::DerefMut for AddressList {
         &mut self.0
     }
 }
-

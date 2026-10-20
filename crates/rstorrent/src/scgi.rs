@@ -1,9 +1,12 @@
-use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_rpc::command::flags::{FLAG_IS_REDIRECT, FLAG_PUBLIC_RPC, FLAG_UNTRUSTED_SAFE};
-use rt_rpc::{convert_to_string, convert_to_value, CommandMap, JsonRpc, RpcError, XmlRpc, MAX_CONTENT_SIZE, MIN_SIZE_LIMIT};
+use rt_rpc::{
+    convert_to_string, convert_to_value, CommandMap, JsonRpc, RpcError, XmlRpc, MAX_CONTENT_SIZE,
+    MIN_SIZE_LIMIT,
+};
 use rt_scgi::{ScgiConfig, ScgiHandler, ScgiServer};
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use tracing::{error, info};
 
 fn extract_string_param(obj: &Object) -> Result<String, RpcError> {
@@ -42,8 +45,12 @@ pub fn register_scgi_commands(
                 addr_input
             };
 
-            let std_listener = std::net::TcpListener::bind(&addr_str)
-                .map_err(|e| RpcError::InputError(format!("Could not bind SCGI TCP address {}: {}", addr_str, e)))?;
+            let std_listener = std::net::TcpListener::bind(&addr_str).map_err(|e| {
+                RpcError::InputError(format!(
+                    "Could not bind SCGI TCP address {}: {}",
+                    addr_str, e
+                ))
+            })?;
 
             let handler = Arc::new(ScgiHandler::new(
                 Arc::clone(&cmd_map_for_tcp),
@@ -52,8 +59,9 @@ pub fn register_scgi_commands(
                 ScgiConfig::default(),
             ));
 
-            let server = ScgiServer::from_std_tcp(std_listener, handler)
-                .map_err(|e| RpcError::InputError(format!("Failed to initialize SCGI TCP listener: {}", e)))?;
+            let server = ScgiServer::from_std_tcp(std_listener, handler).map_err(|e| {
+                RpcError::InputError(format!("Failed to initialize SCGI TCP listener: {}", e))
+            })?;
 
             tokio::spawn(async move {
                 info!("Starting SCGI TCP server on {}", addr_str);
@@ -100,8 +108,9 @@ pub fn register_scgi_commands(
                 let _ = std::fs::remove_file(&path);
             }
 
-            let std_listener = std::os::unix::net::UnixListener::bind(&path)
-                .map_err(|e| RpcError::InputError(format!("Could not bind SCGI Unix socket {:?}: {}", path, e)))?;
+            let std_listener = std::os::unix::net::UnixListener::bind(&path).map_err(|e| {
+                RpcError::InputError(format!("Could not bind SCGI Unix socket {:?}: {}", path, e))
+            })?;
 
             #[cfg(unix)]
             {
@@ -116,8 +125,10 @@ pub fn register_scgi_commands(
                 ScgiConfig::default(),
             ));
 
-            let server = ScgiServer::from_std_unix(std_listener, path.clone(), handler)
-                .map_err(|e| RpcError::InputError(format!("Failed to initialize SCGI Unix listener: {}", e)))?;
+            let server =
+                ScgiServer::from_std_unix(std_listener, path.clone(), handler).map_err(|e| {
+                    RpcError::InputError(format!("Failed to initialize SCGI Unix listener: {}", e))
+                })?;
 
             tokio::spawn(async move {
                 info!("Starting SCGI Unix server on {:?}", path);
@@ -147,8 +158,9 @@ pub fn register_scgi_commands(
                 ScgiConfig::default(),
             ));
 
-            let server = ScgiServer::from_systemd(handler)
-                .map_err(|e| RpcError::InputError(format!("Failed to get systemd socket: {}", e)))?;
+            let server = ScgiServer::from_systemd(handler).map_err(|e| {
+                RpcError::InputError(format!("Failed to get systemd socket: {}", e))
+            })?;
 
             tokio::spawn(async move {
                 info!("Starting SCGI systemd server");

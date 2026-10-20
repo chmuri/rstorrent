@@ -47,13 +47,11 @@ async fn bootstrap_failure_is_bounded_and_non_fatal() {
     );
     let started = Instant::now();
 
-    let outcome = tokio::time::timeout(
-        Duration::from_secs(5),
-        controller.bootstrap(&[unreachable]),
-    )
-    .await
-    .expect("bootstrap must not block indefinitely")
-    .expect("bootstrap failure is reported as zero replies");
+    let outcome =
+        tokio::time::timeout(Duration::from_secs(5), controller.bootstrap(&[unreachable]))
+            .await
+            .expect("bootstrap must not block indefinitely")
+            .expect("bootstrap failure is reported as zero replies");
 
     assert_eq!(outcome, 0);
     assert!(!controller.is_nodes_populated());
@@ -96,10 +94,11 @@ async fn cache_round_trip_keeps_self_id_public_nodes_and_trackers() {
             router.mark_replied(&node_id, now);
         }
 
-        router
-            .get_tracker(&info_hash, true)
-            .unwrap()
-            .add_peer(u32::from(Ipv4Addr::new(1, 2, 3, 4)), 51413, now);
+        router.get_tracker(&info_hash, true).unwrap().add_peer(
+            u32::from(Ipv4Addr::new(1, 2, 3, 4)),
+            51413,
+            now,
+        );
 
         router.set_private_info_hash(private_hash, true);
         assert!(router.get_tracker(&private_hash, true).is_none());
@@ -193,10 +192,11 @@ async fn periodic_refresh_prunes_stale_peers_and_nodes() {
         let router = controller.router();
         let mut router = router.lock().await;
 
-        router
-            .get_tracker(&stale_hash, true)
-            .unwrap()
-            .add_peer(0x01020304, 6881, now.saturating_sub(120));
+        router.get_tracker(&stale_hash, true).unwrap().add_peer(
+            0x01020304,
+            6881,
+            now.saturating_sub(120),
+        );
 
         router.add_node(DhtNode::new(
             stale_node_id,
@@ -343,7 +343,10 @@ fn bootstrap_population_marker_tracks_cached_nodes() {
     self_id.clear_byte(0x55);
     let mut cache = lt_common::Object::create_map();
     cache
-        .insert_key("self_id", lt_common::Object::create_string(self_id.as_slice().to_vec()))
+        .insert_key(
+            "self_id",
+            lt_common::Object::create_string(self_id.as_slice().to_vec()),
+        )
         .unwrap();
 
     let mut nodes = lt_common::Object::create_map();
@@ -355,7 +358,8 @@ fn bootstrap_population_marker_tracks_cached_nodes() {
             .unwrap();
         node.insert_key("p", lt_common::Object::create_value((10000 + index) as i64))
             .unwrap();
-        node.insert_key("t", lt_common::Object::create_value(1)).unwrap();
+        node.insert_key("t", lt_common::Object::create_value(1))
+            .unwrap();
         nodes.insert_key(node_id.as_slice(), node).unwrap();
     }
     cache.insert_key("nodes", nodes).unwrap();

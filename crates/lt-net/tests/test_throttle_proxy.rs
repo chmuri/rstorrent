@@ -88,7 +88,7 @@ async fn test_socks5_proxy_handshake_no_auth() {
             let mut greeting = [0u8; 3];
             socket.read_exact(&mut greeting).await.unwrap();
             assert_eq!(greeting[0], 0x05); // SOCKS5
-            // Reply no-auth
+                                           // Reply no-auth
             socket.write_all(&[0x05, 0x00]).await.unwrap();
 
             // 2. Read connect request
@@ -101,7 +101,10 @@ async fn test_socks5_proxy_handshake_no_auth() {
 
             // Reply success
             // 05 00 (success) 00 01 (ipv4 0.0.0.0:0)
-            socket.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await.unwrap();
+            socket
+                .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await
+                .unwrap();
         }
     });
 
@@ -150,7 +153,10 @@ async fn test_socks5_proxy_handshake_with_auth() {
             assert_eq!(req[1], 0x01);
 
             // Reply success
-            socket.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await.unwrap();
+            socket
+                .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await
+                .unwrap();
         }
     });
 

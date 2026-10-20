@@ -87,12 +87,7 @@ pub fn format_timer(val: i64) -> String {
     if val <= 0 {
         "--:--:--".to_string()
     } else {
-        format!(
-            "{:2}:{:02}:{:02}",
-            val / 3600,
-            (val / 60) % 60,
-            val % 60
-        )
+        format!("{:2}:{:02}:{:02}", val / 3600, (val / 60) % 60, val % 60)
     }
 }
 

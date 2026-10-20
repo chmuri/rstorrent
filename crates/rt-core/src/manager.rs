@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::io::{self, Error, ErrorKind};
-use std::sync::{Arc, RwLock};
-use lt_common::Object;
 use crate::download::Download;
 use crate::download_factory::DownloadFactory;
 use crate::download_list::DownloadList;
 use crate::session::{SessionCommitEntry, SessionManager};
+use lt_common::Object;
+use std::collections::HashMap;
+use std::io::{self, Error, ErrorKind};
+use std::sync::{Arc, RwLock};
 
 pub struct Manager {
     download_list: Arc<RwLock<DownloadList>>,
@@ -57,7 +57,11 @@ impl Manager {
         self.throttles.get(name).copied()
     }
 
-    pub fn load_torrent_object(&self, object: Object, start: bool) -> io::Result<Arc<RwLock<Download>>> {
+    pub fn load_torrent_object(
+        &self,
+        object: Object,
+        start: bool,
+    ) -> io::Result<Arc<RwLock<Download>>> {
         let mut factory = DownloadFactory::new();
         factory.load_object(object);
         factory.set_start(start);
@@ -319,4 +323,3 @@ impl Manager {
         commit_result.and(stop_result)
     }
 }
-

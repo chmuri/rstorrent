@@ -87,10 +87,7 @@ fn hard_connection_limit_is_enforced_on_top_of_max_peers() {
 
     assert_eq!(download.peer_limit(), 1);
     assert!(download.can_accept_incoming());
-    assert_eq!(
-        download.try_add_peer(peer(0x31, false)),
-        Ok(())
-    );
+    assert_eq!(download.try_add_peer(peer(0x31, false)), Ok(()));
     assert!(!download.can_accept_incoming());
     assert!(!download.can_dial_outgoing());
     assert_eq!(

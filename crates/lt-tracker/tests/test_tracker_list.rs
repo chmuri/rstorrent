@@ -1,10 +1,10 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 use lt_net::addr::{AddressList, SocketAddress};
 use lt_tracker::http::uri_generate_scrape_url;
 use lt_tracker::list::TrackerList;
 use lt_tracker::state::{TrackerEvent, TrackerFlags};
 use lt_tracker::tracker::Tracker;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 #[test]
 fn test_basic() {
@@ -66,19 +66,40 @@ fn test_tracker_flags() {
     let mut tracker_list = TrackerList::new();
 
     tracker_list.insert(Tracker::new(0, "".to_string()));
-    tracker_list.insert(Tracker::new_with_flags(0, "".to_string(), TrackerFlags::empty()));
-    tracker_list.insert(Tracker::new_with_flags(0, "".to_string(), TrackerFlags::ENABLED));
-    tracker_list.insert(Tracker::new_with_flags(0, "".to_string(), TrackerFlags::EXTRA_TRACKER));
+    tracker_list.insert(Tracker::new_with_flags(
+        0,
+        "".to_string(),
+        TrackerFlags::empty(),
+    ));
+    tracker_list.insert(Tracker::new_with_flags(
+        0,
+        "".to_string(),
+        TrackerFlags::ENABLED,
+    ));
+    tracker_list.insert(Tracker::new_with_flags(
+        0,
+        "".to_string(),
+        TrackerFlags::EXTRA_TRACKER,
+    ));
     tracker_list.insert(Tracker::new_with_flags(
         0,
         "".to_string(),
         TrackerFlags::ENABLED | TrackerFlags::EXTRA_TRACKER,
     ));
 
-    assert_eq!(tracker_list.at(0).unwrap().state().flags.bits() & 0xff, TrackerFlags::ENABLED.bits());
+    assert_eq!(
+        tracker_list.at(0).unwrap().state().flags.bits() & 0xff,
+        TrackerFlags::ENABLED.bits()
+    );
     assert_eq!(tracker_list.at(1).unwrap().state().flags.bits() & 0xff, 0);
-    assert_eq!(tracker_list.at(2).unwrap().state().flags.bits() & 0xff, TrackerFlags::ENABLED.bits());
-    assert_eq!(tracker_list.at(3).unwrap().state().flags.bits() & 0xff, TrackerFlags::EXTRA_TRACKER.bits());
+    assert_eq!(
+        tracker_list.at(2).unwrap().state().flags.bits() & 0xff,
+        TrackerFlags::ENABLED.bits()
+    );
+    assert_eq!(
+        tracker_list.at(3).unwrap().state().flags.bits() & 0xff,
+        TrackerFlags::EXTRA_TRACKER.bits()
+    );
     assert_eq!(
         tracker_list.at(4).unwrap().state().flags.bits() & 0xff,
         (TrackerFlags::ENABLED | TrackerFlags::EXTRA_TRACKER).bits()
@@ -209,7 +230,11 @@ fn test_has_active() {
     assert!(!tracker_list.has_active());
 
     // Scrape
-    tracker_list.at_mut(0).unwrap().state_mut().set_scrapable(true);
+    tracker_list
+        .at_mut(0)
+        .unwrap()
+        .state_mut()
+        .set_scrapable(true);
     tracker_list.send_scrape(0);
     assert!(tracker_list.has_active());
     assert!(!tracker_list.has_active_not_scrape());

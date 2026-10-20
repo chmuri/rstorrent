@@ -24,7 +24,9 @@ impl HttpProxy {
         while response_buf.len() < 4096 {
             let n = stream.read(&mut byte).await?;
             if n == 0 {
-                return Err(NetError::Input("HTTP proxy closed connection prematurely".into()));
+                return Err(NetError::Input(
+                    "HTTP proxy closed connection prematurely".into(),
+                ));
             }
             response_buf.push(byte[0]);
 
@@ -34,13 +36,18 @@ impl HttpProxy {
         }
 
         if !response_buf.ends_with(b"\r\n\r\n") {
-            return Err(NetError::Input("HTTP proxy response header too large or invalid".into()));
+            return Err(NetError::Input(
+                "HTTP proxy response header too large or invalid".into(),
+            ));
         }
 
         let response_str = String::from_utf8_lossy(&response_buf);
         let first_line = response_str.lines().next().unwrap_or("");
         if !first_line.starts_with("HTTP/1.1 200") && !first_line.starts_with("HTTP/1.0 200") {
-            return Err(NetError::Input(format!("HTTP proxy CONNECT rejected: {}", first_line)));
+            return Err(NetError::Input(format!(
+                "HTTP proxy CONNECT rejected: {}",
+                first_line
+            )));
         }
 
         Ok(())
@@ -71,12 +78,17 @@ impl Socks5Proxy {
         let mut resp = [0u8; 2];
         stream.read_exact(&mut resp).await?;
         if resp[0] != 0x05 {
-            return Err(NetError::Input(format!("Invalid SOCKS5 version in greeting: {}", resp[0])));
+            return Err(NetError::Input(format!(
+                "Invalid SOCKS5 version in greeting: {}",
+                resp[0]
+            )));
         }
 
         let selected_method = resp[1];
         if selected_method == 0xFF {
-            return Err(NetError::Input("SOCKS5 proxy rejected authentication methods".into()));
+            return Err(NetError::Input(
+                "SOCKS5 proxy rejected authentication methods".into(),
+            ));
         }
 
         // 2. Authentication if required
@@ -84,7 +96,9 @@ impl Socks5Proxy {
             let user = username.unwrap_or("");
             let pass = password.unwrap_or("");
             if user.len() > 255 || pass.len() > 255 {
-                return Err(NetError::Input("SOCKS5 username or password exceeds 255 bytes".into()));
+                return Err(NetError::Input(
+                    "SOCKS5 username or password exceeds 255 bytes".into(),
+                ));
             }
 
             let mut auth_req = Vec::new();
@@ -138,10 +152,16 @@ impl Socks5Proxy {
         let mut header = [0u8; 4];
         stream.read_exact(&mut header).await?;
         if header[0] != 0x05 {
-            return Err(NetError::Input(format!("Invalid SOCKS5 version in reply: {}", header[0])));
+            return Err(NetError::Input(format!(
+                "Invalid SOCKS5 version in reply: {}",
+                header[0]
+            )));
         }
         if header[1] != 0x00 {
-            return Err(NetError::Input(format!("SOCKS5 connection rejected with code: {}", header[1])));
+            return Err(NetError::Input(format!(
+                "SOCKS5 connection rejected with code: {}",
+                header[1]
+            )));
         }
 
         // Skip bound address & port
@@ -161,7 +181,10 @@ impl Socks5Proxy {
                 stream.read_exact(&mut bnd).await?;
             }
             other => {
-                return Err(NetError::Input(format!("Invalid SOCKS5 bound address type: {}", other)));
+                return Err(NetError::Input(format!(
+                    "Invalid SOCKS5 bound address type: {}",
+                    other
+                )));
             }
         }
 

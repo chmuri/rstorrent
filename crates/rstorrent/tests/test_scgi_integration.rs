@@ -158,10 +158,14 @@ async fn test_scgi_socket_load_raw_start() {
 
     let bencoded_torrent = {
         let mut info = lt_common::Object::create_map();
-        info.insert_key("name", lt_common::Object::from("scgi_load_torrent")).unwrap();
-        info.insert_key("length", lt_common::Object::from(1024i64)).unwrap();
-        info.insert_key("piece length", lt_common::Object::from(262144i64)).unwrap();
-        info.insert_key("pieces", lt_common::Object::from(vec![0xAAu8; 20])).unwrap();
+        info.insert_key("name", lt_common::Object::from("scgi_load_torrent"))
+            .unwrap();
+        info.insert_key("length", lt_common::Object::from(1024i64))
+            .unwrap();
+        info.insert_key("piece length", lt_common::Object::from(262144i64))
+            .unwrap();
+        info.insert_key("pieces", lt_common::Object::from(vec![0xAAu8; 20]))
+            .unwrap();
 
         let mut object = lt_common::Object::create_map();
         object.insert_key("info", info).unwrap();

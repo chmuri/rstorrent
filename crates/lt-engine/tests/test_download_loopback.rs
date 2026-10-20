@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use lt_common::hash_string::HashString;
 use lt_crypto::sha1::sha1_hash;
 use lt_engine::constructor::TorrentMetadata;
@@ -6,6 +5,7 @@ use lt_engine::download::DownloadState;
 use lt_engine::engine::EngineManager;
 use lt_net::addr::SocketAddress;
 use lt_protocol::connection::PeerConnection;
+use std::str::FromStr;
 
 #[test]
 fn test_download_loopback_e2e() {
@@ -82,7 +82,10 @@ fn test_download_loopback_e2e() {
     seeder_dl.lock().unwrap().add_peer(leecher_peer_view);
 
     // 5. Leecher delegates pieces from Seeder
-    let requested_pieces = leecher_dl.lock().unwrap().delegate_for_peer(seeder_engine.peer_id(), 4);
+    let requested_pieces = leecher_dl
+        .lock()
+        .unwrap()
+        .delegate_for_peer(seeder_engine.peer_id(), 4);
     assert_eq!(requested_pieces.len(), 2);
     assert_eq!(requested_pieces[0].index(), 0);
     assert_eq!(requested_pieces[1].index(), 1);
@@ -91,7 +94,9 @@ fn test_download_loopback_e2e() {
     for piece in &requested_pieces {
         let piece_data = if piece.index() == 0 { &piece0 } else { &piece1 };
         let mut ldl = leecher_dl.lock().unwrap();
-        let completed = ldl.receive_block(piece.index(), piece.offset(), piece_data).unwrap();
+        let completed = ldl
+            .receive_block(piece.index(), piece.offset(), piece_data)
+            .unwrap();
         assert!(completed);
     }
 

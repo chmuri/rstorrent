@@ -38,11 +38,7 @@ pub fn register_session_commands(
             name,
             move |_target, obj| {
                 let value = convert_to_string(obj)?;
-                s_set
-                    .lock()
-                    .unwrap()
-                    .set_path(&value)
-                    .map_err(io_error)?;
+                s_set.lock().unwrap().set_path(&value).map_err(io_error)?;
                 Ok(Object::create_empty())
             },
             FLAG_PUBLIC_RPC,
@@ -106,11 +102,13 @@ pub fn register_session_commands(
     map.insert_func(
         "session.on_completion",
         move |_target, _obj| {
-            Ok(Object::from(if completion_get.lock().unwrap().on_completion() {
-                1i64
-            } else {
-                0
-            }))
+            Ok(Object::from(
+                if completion_get.lock().unwrap().on_completion() {
+                    1i64
+                } else {
+                    0
+                },
+            ))
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
@@ -167,11 +165,13 @@ pub fn register_session_commands(
     map.insert_func(
         "session.use_fsyncdisk",
         move |_target, _obj| {
-            Ok(Object::from(if s_fsync_get.lock().unwrap().use_fsyncdisk() {
-                1i64
-            } else {
-                0
-            }))
+            Ok(Object::from(
+                if s_fsync_get.lock().unwrap().use_fsyncdisk() {
+                    1i64
+                } else {
+                    0
+                },
+            ))
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",

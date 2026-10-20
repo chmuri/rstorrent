@@ -101,7 +101,9 @@ async fn initial_seed_offers_one_piece_and_serves_it() {
     };
 
     stream
-        .write_all(&HandshakeMessage::new(*download.read().unwrap().info_hash(), remote_peer_id).encode())
+        .write_all(
+            &HandshakeMessage::new(*download.read().unwrap().info_hash(), remote_peer_id).encode(),
+        )
         .await
         .unwrap();
 

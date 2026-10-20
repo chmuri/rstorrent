@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use lt_common::Object;
 use crate::command::{flags::*, CommandEntry, CommandFn};
 use crate::error::RpcError;
 use crate::target::Target;
+use lt_common::Object;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[derive(Default, Clone)]
 pub struct CommandMap {
@@ -138,9 +138,10 @@ impl CommandMap {
         target: &Target,
         trusted: bool,
     ) -> Result<Object, RpcError> {
-        let entry = self.commands.get(key).ok_or_else(|| {
-            RpcError::InputError(format!("Command \"{}\" does not exist.", key))
-        })?;
+        let entry = self
+            .commands
+            .get(key)
+            .ok_or_else(|| RpcError::InputError(format!("Command \"{}\" does not exist.", key)))?;
 
         if !trusted && (entry.flags & FLAG_UNTRUSTED_SAFE == 0) {
             return Err(RpcError::UntrustedError(format!(
@@ -152,13 +153,7 @@ impl CommandMap {
         (entry.func)(target, arg)
     }
 
-    pub fn call_catch(
-        &self,
-        key: &str,
-        arg: &Object,
-        target: &Target,
-        trusted: bool,
-    ) -> Object {
+    pub fn call_catch(&self, key: &str, arg: &Object, target: &Target, trusted: bool) -> Object {
         match self.call_command(key, arg, target, trusted) {
             Ok(res) => res,
             Err(_) => Object::create_empty(),

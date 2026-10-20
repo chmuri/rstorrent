@@ -1,11 +1,11 @@
-use std::net::TcpListener;
-use std::time::Duration;
 use rstorrent::cli::Cli;
 use rstorrent::control::Control;
 use rt_grpc::command_service_client::CommandServiceClient;
 use rt_grpc::object_value;
 use rt_grpc::system_service_client::SystemServiceClient;
 use rt_grpc::{CommandRequest, Empty, ObjectValue};
+use std::net::TcpListener;
+use std::time::Duration;
 
 fn get_free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
@@ -64,7 +64,10 @@ async fn test_grpc_daemon_integration() {
         .into_inner();
 
     assert!(!list_resp.commands.is_empty());
-    assert!(list_resp.commands.iter().any(|cmd| cmd == "network.grpc.open_port"));
+    assert!(list_resp
+        .commands
+        .iter()
+        .any(|cmd| cmd == "network.grpc.open_port"));
 
     // Flood compatibility surface: expressions, sentinels and download getters.
     for command in [
@@ -76,7 +79,10 @@ async fn test_grpc_daemon_integration() {
         "d.creation_date",
         "d.timestamp.last_active",
     ] {
-        assert!(list_resp.commands.iter().any(|cmd| cmd == command), "missing {command}");
+        assert!(
+            list_resp.commands.iter().any(|cmd| cmd == command),
+            "missing {command}"
+        );
     }
 
     let string_arg = |value: &str| ObjectValue {
@@ -105,7 +111,8 @@ async fn test_grpc_daemon_integration() {
         "directory.default = {default_dir}"
     );
 
-    let magnet_uri = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Magnet%20Test";
+    let magnet_uri =
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Magnet%20Test";
     let add = command_client
         .execute(CommandRequest {
             command: "load.start_throw".to_string(),
@@ -185,7 +192,11 @@ async fn test_grpc_daemon_integration() {
         .await
         .expect("sequential set failed")
         .into_inner();
-    assert!(sequential.success, "sequential set failed: {}", sequential.error_message);
+    assert!(
+        sequential.success,
+        "sequential set failed: {}",
+        sequential.error_message
+    );
 
     let sequential_get = command_client
         .execute(CommandRequest {
@@ -229,7 +240,11 @@ async fn test_grpc_daemon_integration() {
         Some(object_value::Kind::ListValue(list)) => list.values,
         _ => panic!("multicall did not return a list"),
     };
-    assert!(remaining.is_empty(), "erased download still listed: {}", remaining.len());
+    assert!(
+        remaining.is_empty(),
+        "erased download still listed: {}",
+        remaining.len()
+    );
 
     let false_cmd = command_client
         .execute(CommandRequest {

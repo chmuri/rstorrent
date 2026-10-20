@@ -12,7 +12,8 @@ struct TempDirFixture {
 impl TempDirFixture {
     fn new() -> Self {
         let id = FIXTURE_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let temp_dir = std::env::temp_dir().join(format!("rtorrent_test_path_{}_{}", std::process::id(), id));
+        let temp_dir =
+            std::env::temp_dir().join(format!("rtorrent_test_path_{}_{}", std::process::id(), id));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
 
@@ -108,8 +109,14 @@ fn test_missing_path_throws() {
 fn test_missing_path_is_empty() {
     let fixture = TempDirFixture::new();
     assert_eq!("", resolve_path(""));
-    assert_eq!("", resolve_path(&format!("{}/does_not_exist", fixture.path.display())));
-    assert_eq!("", resolve_path(&format!("{}/does_not_exist/below", fixture.path.display())));
+    assert_eq!(
+        "",
+        resolve_path(&format!("{}/does_not_exist", fixture.path.display()))
+    );
+    assert_eq!(
+        "",
+        resolve_path(&format!("{}/does_not_exist/below", fixture.path.display()))
+    );
 
     let dangling = fixture.path.join("dangling");
     std::os::unix::fs::symlink(fixture.path.join("gone"), &dangling).unwrap();
@@ -136,26 +143,41 @@ fn test_commands() {
 
     assert_eq!(
         link_path.to_str().unwrap(),
-        map.call_command("directory.default", &Object::create_empty(), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "directory.default",
+            &Object::create_empty(),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 
     assert_eq!(
         data_canon,
-        map.call_command("directory.default.realpath.or_empty", &Object::create_empty(), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "directory.default.realpath.or_empty",
+            &Object::create_empty(),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 
     assert_eq!(
         data_canon,
-        map.call_command("directory.default.realpath.or_throw", &Object::create_empty(), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "directory.default.realpath.or_throw",
+            &Object::create_empty(),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 
     // Missing path
@@ -170,13 +192,23 @@ fn test_commands() {
 
     assert_eq!(
         "",
-        map.call_command("directory.default.realpath.or_empty", &Object::create_empty(), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "directory.default.realpath.or_empty",
+            &Object::create_empty(),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 
     assert!(map
-        .call_command("directory.default.realpath.or_throw", &Object::create_empty(), &Target::None, true)
+        .call_command(
+            "directory.default.realpath.or_throw",
+            &Object::create_empty(),
+            &Target::None,
+            true
+        )
         .is_err());
 }

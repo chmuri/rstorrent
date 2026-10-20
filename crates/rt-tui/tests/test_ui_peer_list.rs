@@ -137,10 +137,7 @@ fn test_sort_is_stable_for_equal_rates() {
         .iter()
         .map(|peer| peer.address.as_str())
         .collect();
-    assert_eq!(
-        addresses,
-        vec!["10.0.0.2:2", "10.0.0.3:3", "10.0.0.1:1"]
-    );
+    assert_eq!(addresses, vec!["10.0.0.2:2", "10.0.0.3:3", "10.0.0.1:1"]);
 }
 
 #[test]
@@ -237,16 +234,10 @@ fn test_action_key_mapping() {
 #[test]
 fn test_actions_report_missing_context() {
     let mut window = PeerListWindow::new();
-    assert_eq!(
-        window.disconnect_selected(),
-        PeerActionOutcome::NoSelection
-    );
+    assert_eq!(window.disconnect_selected(), PeerActionOutcome::NoSelection);
 
     window.set_peers(vec![peer(1, "10.0.0.1:1111")]);
-    assert_eq!(
-        window.disconnect_selected(),
-        PeerActionOutcome::NoDownload
-    );
+    assert_eq!(window.disconnect_selected(), PeerActionOutcome::NoDownload);
     assert_eq!(
         window.handle_action_key(b'd' as i32),
         Some(PeerActionOutcome::NoDownload)

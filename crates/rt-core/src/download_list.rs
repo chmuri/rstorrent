@@ -1,6 +1,6 @@
-use std::sync::{Arc, RwLock};
-use lt_common::hash_string::HashString;
 use crate::download::Download;
+use lt_common::hash_string::HashString;
+use std::sync::{Arc, RwLock};
 
 pub type DownloadEventListener = Arc<dyn Fn(&str, &Arc<RwLock<Download>>) + Send + Sync>;
 
@@ -332,11 +332,7 @@ impl DownloadList {
         self.check_hash_internal(download, true);
     }
 
-    fn check_hash_internal(
-        &self,
-        download: &Arc<RwLock<Download>>,
-        final_check: bool,
-    ) {
+    fn check_hash_internal(&self, download: &Arc<RwLock<Download>>, final_check: bool) {
         let (already_checking, was_done, is_open, erasing) = {
             let guard = download.read().unwrap();
             (
@@ -395,11 +391,7 @@ impl DownloadList {
             guard.set_hash_checking(false);
             guard.set_hash_checked(is_checked);
             guard.set_hash_failed(is_failed);
-            (
-                is_checked,
-                done,
-                guard.is_hash_checking(),
-            )
+            (is_checked, done, guard.is_hash_checking())
         };
 
         if result.is_err() || is_checking || !hash_checked {
@@ -441,10 +433,7 @@ mod tests {
 
     fn download(name: &str) -> Arc<RwLock<Download>> {
         let metadata = TorrentMetadata {
-            info_hash: HashString::from_hex(
-                "4242424242424242424242424242424242424242",
-            )
-            .unwrap(),
+            info_hash: HashString::from_hex("4242424242424242424242424242424242424242").unwrap(),
             name: name.into(),
             piece_length: 16384,
             pieces: vec![0u8; 20],

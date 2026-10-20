@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use crate::download::Download;
+use crate::download_list::DownloadList;
+use crate::manager::Manager;
+use crate::session::SessionManager;
+use crate::view_manager::ViewManager;
 use lt_common::encoding::{bytes_to_hex, encode_base64, is_valid_utf8};
 use lt_common::object::flags::{FLAG_AS_BINARY, FLAG_BASE64, FLAG_HEX};
 use lt_common::option_strings::{option_find_string, OptionEnum};
@@ -10,11 +10,11 @@ use lt_common::{HashString, Object};
 use rt_rpc::command_flags::*;
 use rt_rpc::parse_commands::parse_command;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError, Target};
-use crate::download::Download;
-use crate::download_list::DownloadList;
-use crate::manager::Manager;
-use crate::session::SessionManager;
-use crate::view_manager::ViewManager;
+use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 
 fn to_str(obj: &Object) -> Result<String, RpcError> {
     convert_to_string(obj)
@@ -188,8 +188,16 @@ fn escape_html_bytes(bytes: &[u8]) -> String {
             escaped.push(byte as char);
         } else {
             escaped.push('%');
-            escaped.push(char::from_digit((byte >> 4) as u32, 16).unwrap().to_ascii_uppercase());
-            escaped.push(char::from_digit((byte & 0x0f) as u32, 16).unwrap().to_ascii_uppercase());
+            escaped.push(
+                char::from_digit((byte >> 4) as u32, 16)
+                    .unwrap()
+                    .to_ascii_uppercase(),
+            );
+            escaped.push(
+                char::from_digit((byte & 0x0f) as u32, 16)
+                    .unwrap()
+                    .to_ascii_uppercase(),
+            );
         }
     }
     escaped
@@ -366,14 +374,18 @@ fn get_download(
     dl_list: &Arc<RwLock<DownloadList>>,
 ) -> Result<Arc<RwLock<Download>>, RpcError> {
     if let Target::Download(hash) = target {
-        dl_list.read().unwrap().find(hash).ok_or_else(|| {
-            RpcError::Custom {
+        dl_list
+            .read()
+            .unwrap()
+            .find(hash)
+            .ok_or_else(|| RpcError::Custom {
                 code: -500,
                 message: format!("Download '{}' not found", hash.to_hex()),
-            }
-        })
+            })
     } else {
-        Err(RpcError::InputError("Command requires Download target".into()))
+        Err(RpcError::InputError(
+            "Command requires Download target".into(),
+        ))
     }
 }
 
@@ -911,11 +923,7 @@ pub fn register_download_commands(
     map.insert_func(
         "d.custom.keys",
         move |target, obj| {
-            if !obj
-                .as_list()
-                .map(|list| list.is_empty())
-                .unwrap_or(true)
-            {
+            if !obj.as_list().map(|list| list.is_empty()).unwrap_or(true) {
                 return Err(RpcError::InputError(
                     "d.custom.keys takes no arguments.".into(),
                 ));
@@ -946,11 +954,7 @@ pub fn register_download_commands(
     map.insert_func(
         "d.custom.items",
         move |target, obj| {
-            if !obj
-                .as_list()
-                .map(|list| list.is_empty())
-                .unwrap_or(true)
-            {
+            if !obj.as_list().map(|list| list.is_empty()).unwrap_or(true) {
                 return Err(RpcError::InputError(
                     "d.custom.items takes no arguments.".into(),
                 ));
@@ -993,7 +997,9 @@ pub fn register_download_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("d.multicall2: missing arguments".into()));
+                return Err(RpcError::InputError(
+                    "d.multicall2: missing arguments".into(),
+                ));
             }
 
             let view_name = to_str(&list[0])?;
@@ -1134,7 +1140,16 @@ pub fn register_download_commands(
             let hashes: Vec<Object> = list_guard
                 .all()
                 .iter()
-                .map(|dl| Object::from(dl.read().unwrap().info_hash().to_hex().to_uppercase().as_str()))
+                .map(|dl| {
+                    Object::from(
+                        dl.read()
+                            .unwrap()
+                            .info_hash()
+                            .to_hex()
+                            .to_uppercase()
+                            .as_str(),
+                    )
+                })
                 .collect();
             Ok(Object::create_list_with(hashes))
         },
@@ -1150,7 +1165,14 @@ pub fn register_download_commands(
     map.insert_func(
         "load.start",
         move |_target, obj| {
-            apply_load_command(obj, true, false, &dl_load_start, &vm_load_start, &map_load_start)
+            apply_load_command(
+                obj,
+                true,
+                false,
+                &dl_load_start,
+                &vm_load_start,
+                &map_load_start,
+            )
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
         "<path>",
@@ -1167,7 +1189,14 @@ pub fn register_download_commands(
     map.insert_func(
         "load.normal",
         move |_target, obj| {
-            apply_load_command(obj, false, false, &dl_load_norm, &vm_load_norm, &map_load_norm)
+            apply_load_command(
+                obj,
+                false,
+                false,
+                &dl_load_norm,
+                &vm_load_norm,
+                &map_load_norm,
+            )
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
         "<path>",
@@ -1184,7 +1213,14 @@ pub fn register_download_commands(
     map.insert_func(
         "load.raw_start",
         move |_target, obj| {
-            apply_load_command(obj, true, true, &dl_raw_start, &vm_raw_start, &map_raw_start)
+            apply_load_command(
+                obj,
+                true,
+                true,
+                &dl_raw_start,
+                &vm_raw_start,
+                &map_raw_start,
+            )
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
         "<raw_data>",
@@ -1199,9 +1235,7 @@ pub fn register_download_commands(
     let map_raw = Arc::clone(&map_clone);
     map.insert_func(
         "load.raw",
-        move |_target, obj| {
-            apply_load_command(obj, false, true, &dl_raw, &vm_raw, &map_raw)
-        },
+        move |_target, obj| apply_load_command(obj, false, true, &dl_raw, &vm_raw, &map_raw),
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
         "<raw_data>",
         "Load a torrent from raw data without starting.",
@@ -1376,15 +1410,16 @@ fn apply_load_command(
     let (payload_bytes, torrent_path, commands): (Option<Vec<u8>>, Option<String>, Vec<String>) =
         if let Ok(list) = obj.as_list() {
             if list.is_empty() {
-                return Err(RpcError::InputError("Empty arguments for load command".into()));
+                return Err(RpcError::InputError(
+                    "Empty arguments for load command".into(),
+                ));
             }
-            let (target_or_payload, cmd_start_idx) = if list.len() >= 2
-                && target_is_empty_or_placeholder(&list[0])
-            {
-                (&list[1], 2)
-            } else {
-                (&list[0], 1)
-            };
+            let (target_or_payload, cmd_start_idx) =
+                if list.len() >= 2 && target_is_empty_or_placeholder(&list[0]) {
+                    (&list[1], 2)
+                } else {
+                    (&list[0], 1)
+                };
 
             let mut cmds = Vec::new();
             for item in &list[cmd_start_idx..] {
@@ -1426,17 +1461,17 @@ fn apply_load_command(
         }
         if trimmed.starts_with("data:") {
             let decoded = decode_data_uri(trimmed)?;
-            factory
-                .load_raw_data(&decoded)
-                .map_err(|e| RpcError::InputError(format!("Failed to load torrent data URI: {}", e)))?;
+            factory.load_raw_data(&decoded).map_err(|e| {
+                RpcError::InputError(format!("Failed to load torrent data URI: {}", e))
+            })?;
         } else if trimmed.starts_with("magnet:?") {
-            factory
-                .load_magnet(trimmed)
-                .map_err(|e| RpcError::InputError(format!("Failed to load magnet '{}': {}", trimmed, e)))?;
+            factory.load_magnet(trimmed).map_err(|e| {
+                RpcError::InputError(format!("Failed to load magnet '{}': {}", trimmed, e))
+            })?;
         } else {
-            factory
-                .load_file(trimmed)
-                .map_err(|e| RpcError::InputError(format!("Failed to load torrent file '{}': {}", trimmed, e)))?;
+            factory.load_file(trimmed).map_err(|e| {
+                RpcError::InputError(format!("Failed to load torrent file '{}': {}", trimmed, e))
+            })?;
         }
     } else {
         return Err(RpcError::InputError("No torrent payload provided".into()));
@@ -1457,8 +1492,14 @@ fn apply_load_command(
                             let map_guard = command_map.read().unwrap();
                             for cmd in commands {
                                 if !cmd.trim().is_empty() {
-                                    if let Err(e) = rt_rpc::parse_command_multiple(&cmd, &target, &map_guard, true) {
-                                        tracing::warn!("Command on existing torrent failed: '{}': {}", cmd, e);
+                                    if let Err(e) = rt_rpc::parse_command_multiple(
+                                        &cmd, &target, &map_guard, true,
+                                    ) {
+                                        tracing::warn!(
+                                            "Command on existing torrent failed: '{}': {}",
+                                            cmd,
+                                            e
+                                        );
                                     }
                                 }
                             }
@@ -1471,7 +1512,12 @@ fn apply_load_command(
                 }
                 return Ok(Object::from(0i64));
             }
-            Err(e) => return Err(RpcError::InputError(format!("Failed to commit download: {}", e))),
+            Err(e) => {
+                return Err(RpcError::InputError(format!(
+                    "Failed to commit download: {}",
+                    e
+                )))
+            }
         }
     };
 
@@ -1480,7 +1526,9 @@ fn apply_load_command(
     }
 
     let hash = *dl_arc.read().unwrap().info_hash();
-    vm.write().unwrap().insert_download_to_all(Arc::clone(&dl_arc));
+    vm.write()
+        .unwrap()
+        .insert_download_to_all(Arc::clone(&dl_arc));
 
     // Execute any attached commands on the newly created download
     if !commands.is_empty() {
@@ -1503,7 +1551,10 @@ fn apply_load_command(
     Ok(Object::from(0i64))
 }
 
-fn get_up_rate_download(target: &Target, dl_list: &Arc<RwLock<DownloadList>>) -> Result<u64, RpcError> {
+fn get_up_rate_download(
+    target: &Target,
+    dl_list: &Arc<RwLock<DownloadList>>,
+) -> Result<u64, RpcError> {
     let dl = get_download(target, dl_list)?;
     let rate = dl.read().unwrap().rate_up();
     Ok(rate)
@@ -1564,12 +1615,14 @@ fn apply_close_low_diskspace_command(
     Ok(Object::from(closed as i64))
 }
 
-fn get_down_rate_download(target: &Target, dl_list: &Arc<RwLock<DownloadList>>) -> Result<u64, RpcError> {
+fn get_down_rate_download(
+    target: &Target,
+    dl_list: &Arc<RwLock<DownloadList>>,
+) -> Result<u64, RpcError> {
     let dl = get_download(target, dl_list)?;
     let rate = dl.read().unwrap().rate_down();
     Ok(rate)
 }
-
 
 fn add_getter<F>(
     map: &mut CommandMap,
@@ -1708,15 +1761,18 @@ fn register_download_extended_commands(
     // register function. Keep a clone of the current map so `d.group.name` can
     // query `choke_group.list` and observe groups added after registration.
     if map.has("choke_group.list") {
-        overrides.write().unwrap().group_commands =
-            Some(Arc::new(RwLock::new(map.clone())));
+        overrides.write().unwrap().group_commands = Some(Arc::new(RwLock::new(map.clone())));
     }
 
     add_getter(map, download_list, "d.is_hash_checking", |dl| {
         Object::from(if dl.is_hash_checking() { 1i64 } else { 0 })
     })?;
     add_getter(map, download_list, "d.is_meta", |dl| {
-        Object::from(if dl.metadata().is_meta_download { 1i64 } else { 0 })
+        Object::from(if dl.metadata().is_meta_download {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_getter(map, download_list, "d.is_multi_file", |dl| {
         Object::from(if dl.metadata().is_multi_file { 1i64 } else { 0 })
@@ -1732,7 +1788,13 @@ fn register_download_extended_commands(
             .complete
             .get(dl.info_hash())
             .copied()
-            .unwrap_or_else(|| if dl.is_hash_checking() { false } else { dl.is_done() });
+            .unwrap_or_else(|| {
+                if dl.is_hash_checking() {
+                    false
+                } else {
+                    dl.is_done()
+                }
+            });
         Object::from(if complete { 1i64 } else { 0 })
     })?;
     let ov_incomplete = Arc::clone(overrides);
@@ -1743,14 +1805,19 @@ fn register_download_extended_commands(
             .complete
             .get(dl.info_hash())
             .copied()
-            .unwrap_or_else(|| if dl.is_hash_checking() { false } else { dl.is_done() });
+            .unwrap_or_else(|| {
+                if dl.is_hash_checking() {
+                    false
+                } else {
+                    dl.is_done()
+                }
+            });
         Object::from(if complete { 0i64 } else { 1 })
     })?;
     let ov_complete_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.complete.set", move |dl, obj| {
-        let complete = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?
-            != 0;
+        let complete =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))? != 0;
         ov_complete_set
             .write()
             .unwrap()
@@ -1759,22 +1826,18 @@ fn register_download_extended_commands(
         Ok(())
     })?;
     add_getter(map, download_list, "d.is_partially_done", |dl| {
-        Object::from(
-            if dl.downloaded_bytes() > 0 && !dl.is_done() {
-                1i64
-            } else {
-                0
-            },
-        )
+        Object::from(if dl.downloaded_bytes() > 0 && !dl.is_done() {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_getter(map, download_list, "d.is_not_partially_done", |dl| {
-        Object::from(
-            if dl.downloaded_bytes() == 0 || dl.is_done() {
-                1i64
-            } else {
-                0
-            },
-        )
+        Object::from(if dl.downloaded_bytes() == 0 || dl.is_done() {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_getter(map, download_list, "d.left_bytes", |dl| {
         let total = dl.metadata().total_size;
@@ -1905,8 +1968,8 @@ fn register_download_extended_commands(
     })?;
     let ov_mode_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.mode.set", move |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if !(0..=3).contains(&value) {
             return Err(RpcError::InputError(
                 "d.mode.set: mode must be between 0 and 3.".into(),
@@ -1932,17 +1995,22 @@ fn register_download_extended_commands(
         Object::from(if ignore { 1i64 } else { 0 })
     })?;
     let ov_ignore_set = Arc::clone(overrides);
-    add_setter(map, download_list, "d.ignore_commands.set", move |dl, obj| {
-        let ignore = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?
-            != 0;
-        ov_ignore_set
-            .write()
-            .unwrap()
-            .ignore_commands
-            .insert(*dl.info_hash(), ignore);
-        Ok(())
-    })?;
+    add_setter(
+        map,
+        download_list,
+        "d.ignore_commands.set",
+        move |dl, obj| {
+            let ignore = convert_to_value(obj, 10, 1)
+                .map_err(|err| RpcError::InputError(err.to_string()))?
+                != 0;
+            ov_ignore_set
+                .write()
+                .unwrap()
+                .ignore_commands
+                .insert(*dl.info_hash(), ignore);
+            Ok(())
+        },
+    )?;
 
     // Per-download choke heuristics. The engine does not retain a per-download
     // heuristic selector yet, so the legacy bencode-backed values are kept in
@@ -1959,15 +2027,20 @@ fn register_download_extended_commands(
         Object::from(value)
     })?;
     let ov_up_heur_set = Arc::clone(overrides);
-    add_setter(map, download_list, "d.up.choke_heuristics.set", move |dl, obj| {
-        let value = valid_heuristic(&to_str(obj)?, OptionEnum::ChokeHeuristicsUpload)?;
-        ov_up_heur_set
-            .write()
-            .unwrap()
-            .up_choke_heuristics
-            .insert(*dl.info_hash(), value);
-        Ok(())
-    })?;
+    add_setter(
+        map,
+        download_list,
+        "d.up.choke_heuristics.set",
+        move |dl, obj| {
+            let value = valid_heuristic(&to_str(obj)?, OptionEnum::ChokeHeuristicsUpload)?;
+            ov_up_heur_set
+                .write()
+                .unwrap()
+                .up_choke_heuristics
+                .insert(*dl.info_hash(), value);
+            Ok(())
+        },
+    )?;
 
     let ov_down_heur = Arc::clone(overrides);
     add_getter(map, download_list, "d.down.sequential", |dl| {
@@ -1994,8 +2067,7 @@ fn register_download_extended_commands(
         download_list,
         "d.down.choke_heuristics.set",
         move |dl, obj| {
-            let value =
-                valid_heuristic(&to_str(obj)?, OptionEnum::ChokeHeuristicsDownload)?;
+            let value = valid_heuristic(&to_str(obj)?, OptionEnum::ChokeHeuristicsDownload)?;
             ov_down_heur_set
                 .write()
                 .unwrap()
@@ -2113,12 +2185,9 @@ fn register_download_extended_commands(
             move |dl| path_object(&base_filename_bytes(dl), variant),
         )?;
         if !suffix.is_empty() {
-            add_getter(
-                map,
-                download_list,
-                &format!("d.name{suffix}"),
-                move |dl| path_object(dl.name().as_bytes(), variant),
-            )?;
+            add_getter(map, download_list, &format!("d.name{suffix}"), move |dl| {
+                path_object(dl.name().as_bytes(), variant)
+            })?;
         }
     }
 
@@ -2371,14 +2440,24 @@ fn register_download_extended_commands(
         dl.set_accepting_seeders(value);
         Ok(())
     })?;
-    add_setter(map, download_list, "d.accepting_seeders.enable", |dl, _obj| {
-        dl.set_accepting_seeders(true);
-        Ok(())
-    })?;
-    add_setter(map, download_list, "d.accepting_seeders.disable", |dl, _obj| {
-        dl.set_accepting_seeders(false);
-        Ok(())
-    })?;
+    add_setter(
+        map,
+        download_list,
+        "d.accepting_seeders.enable",
+        |dl, _obj| {
+            dl.set_accepting_seeders(true);
+            Ok(())
+        },
+    )?;
+    add_setter(
+        map,
+        download_list,
+        "d.accepting_seeders.disable",
+        |dl, _obj| {
+            dl.set_accepting_seeders(false);
+            Ok(())
+        },
+    )?;
     add_getter(map, download_list, "d.connection_leech", |dl| {
         Object::from(dl.connection_seed().to_string())
     })?;
@@ -2398,9 +2477,7 @@ fn register_download_extended_commands(
         let count = if dl.is_hash_checking() {
             0
         } else {
-            dl.download()
-                .chunk_statistics()
-                .accounted() as i64
+            dl.download().chunk_statistics().accounted() as i64
         };
         Object::from(count)
     })?;
@@ -2414,9 +2491,7 @@ fn register_download_extended_commands(
         let count = if dl.is_hash_checking() {
             0
         } else {
-            dl.download()
-                .chunk_statistics()
-                .complete() as i64
+            dl.download().chunk_statistics().complete() as i64
         };
         Object::from(count)
     })?;
@@ -2478,13 +2553,21 @@ fn register_download_extended_commands(
         Object::from(tracker.group() as i64)
     })?;
     add_indexed_tracker_getter(map, download_list, "d.tracker_is_enabled", |tracker| {
-        Object::from(if tracker.state().is_enabled() { 1i64 } else { 0 })
+        Object::from(if tracker.state().is_enabled() {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_indexed_tracker_getter(map, download_list, "d.tracker_is_usable", |tracker| {
         Object::from(if tracker.is_usable() { 1i64 } else { 0 })
     })?;
     add_indexed_tracker_getter(map, download_list, "d.tracker_is_extra", |tracker| {
-        Object::from(if tracker.state().is_extra_tracker() { 1i64 } else { 0 })
+        Object::from(if tracker.state().is_extra_tracker() {
+            1i64
+        } else {
+            0
+        })
     })?;
     let ov_pex_active = Arc::clone(overrides);
     add_getter(map, download_list, "d.is_pex_active", move |dl| {
@@ -2504,12 +2587,17 @@ fn register_download_extended_commands(
         dl.set_timestamp_started(to_u64(obj)?);
         Ok(())
     })?;
-    add_setter(map, download_list, "d.timestamp.started.set_if_z", |dl, obj| {
-        if dl.timestamp_started() == 0 {
-            dl.set_timestamp_started(to_u64(obj)?);
-        }
-        Ok(())
-    })?;
+    add_setter(
+        map,
+        download_list,
+        "d.timestamp.started.set_if_z",
+        |dl, obj| {
+            if dl.timestamp_started() == 0 {
+                dl.set_timestamp_started(to_u64(obj)?);
+            }
+            Ok(())
+        },
+    )?;
     add_getter(map, download_list, "d.timestamp.started.or_zero", |dl| {
         Object::from(dl.timestamp_started() as i64)
     })?;
@@ -2520,12 +2608,17 @@ fn register_download_extended_commands(
         dl.set_timestamp_finished(to_u64(obj)?);
         Ok(())
     })?;
-    add_setter(map, download_list, "d.timestamp.finished.set_if_z", |dl, obj| {
-        if dl.timestamp_finished() == 0 {
-            dl.set_timestamp_finished(to_u64(obj)?);
-        }
-        Ok(())
-    })?;
+    add_setter(
+        map,
+        download_list,
+        "d.timestamp.finished.set_if_z",
+        |dl, obj| {
+            if dl.timestamp_finished() == 0 {
+                dl.set_timestamp_finished(to_u64(obj)?);
+            }
+            Ok(())
+        },
+    )?;
     add_getter(map, download_list, "d.timestamp.finished.or_zero", |dl| {
         Object::from(dl.timestamp_finished() as i64)
     })?;
@@ -2560,11 +2653,7 @@ fn register_download_extended_commands(
     let ov_group_names = Arc::clone(overrides);
     add_getter(map, download_list, "d.group.name", move |dl| {
         let index = dl.group() as usize;
-        let group_commands = ov_group_names
-            .read()
-            .unwrap()
-            .group_commands
-            .clone();
+        let group_commands = ov_group_names.read().unwrap().group_commands.clone();
         let name = group_commands.and_then(|commands| {
             let map = commands.read().unwrap();
             let names = map
@@ -2627,25 +2716,29 @@ fn register_download_extended_commands(
         Ok(())
     })?;
     add_setter(map, download_list, "d.peers_min.set", |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if !(0..=65536).contains(&value) {
             return Err(RpcError::InputError(
                 "d.peers_min.set: value must be between 0 and 65536.".into(),
             ));
         }
-        dl.download_mut().client_config_mut().set_min_peers(value as u32);
+        dl.download_mut()
+            .client_config_mut()
+            .set_min_peers(value as u32);
         Ok(())
     })?;
     add_setter(map, download_list, "d.peers_max.set", |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if !(0..=65536).contains(&value) {
             return Err(RpcError::InputError(
                 "d.peers_max.set: value must be between 0 and 65536.".into(),
             ));
         }
-        dl.download_mut().client_config_mut().set_max_peers(value as u32);
+        dl.download_mut()
+            .client_config_mut()
+            .set_max_peers(value as u32);
         Ok(())
     })?;
     add_setter(map, download_list, "d.connection_current.set", |dl, obj| {
@@ -2723,9 +2816,8 @@ fn register_download_extended_commands(
     })?;
     let ov_pex_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.peer_exchange.set", move |dl, obj| {
-        let enabled = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?
-            != 0;
+        let enabled =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))? != 0;
         ov_pex_set
             .write()
             .unwrap()
@@ -2747,8 +2839,8 @@ fn register_download_extended_commands(
     })?;
     let ov_max_pex_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.max_size_pex.set", move |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if !(0..=u32::MAX as i64).contains(&value) {
             return Err(RpcError::InputError("Invalid max PEX size.".into()));
         }
@@ -2766,7 +2858,13 @@ fn register_download_extended_commands(
     // restore the legacy bencode variable.
     let ov_hashing = Arc::clone(overrides);
     add_getter(map, download_list, "d.hashing", move |dl| {
-        if let Some(value) = ov_hashing.read().unwrap().hashing.get(dl.info_hash()).copied() {
+        if let Some(value) = ov_hashing
+            .read()
+            .unwrap()
+            .hashing
+            .get(dl.info_hash())
+            .copied()
+        {
             return Object::from(value);
         }
 
@@ -2781,8 +2879,8 @@ fn register_download_extended_commands(
     })?;
     let ov_hashing_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.hashing.set", move |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if !(0..=3).contains(&value) {
             return Err(RpcError::InputError(
                 "d.hashing.set: value must be between 0 and 3.".into(),
@@ -2799,9 +2897,8 @@ fn register_download_extended_commands(
         Object::from(if dl.is_hash_failed() { 1i64 } else { 0 })
     })?;
     add_setter(map, download_list, "d.hashing_failed.set", |dl, obj| {
-        let failed = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?
-            != 0;
+        let failed =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))? != 0;
         dl.set_hash_failed(failed);
         Ok(())
     })?;
@@ -2815,8 +2912,8 @@ fn register_download_extended_commands(
         Object::from(val)
     })?;
     add_setter(map, download_list, "d.uploads_max.set", |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if value < 0 {
             return Err(RpcError::InputError("Invalid uploads_max.".into()));
         }
@@ -2834,8 +2931,8 @@ fn register_download_extended_commands(
         Object::from(val)
     })?;
     add_setter(map, download_list, "d.downloads_max.set", |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if value < 0 {
             return Err(RpcError::InputError("Invalid downloads_max.".into()));
         }
@@ -2858,8 +2955,8 @@ fn register_download_extended_commands(
     })?;
     let ov_uploads_min_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.uploads_min.set", move |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if value < 0 {
             return Err(RpcError::InputError("Invalid uploads_min.".into()));
         }
@@ -2884,8 +2981,8 @@ fn register_download_extended_commands(
     })?;
     let ov_downloads_min_set = Arc::clone(overrides);
     add_setter(map, download_list, "d.downloads_min.set", move |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if value < 0 {
             return Err(RpcError::InputError("Invalid downloads_min.".into()));
         }
@@ -2985,45 +3082,46 @@ fn register_download_extended_commands(
 
     // Per-download tracker controller commands.
     add_getter(map, download_list, "d.tracker.has_active", |dl| {
-        Object::from(if dl
-            .download()
-            .tracker_controller()
-            .tracker_list
-            .has_active()
-        {
-            1i64
-        } else {
-            0
-        })
+        Object::from(
+            if dl.download().tracker_controller().tracker_list.has_active() {
+                1i64
+            } else {
+                0
+            },
+        )
     })?;
-    add_getter(map, download_list, "d.tracker.has_active_not_scrape", |dl| {
-        Object::from(if dl
-            .download()
-            .tracker_controller()
-            .tracker_list
-            .has_active_not_scrape()
-        {
-            1i64
-        } else {
-            0
-        })
-    })?;
+    add_getter(
+        map,
+        download_list,
+        "d.tracker.has_active_not_scrape",
+        |dl| {
+            Object::from(
+                if dl
+                    .download()
+                    .tracker_controller()
+                    .tracker_list
+                    .has_active_not_scrape()
+                {
+                    1i64
+                } else {
+                    0
+                },
+            )
+        },
+    )?;
     add_getter(map, download_list, "d.tracker.has_usable", |dl| {
-        Object::from(if dl
-            .download()
-            .tracker_controller()
-            .tracker_list
-            .has_usable()
-        {
-            1i64
-        } else {
-            0
-        })
+        Object::from(
+            if dl.download().tracker_controller().tracker_list.has_usable() {
+                1i64
+            } else {
+                0
+            },
+        )
     })?;
 
     add_setter(map, download_list, "d.tracker_numwant.set", |dl, obj| {
-        let value = convert_to_value(obj, 10, 1)
-            .map_err(|err| RpcError::InputError(err.to_string()))?;
+        let value =
+            convert_to_value(obj, 10, 1).map_err(|err| RpcError::InputError(err.to_string()))?;
         if !(-1..=1000).contains(&value) {
             return Err(RpcError::InputError("Invalid tracker numwant.".into()));
         }
@@ -3091,11 +3189,15 @@ fn register_download_extended_commands(
     )?;
 
     add_action(map, download_list, "d.tracker_announce", |dl| {
-        dl.download_mut().tracker_controller_mut().manual_request(false);
+        dl.download_mut()
+            .tracker_controller_mut()
+            .manual_request(false);
         Ok(())
     })?;
     add_action(map, download_list, "d.tracker_announce.force", |dl| {
-        dl.download_mut().tracker_controller_mut().manual_request(true);
+        dl.download_mut()
+            .tracker_controller_mut()
+            .manual_request(true);
         Ok(())
     })?;
 

@@ -53,11 +53,10 @@ impl RawBencode {
                 actual: "non-string",
             });
         }
-        let colon_pos = self
-            .0
-            .iter()
-            .position(|&b| b == b':')
-            .ok_or_else(|| BencodeError::InvalidData("Invalid bencode in raw_bencode".into()))?;
+        let colon_pos =
+            self.0.iter().position(|&b| b == b':').ok_or_else(|| {
+                BencodeError::InvalidData("Invalid bencode in raw_bencode".into())
+            })?;
         Ok(RawString(self.0[colon_pos + 1..].to_vec()))
     }
 

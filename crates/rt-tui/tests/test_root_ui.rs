@@ -84,8 +84,10 @@ fn test_root_ui_navigation_and_shortcuts() {
 #[test]
 fn test_root_ui_colors_are_applied_on_redraw() {
     let mut ui = RootUI::new();
-    ui.set_ui_color(ColorKind::Title, "bold white on blue").unwrap();
-    ui.set_ui_color(ColorKind::Footer, "black on yellow").unwrap();
+    ui.set_ui_color(ColorKind::Title, "bold white on blue")
+        .unwrap();
+    ui.set_ui_color(ColorKind::Footer, "black on yellow")
+        .unwrap();
 
     let mut canvas = Canvas::new(0, 0, 80, 24);
     ui.balance_and_redraw(&mut canvas);

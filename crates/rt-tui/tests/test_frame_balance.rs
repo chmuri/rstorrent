@@ -4,15 +4,33 @@ use std::sync::{Arc, Mutex};
 #[test]
 fn test_standard_three_row_layout_80x24() {
     // Header: 1 row static
-    let header_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 80, 1, EXTENT_FULL, 1)));
+    let header_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        80,
+        1,
+        EXTENT_FULL,
+        1,
+    )));
     let header = Frame::with_window(header_win.clone());
 
     // Main: dynamic height
-    let main_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 80, 5, EXTENT_FULL, EXTENT_FULL)));
+    let main_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        80,
+        5,
+        EXTENT_FULL,
+        EXTENT_FULL,
+    )));
     let main = Frame::with_window(main_win.clone());
 
     // Status: 1 row static with FLAG_BOTTOM
-    let status_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE | FLAG_BOTTOM, 80, 1, EXTENT_FULL, 1)));
+    let status_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE | FLAG_BOTTOM,
+        80,
+        1,
+        EXTENT_FULL,
+        1,
+    )));
     let status = Frame::with_window(status_win.clone());
 
     let mut root = Frame::with_row(vec![header, main, status]);
@@ -48,13 +66,31 @@ fn test_standard_three_row_layout_80x24() {
 
 #[test]
 fn test_standard_three_row_layout_120x40() {
-    let header_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 120, 1, EXTENT_FULL, 1)));
+    let header_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        120,
+        1,
+        EXTENT_FULL,
+        1,
+    )));
     let header = Frame::with_window(header_win.clone());
 
-    let main_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 120, 5, EXTENT_FULL, EXTENT_FULL)));
+    let main_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        120,
+        5,
+        EXTENT_FULL,
+        EXTENT_FULL,
+    )));
     let main = Frame::with_window(main_win.clone());
 
-    let status_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE | FLAG_BOTTOM, 120, 1, EXTENT_FULL, 1)));
+    let status_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE | FLAG_BOTTOM,
+        120,
+        1,
+        EXTENT_FULL,
+        1,
+    )));
     let status = Frame::with_window(status_win.clone());
 
     let mut root = Frame::with_row(vec![header, main, status]);
@@ -87,13 +123,31 @@ fn test_standard_three_row_layout_120x40() {
 
 #[test]
 fn test_tight_resolution_10x5() {
-    let header_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 10, 1, EXTENT_FULL, 1)));
+    let header_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        10,
+        1,
+        EXTENT_FULL,
+        1,
+    )));
     let header = Frame::with_window(header_win.clone());
 
-    let main_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 10, 1, EXTENT_FULL, EXTENT_FULL)));
+    let main_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        10,
+        1,
+        EXTENT_FULL,
+        EXTENT_FULL,
+    )));
     let main = Frame::with_window(main_win.clone());
 
-    let status_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE | FLAG_BOTTOM, 10, 1, EXTENT_FULL, 1)));
+    let status_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE | FLAG_BOTTOM,
+        10,
+        1,
+        EXTENT_FULL,
+        1,
+    )));
     let status = Frame::with_window(status_win.clone());
 
     let mut root = Frame::with_row(vec![header, main, status]);
@@ -127,7 +181,13 @@ fn test_tight_resolution_10x5() {
 #[test]
 fn test_column_layout_split() {
     // Left column dynamic 20..100
-    let left_win = Arc::new(Mutex::new(BaseWindow::new(FLAG_ACTIVE, 20, 24, EXTENT_FULL, 24)));
+    let left_win = Arc::new(Mutex::new(BaseWindow::new(
+        FLAG_ACTIVE,
+        20,
+        24,
+        EXTENT_FULL,
+        24,
+    )));
     let left = Frame::with_window(left_win.clone());
 
     // Right column static 30

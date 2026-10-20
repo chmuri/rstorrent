@@ -119,8 +119,16 @@ fn multi_file_pieces_are_written_relative_to_save_directory() {
         total_size: 16,
         is_multi_file: true,
         files: vec![
-            TorrentFileEntry { path: file_a, length: 5, offset: 0 },
-            TorrentFileEntry { path: file_b, length: 11, offset: 5 },
+            TorrentFileEntry {
+                path: file_a,
+                length: 5,
+                offset: 0,
+            },
+            TorrentFileEntry {
+                path: file_b,
+                length: 11,
+                offset: 5,
+            },
         ],
         announce: None,
         announce_list: Vec::new(),
@@ -257,10 +265,8 @@ fn async_hash_results_apply_and_stale_generations_are_discarded() {
     let metadata = many_piece_metadata(piece_length, pieces, "async_hash");
     let mut download = Download::new(metadata);
 
-    let root = std::env::temp_dir().join(format!(
-        "rtorrent_engine_disk_hash_{}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("rtorrent_engine_disk_hash_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
 

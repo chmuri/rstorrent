@@ -1,9 +1,9 @@
-use std::sync::{Arc, RwLock};
+use crate::download::Download;
 use lt_common::hash_string::HashString;
 use lt_common::Object;
 use rt_rpc::parse_commands::parse_command;
 use rt_rpc::{CommandMap, Target};
-use crate::download::Download;
+use std::sync::{Arc, RwLock};
 
 pub type SlotChanged = Box<dyn Fn() + Send + Sync>;
 

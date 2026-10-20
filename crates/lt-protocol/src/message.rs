@@ -33,18 +33,43 @@ pub enum PeerMessage {
     Unchoke,
     Interested,
     NotInterested,
-    Have { index: u32 },
+    Have {
+        index: u32,
+    },
     Bitfield(Vec<u8>),
-    Request { index: u32, begin: u32, length: u32 },
-    Piece { index: u32, begin: u32, data: Vec<u8> },
-    Cancel { index: u32, begin: u32, length: u32 },
+    Request {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
+    Piece {
+        index: u32,
+        begin: u32,
+        data: Vec<u8>,
+    },
+    Cancel {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
     Port(u16),
-    Extended { id: u8, payload: Vec<u8> },
-    SuggestPiece { index: u32 },
+    Extended {
+        id: u8,
+        payload: Vec<u8>,
+    },
+    SuggestPiece {
+        index: u32,
+    },
     HaveAll,
     HaveNone,
-    RejectRequest { index: u32, begin: u32, length: u32 },
-    AllowedFast { index: u32 },
+    RejectRequest {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
+    AllowedFast {
+        index: u32,
+    },
 }
 
 impl PeerMessage {
@@ -82,7 +107,11 @@ impl PeerMessage {
                 buf.put_slice(data);
                 buf.to_vec()
             }
-            PeerMessage::Request { index, begin, length } => {
+            PeerMessage::Request {
+                index,
+                begin,
+                length,
+            } => {
                 let mut buf = BytesMut::with_capacity(17);
                 buf.put_u32(13);
                 buf.put_u8(MSG_REQUEST);
@@ -100,7 +129,11 @@ impl PeerMessage {
                 buf.put_slice(data);
                 buf.to_vec()
             }
-            PeerMessage::Cancel { index, begin, length } => {
+            PeerMessage::Cancel {
+                index,
+                begin,
+                length,
+            } => {
                 let mut buf = BytesMut::with_capacity(17);
                 buf.put_u32(13);
                 buf.put_u8(MSG_CANCEL);
@@ -133,7 +166,11 @@ impl PeerMessage {
             }
             PeerMessage::HaveAll => vec![0, 0, 0, 1, MSG_HAVE_ALL],
             PeerMessage::HaveNone => vec![0, 0, 0, 1, MSG_HAVE_NONE],
-            PeerMessage::RejectRequest { index, begin, length } => {
+            PeerMessage::RejectRequest {
+                index,
+                begin,
+                length,
+            } => {
                 let mut buf = BytesMut::with_capacity(17);
                 buf.put_u32(13);
                 buf.put_u8(MSG_REJECT_REQUEST);
@@ -180,7 +217,11 @@ impl PeerMessage {
                 let index = payload.get_u32();
                 let begin = payload.get_u32();
                 let length = payload.get_u32();
-                Ok(PeerMessage::Request { index, begin, length })
+                Ok(PeerMessage::Request {
+                    index,
+                    begin,
+                    length,
+                })
             }
             MSG_PIECE => {
                 if payload.len() < 8 {
@@ -204,7 +245,11 @@ impl PeerMessage {
                 let index = payload.get_u32();
                 let begin = payload.get_u32();
                 let length = payload.get_u32();
-                Ok(PeerMessage::Cancel { index, begin, length })
+                Ok(PeerMessage::Cancel {
+                    index,
+                    begin,
+                    length,
+                })
             }
             MSG_PORT => {
                 if payload.len() < 2 {
@@ -217,21 +262,44 @@ impl PeerMessage {
                 Ok(PeerMessage::Port(port))
             }
             MSG_SUGGEST_PIECE => {
-                if payload.len() < 4 { return Err(MessageError::PayloadTooShort { expected: 4, actual: payload.len() }); }
-                Ok(PeerMessage::SuggestPiece { index: payload.get_u32() })
+                if payload.len() < 4 {
+                    return Err(MessageError::PayloadTooShort {
+                        expected: 4,
+                        actual: payload.len(),
+                    });
+                }
+                Ok(PeerMessage::SuggestPiece {
+                    index: payload.get_u32(),
+                })
             }
             MSG_HAVE_ALL => Ok(PeerMessage::HaveAll),
             MSG_HAVE_NONE => Ok(PeerMessage::HaveNone),
             MSG_REJECT_REQUEST => {
-                if payload.len() < 12 { return Err(MessageError::PayloadTooShort { expected: 12, actual: payload.len() }); }
+                if payload.len() < 12 {
+                    return Err(MessageError::PayloadTooShort {
+                        expected: 12,
+                        actual: payload.len(),
+                    });
+                }
                 let index = payload.get_u32();
                 let begin = payload.get_u32();
                 let length = payload.get_u32();
-                Ok(PeerMessage::RejectRequest { index, begin, length })
+                Ok(PeerMessage::RejectRequest {
+                    index,
+                    begin,
+                    length,
+                })
             }
             MSG_ALLOWED_FAST => {
-                if payload.len() < 4 { return Err(MessageError::PayloadTooShort { expected: 4, actual: payload.len() }); }
-                Ok(PeerMessage::AllowedFast { index: payload.get_u32() })
+                if payload.len() < 4 {
+                    return Err(MessageError::PayloadTooShort {
+                        expected: 4,
+                        actual: payload.len(),
+                    });
+                }
+                Ok(PeerMessage::AllowedFast {
+                    index: payload.get_u32(),
+                })
             }
             MSG_EXTENDED => {
                 if payload.is_empty() {
@@ -263,15 +331,34 @@ mod tests {
             PeerMessage::NotInterested,
             PeerMessage::Have { index: 42 },
             PeerMessage::Bitfield(vec![0b10101010, 0b11110000]),
-            PeerMessage::Request { index: 5, begin: 16384, length: 16384 },
-            PeerMessage::Piece { index: 5, begin: 16384, data: vec![1, 2, 3, 4] },
-            PeerMessage::Cancel { index: 5, begin: 16384, length: 16384 },
+            PeerMessage::Request {
+                index: 5,
+                begin: 16384,
+                length: 16384,
+            },
+            PeerMessage::Piece {
+                index: 5,
+                begin: 16384,
+                data: vec![1, 2, 3, 4],
+            },
+            PeerMessage::Cancel {
+                index: 5,
+                begin: 16384,
+                length: 16384,
+            },
             PeerMessage::Port(6881),
-            PeerMessage::Extended { id: 1, payload: vec![10, 20, 30] },
+            PeerMessage::Extended {
+                id: 1,
+                payload: vec![10, 20, 30],
+            },
             PeerMessage::SuggestPiece { index: 7 },
             PeerMessage::HaveAll,
             PeerMessage::HaveNone,
-            PeerMessage::RejectRequest { index: 7, begin: 0, length: 16384 },
+            PeerMessage::RejectRequest {
+                index: 7,
+                begin: 0,
+                length: 16384,
+            },
             PeerMessage::AllowedFast { index: 7 },
         ];
 

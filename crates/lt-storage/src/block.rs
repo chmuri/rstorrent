@@ -118,7 +118,6 @@ impl Block {
         self.transfers.len()
     }
 
-
     pub fn insert(&mut self, peer_id: usize) -> usize {
         let mut transfer = BlockTransfer::new(peer_id, self.piece);
         let idx = self.transfers.len();
@@ -177,7 +176,11 @@ pub struct BlockList {
 
 impl BlockList {
     pub fn new(piece: Piece, block_length: u32) -> Self {
-        let bl = if block_length == 0 { DEFAULT_BLOCK_SIZE } else { block_length };
+        let bl = if block_length == 0 {
+            DEFAULT_BLOCK_SIZE
+        } else {
+            block_length
+        };
         let mut blocks = Vec::new();
 
         let mut offset = 0;
@@ -365,4 +368,3 @@ impl TransferList {
         self.failed_count += 1;
     }
 }
-

@@ -79,20 +79,16 @@ fn valid_connection_type(value: &str) -> bool {
 }
 
 fn valid_upload_heuristic(value: &str) -> bool {
-    value.is_empty()
-        || option_find_string(OptionEnum::ChokeHeuristicsUpload, value).is_some()
+    value.is_empty() || option_find_string(OptionEnum::ChokeHeuristicsUpload, value).is_some()
 }
 
 fn valid_download_heuristic(value: &str) -> bool {
-    value.is_empty()
-        || option_find_string(OptionEnum::ChokeHeuristicsDownload, value).is_some()
+    value.is_empty() || option_find_string(OptionEnum::ChokeHeuristicsDownload, value).is_some()
 }
 
 fn validate_protocol_value(name: &str, value: &str) -> Result<(), RpcError> {
     let valid = match name {
-        "protocol.connection.leech" | "protocol.connection.seed" => {
-            valid_connection_type(value)
-        }
+        "protocol.connection.leech" | "protocol.connection.seed" => valid_connection_type(value),
         "protocol.choke_heuristics.up.leech" | "protocol.choke_heuristics.up.seed" => {
             valid_upload_heuristic(value)
         }
@@ -132,8 +128,12 @@ fn apply_encryption(network: &NetworkConfig, obj: &Object) -> Result<(), RpcErro
     let has_obsolete_only = values.iter().any(|value| {
         matches!(
             value.trim().to_ascii_lowercase().as_str(),
-            "none" | "allow_incoming" | "try_outgoing" | "enable_retry"
-                | "prefer_plaintext" | "require_rc4"
+            "none"
+                | "allow_incoming"
+                | "try_outgoing"
+                | "enable_retry"
+                | "prefer_plaintext"
+                | "require_rc4"
         )
     });
     if has_obsolete_only {
@@ -155,10 +155,7 @@ fn apply_encryption(network: &NetworkConfig, obj: &Object) -> Result<(), RpcErro
     apply_obsolete_encryption(network, &values)
 }
 
-fn apply_obsolete_encryption(
-    network: &NetworkConfig,
-    values: &[String],
-) -> Result<(), RpcError> {
+fn apply_obsolete_encryption(network: &NetworkConfig, values: &[String]) -> Result<(), RpcError> {
     let mut handshake = EncryptionMode::Allow;
     let mut stream = EncryptionMode::Allow;
 
@@ -235,7 +232,10 @@ pub fn register_protocol_commands(
         "Legacy alias for protocol.encryption.set.",
     )?;
 
-    for (name, handshake) in [("protocol.encryption.handshake", true), ("protocol.encryption.stream", false)] {
+    for (name, handshake) in [
+        ("protocol.encryption.handshake", true),
+        ("protocol.encryption.stream", false),
+    ] {
         let net_get = network.clone();
         map.insert_func(
             name,
@@ -289,7 +289,11 @@ pub fn register_protocol_commands(
     map.insert_func(
         "protocol.pex",
         move |_target, _obj| {
-            Ok(Object::from(if p_get.read().unwrap().pex { 1i64 } else { 0 }))
+            Ok(Object::from(if p_get.read().unwrap().pex {
+                1i64
+            } else {
+                0
+            }))
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",

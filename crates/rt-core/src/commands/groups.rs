@@ -5,9 +5,7 @@ use lt_engine::choke_group::{ChokeGroup as EngineChokeGroup, RatioConfig, Tracke
 use lt_engine::choke_queue::{Heuristics, UNLIMITED_SLOTS};
 use lt_engine::resource_manager::ResourceManager;
 use rt_rpc::command_flags::*;
-use rt_rpc::{
-    convert_to_string, parse_whole_value_nothrow, CommandMap, RpcError,
-};
+use rt_rpc::{convert_to_string, parse_whole_value_nothrow, CommandMap, RpcError};
 
 /// Command-facing snapshot of a choke group.
 ///
@@ -57,7 +55,6 @@ impl Default for ChokeGroup {
         }
     }
 }
-
 
 pub struct ChokeGroupManager {
     /// Backwards-compatible snapshots used by the `choke_group.*` getters.
@@ -371,14 +368,12 @@ impl ChokeGroupManager {
     }
 }
 
-
 fn tracker_mode_from_name(value: &str) -> TrackerMode {
     match value {
         "aggressive" => TrackerMode::Aggressive,
         _ => TrackerMode::Normal,
     }
 }
-
 
 fn upload_heuristics_from_name(value: &str) -> Option<Heuristics> {
     match value {
@@ -471,10 +466,7 @@ fn parse_group_obj(obj: &Object) -> Object {
 /// The reference may be a numeric index, a negative index (`-1` is the last
 /// group), or a group name. Out-of-range references and unknown names throw,
 /// matching the C++ implementation.
-fn resolve_group_index(
-    manager: &ChokeGroupManager,
-    group: &Object,
-) -> Result<usize, RpcError> {
+fn resolve_group_index(manager: &ChokeGroupManager, group: &Object) -> Result<usize, RpcError> {
     if group.is_empty() {
         return Ok(0);
     }
@@ -729,7 +721,10 @@ fn register_group_limits(
 
     // Group minimums. Values above the group maximum are clamped by the
     // manager so `min <= max` is always maintained.
-    for (name, upload) in [("choke_group.up.min", true), ("choke_group.down.min", false)] {
+    for (name, upload) in [
+        ("choke_group.up.min", true),
+        ("choke_group.down.min", false),
+    ] {
         let mgr_get = Arc::clone(manager);
         map.insert_func(
             name,
@@ -878,9 +873,7 @@ fn register_group_extended_commands(
                     resolve_group_get(&manager, obj)?
                 };
                 let mut manager = mgr_remove.write().unwrap();
-                manager
-                    .remove(index)
-                    .map_err(RpcError::InputError)?;
+                manager.remove(index).map_err(RpcError::InputError)?;
                 Ok(Object::create_empty())
             },
             FLAG_PUBLIC_RPC,
@@ -986,10 +979,7 @@ fn register_group_extended_commands(
         )?;
     }
 
-    for name in [
-        "choke_group.up.rate",
-        "choke_group.down.rate",
-    ] {
+    for name in ["choke_group.up.rate", "choke_group.down.rate"] {
         let mgr = Arc::clone(manager);
         map.insert_func(
             name,
@@ -1102,10 +1092,7 @@ fn register_ratio_commands(
                 as fn(&mut RatioConfig, i64),
         ),
     ] {
-        for name in [
-            suffix.to_string(),
-            format!("group.seeding.{}", suffix),
-        ] {
+        for name in [suffix.to_string(), format!("group.seeding.{}", suffix)] {
             let mgr_get = Arc::clone(manager);
             replace_func(
                 map,

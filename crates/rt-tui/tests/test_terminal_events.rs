@@ -122,8 +122,14 @@ fn translates_navigation_keys_to_legacy_codes() {
 fn unsupported_and_release_keys_are_ignored() {
     let mut translator = EventTranslator::new(80, 24);
 
-    assert_eq!(TerminalBackend::translate_key_event(key(KeyCode::CapsLock)), None);
-    assert_eq!(TerminalBackend::translate_key_event(key(KeyCode::F(24))), None);
+    assert_eq!(
+        TerminalBackend::translate_key_event(key(KeyCode::CapsLock)),
+        None
+    );
+    assert_eq!(
+        TerminalBackend::translate_key_event(key(KeyCode::F(24))),
+        None
+    );
     assert_eq!(
         translator.translate(Event::Key(key_release(KeyCode::Char('a')))),
         None
@@ -277,10 +283,7 @@ fn queue_is_fifo_and_bounded() {
         queue.push(TerminalEvent::Key(2)),
         EventPushOutcome::Enqueued
     );
-    assert_eq!(
-        queue.push(TerminalEvent::Key(3)),
-        EventPushOutcome::Dropped
-    );
+    assert_eq!(queue.push(TerminalEvent::Key(3)), EventPushOutcome::Dropped);
     assert_eq!(queue.len(), 2);
 
     let stats = queue.stats();
@@ -299,10 +302,7 @@ fn queue_is_fifo_and_bounded() {
 #[test]
 fn zero_capacity_drops_everything() {
     let mut queue = EventQueue::new(0);
-    assert_eq!(
-        queue.push(TerminalEvent::Key(1)),
-        EventPushOutcome::Dropped
-    );
+    assert_eq!(queue.push(TerminalEvent::Key(1)), EventPushOutcome::Dropped);
     assert!(queue.is_empty());
     assert_eq!(queue.stats().dropped, 1);
 }
@@ -343,10 +343,7 @@ fn coalescing_still_works_when_queue_is_full() {
         queue.push(TerminalEvent::Resize(80, 24)),
         EventPushOutcome::Enqueued
     );
-    assert_eq!(
-        queue.push(TerminalEvent::Key(1)),
-        EventPushOutcome::Dropped
-    );
+    assert_eq!(queue.push(TerminalEvent::Key(1)), EventPushOutcome::Dropped);
     assert_eq!(
         queue.push(TerminalEvent::Resize(90, 30)),
         EventPushOutcome::Coalesced
@@ -410,7 +407,10 @@ fn drain_returns_fifo_order() {
 
 #[test]
 fn capture_options_default_to_disabled() {
-    assert_eq!(TerminalInputOptions::default(), TerminalInputOptions::none());
+    assert_eq!(
+        TerminalInputOptions::default(),
+        TerminalInputOptions::none()
+    );
     assert!(!TerminalInputOptions::default().mouse);
     assert!(!TerminalInputOptions::default().focus);
     assert!(!TerminalInputOptions::default().bracketed_paste);
@@ -457,10 +457,7 @@ fn capture_commands_only_emit_changes() {
     let none_again = focus_on.with_mouse(false).with_focus(false);
     assert_eq!(
         capture_commands(focus_on, none_again),
-        vec![
-            CaptureCommand::DisableMouse,
-            CaptureCommand::DisableFocus,
-        ]
+        vec![CaptureCommand::DisableMouse, CaptureCommand::DisableFocus,]
     );
 
     assert_eq!(

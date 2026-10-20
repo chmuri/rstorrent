@@ -26,8 +26,8 @@ pub use client_list::{ClientInfo, ClientList, ClientType};
 pub use connection::{PeerConnection, PeerDirection};
 pub use encryption::{CryptoMode, EncryptionPolicy, HandshakeEncryption};
 pub use extensions::{
-    extension_handshake_payload, ut_metadata_data_payload, ut_metadata_request_payload, ut_pex_payload,
-    DownloadInfo, DownloadMain, ExtensionError, ExtensionType, ProtocolExtension,
+    extension_handshake_payload, ut_metadata_data_payload, ut_metadata_request_payload,
+    ut_pex_payload, DownloadInfo, DownloadMain, ExtensionError, ExtensionType, ProtocolExtension,
     UtMetadataMessage, UtPexMessage,
 };
 pub use handshake::{
@@ -35,12 +35,10 @@ pub use handshake::{
 };
 pub use handshake_manager::{HandshakeManager, HandshakePhase, HandshakeSession};
 pub use initial_seed::InitialSeeding;
+pub use message::{MessageError, PeerMessage};
+pub use metadata::{MetadataDownload, MetadataError, MAX_METADATA_SIZE, METADATA_PIECE_SIZE};
 pub use mse::{
     accept as mse_accept, initiate as mse_initiate, obfuscated_info_hash, MseError, MseSession,
-};
-pub use message::{MessageError, PeerMessage};
-pub use metadata::{
-    MetadataDownload, MetadataError, MAX_METADATA_SIZE, METADATA_PIECE_SIZE,
 };
 pub use peer_list::{ConnectionList, ConnectionListError};
 pub use request_list::{BlockTransfer, RequestList};

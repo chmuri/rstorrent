@@ -61,14 +61,9 @@ async fn lookup_and_announce_over_loopback() {
     // Wait for B's receive loop to be ready, then look up the seeded peer.
     let mut peers = Vec::new();
     for _ in 0..20 {
-        peers = get_peers(
-            Arc::clone(&server_a),
-            Arc::clone(&router_a),
-            info_hash,
-            8,
-        )
-        .await
-        .unwrap();
+        peers = get_peers(Arc::clone(&server_a), Arc::clone(&router_a), info_hash, 8)
+            .await
+            .unwrap();
 
         if !peers.is_empty() {
             break;
@@ -77,9 +72,9 @@ async fn lookup_and_announce_over_loopback() {
     }
 
     assert!(
-        peers.iter().any(|peer| {
-            peer.as_socket_addr() == Some("127.0.0.9:51413".parse().unwrap())
-        }),
+        peers
+            .iter()
+            .any(|peer| { peer.as_socket_addr() == Some("127.0.0.9:51413".parse().unwrap()) }),
         "expected seeded peer, got {peers:?}"
     );
 

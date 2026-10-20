@@ -92,7 +92,11 @@ pub fn parse_color_definition(def: &str) -> Result<Style, String> {
                 bright = false;
             }
             "gray" | "grey" => {
-                let c = if bright { Color::White } else { Color::DarkGray };
+                let c = if bright {
+                    Color::White
+                } else {
+                    Color::DarkGray
+                };
                 if is_bg {
                     style = style.bg(c);
                 } else {
@@ -111,7 +115,9 @@ pub fn parse_color_definition(def: &str) -> Result<Style, String> {
                     } else {
                         style = style.fg(c);
                     }
-                } else if let Some(&(_, normal, lit)) = basic_colors.iter().find(|(name, _, _)| *name == word) {
+                } else if let Some(&(_, normal, lit)) =
+                    basic_colors.iter().find(|(name, _, _)| *name == word)
+                {
                     let c = if bright { lit } else { normal };
                     if is_bg {
                         style = style.bg(c);

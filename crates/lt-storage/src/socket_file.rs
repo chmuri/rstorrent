@@ -160,7 +160,10 @@ impl SocketFile {
         }
 
         let current_size = self.size()?;
-        if length == 0 || offset > current_size || offset.saturating_add(length as u64) > current_size {
+        if length == 0
+            || offset > current_size
+            || offset.saturating_add(length as u64) > current_size
+        {
             return Ok(MemoryChunk::new());
         }
 

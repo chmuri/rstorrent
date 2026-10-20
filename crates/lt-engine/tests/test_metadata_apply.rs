@@ -7,8 +7,10 @@ use lt_engine::download::Download;
 fn info_bytes() -> (Vec<u8>, HashString) {
     let mut info = Object::create_map();
     info.insert_key("name", Object::from("magnet-dir")).unwrap();
-    info.insert_key("piece length", Object::from(16384i64)).unwrap();
-    info.insert_key("pieces", Object::create_string(vec![0u8; 20])).unwrap();
+    info.insert_key("piece length", Object::from(16384i64))
+        .unwrap();
+    info.insert_key("pieces", Object::create_string(vec![0u8; 20]))
+        .unwrap();
     info.insert_key("length", Object::from(16384i64)).unwrap();
 
     let bytes = lt_common::object::bencode::encode(&info).unwrap();
@@ -19,10 +21,7 @@ fn info_bytes() -> (Vec<u8>, HashString) {
 #[test]
 fn magnet_download_can_apply_verified_metadata() {
     let (bytes, info_hash) = info_bytes();
-    let uri = format!(
-        "magnet:?xt=urn:btih:{}&dn=magnet-dir",
-        info_hash.to_hex()
-    );
+    let uri = format!("magnet:?xt=urn:btih:{}&dn=magnet-dir", info_hash.to_hex());
 
     let metadata = DownloadConstructor::from_magnet_uri(&uri).unwrap();
     assert!(metadata.is_meta_download);
@@ -46,7 +45,8 @@ fn magnet_download_can_apply_verified_metadata() {
 #[test]
 fn applying_metadata_to_regular_download_is_rejected() {
     let (bytes, info_hash) = info_bytes();
-    let metadata = DownloadConstructor::from_info_bytes(&bytes, info_hash, None, Vec::new()).unwrap();
+    let metadata =
+        DownloadConstructor::from_info_bytes(&bytes, info_hash, None, Vec::new()).unwrap();
     let mut download = Download::new(metadata);
 
     assert!(download

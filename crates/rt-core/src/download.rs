@@ -1,10 +1,10 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
 use lt_common::hash_string::HashString;
 use lt_common::Object;
 use lt_engine::constructor::TorrentMetadata;
 use lt_engine::download::{Download as EngineDownload, DownloadState};
 use lt_storage::resume::ResumeData;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub const DEFAULT_RESUME_FLAGS: u32 = !0;
 
@@ -508,7 +508,10 @@ impl Download {
 
     pub fn set_directory(&mut self, dir: impl Into<String>) {
         self.directory = dir.into();
-        self.download.lock().unwrap().set_save_directory(&self.directory);
+        self.download
+            .lock()
+            .unwrap()
+            .set_save_directory(&self.directory);
     }
 
     pub fn throttle_name(&self) -> &str {
@@ -658,10 +661,7 @@ mod tests {
 
     fn metadata(name: &str) -> TorrentMetadata {
         TorrentMetadata {
-            info_hash: HashString::from_hex(
-                "4141414141414141414141414141414141414141",
-            )
-            .unwrap(),
+            info_hash: HashString::from_hex("4141414141414141414141414141414141414141").unwrap(),
             name: name.into(),
             piece_length: 16384,
             pieces: vec![0u8; 20],

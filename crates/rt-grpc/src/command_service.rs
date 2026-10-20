@@ -1,9 +1,9 @@
-use tonic::{Request, Response, Status};
+use crate::conversion::{object_to_proto, proto_to_object};
 use crate::proto::command_service_server::CommandService;
 use crate::proto::*;
-use crate::conversion::{object_to_proto, proto_to_object};
 use crate::server::GrpcContext;
 use rt_rpc::Target;
+use tonic::{Request, Response, Status};
 
 pub struct CommandServiceImpl {
     ctx: GrpcContext,
@@ -31,10 +31,7 @@ impl CommandService for CommandServiceImpl {
                     return Ok(Response::new(CommandResponse {
                         success: false,
                         result: None,
-                        error_message: format!(
-                            "Invalid target download hash {}",
-                            req.target_hash
-                        ),
+                        error_message: format!("Invalid target download hash {}", req.target_hash),
                     }));
                 }
             }

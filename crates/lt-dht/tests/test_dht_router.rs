@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use lt_common::hash_string::HashString;
-use lt_net::addr::SocketAddress;
 use lt_dht::router::{DhtRouter, MAX_TRACKERS, NUM_TRACKER_EVICT, TIMEOUT_TRACKER_EVICT};
+use lt_net::addr::SocketAddress;
 
 const ANNOUNCED_INFO_HASHES: usize = 4096;
 const UNKNOWN_INFO_HASH: usize = 5000;
@@ -46,7 +46,9 @@ fn test_full_table_evicts_stale_trackers() {
         tracker.add_peer(0x0a000001 + index as u32, 6881, current_time);
     }
 
-    assert!(router.get_tracker(&info_hash_for(UNKNOWN_INFO_HASH), true).is_none());
+    assert!(router
+        .get_tracker(&info_hash_for(UNKNOWN_INFO_HASH), true)
+        .is_none());
 
     // Advance time by TIMEOUT_TRACKER_EVICT (1 hour)
     current_time += TIMEOUT_TRACKER_EVICT;
@@ -60,7 +62,9 @@ fn test_full_table_evicts_stale_trackers() {
     }
 
     // Now we have space to add unknown_info_hash
-    assert!(router.get_tracker(&info_hash_for(UNKNOWN_INFO_HASH), true).is_some());
+    assert!(router
+        .get_tracker(&info_hash_for(UNKNOWN_INFO_HASH), true)
+        .is_some());
 
     // Refill table
     let mut index = ANNOUNCED_INFO_HASHES;

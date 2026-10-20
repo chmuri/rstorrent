@@ -93,10 +93,7 @@ pub fn register_ui_commands(
             // `event.download.erased`.  A target-less call clears the current
             // selection, which is useful for interactive/RPC clients.
             let hash = target.download().cloned();
-            ui_unfocus
-                .lock()
-                .unwrap()
-                .unfocus_download(hash.as_ref());
+            ui_unfocus.lock().unwrap().unfocus_download(hash.as_ref());
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,
@@ -277,10 +274,7 @@ pub fn register_ui_commands(
         "ui.torrent_list.layout.set",
         move |_target, obj| {
             let value = to_str(obj)?;
-            ui_set
-                .lock()
-                .unwrap()
-                .set_torrent_list_layout(value);
+            ui_set.lock().unwrap().set_torrent_list_layout(value);
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,

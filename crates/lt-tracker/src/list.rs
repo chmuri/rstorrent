@@ -316,7 +316,9 @@ impl TrackerList {
             || last_attempt != 0;
 
         if attempted {
-            let min_interval = state.min_interval.max(crate::state::TrackerState::MIN_MIN_INTERVAL);
+            let min_interval = state
+                .min_interval
+                .max(crate::state::TrackerState::MIN_MIN_INTERVAL);
             if now < last_attempt.saturating_add(min_interval) {
                 return false;
             }
@@ -339,10 +341,7 @@ impl TrackerList {
         if !tracker.is_usable() || !tracker.is_scrapable() {
             return false;
         }
-        tracker
-            .state_mut()
-            .flags
-            .insert(TrackerFlags::REQUESTING);
+        tracker.state_mut().flags.insert(TrackerFlags::REQUESTING);
         tracker.state_mut().latest_event = TrackerEvent::Scrape;
         true
     }
@@ -352,17 +351,15 @@ impl TrackerList {
         self.trackers
             .iter()
             .enumerate()
-            .filter(|(_, t)| {
-                t.is_requesting() && t.state().latest_event == TrackerEvent::Scrape
-            })
+            .filter(|(_, t)| t.is_requesting() && t.state().latest_event == TrackerEvent::Scrape)
             .map(|(index, _)| index)
             .collect()
     }
 
     pub fn has_active_scrape(&self) -> bool {
-        self.trackers.iter().any(|t| {
-            t.is_requesting() && t.state().latest_event == TrackerEvent::Scrape
-        })
+        self.trackers
+            .iter()
+            .any(|t| t.is_requesting() && t.state().latest_event == TrackerEvent::Scrape)
     }
 
     pub fn set_scrapable(&mut self, index: usize, scrapable: bool) {

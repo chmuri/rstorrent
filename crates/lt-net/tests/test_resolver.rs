@@ -17,7 +17,10 @@ async fn test_dns_cache_ttl() {
 
     let found = cache.get("example.com");
     assert!(found.is_some());
-    assert_eq!(found.unwrap()[0], IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)));
+    assert_eq!(
+        found.unwrap()[0],
+        IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))
+    );
 
     // Wait for TTL expiration
     tokio::time::sleep(Duration::from_millis(60)).await;
@@ -85,7 +88,10 @@ async fn test_resolver_with_cache_hit() {
 
     assert!(v4.is_some());
     assert!(v6.is_some());
-    assert_eq!(v4.unwrap(), SocketAddress::new_inet(Ipv4Addr::new(10, 0, 0, 1), 80));
+    assert_eq!(
+        v4.unwrap(),
+        SocketAddress::new_inet(Ipv4Addr::new(10, 0, 0, 1), 80)
+    );
     assert_eq!(
         v6.unwrap(),
         SocketAddress::new_inet6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1), 80)
@@ -93,7 +99,11 @@ async fn test_resolver_with_cache_hit() {
 
     // Test resolve_preferred
     let pref_v4 = resolver
-        .resolve_preferred("mockhost.local:80", AddressFamily::Unspec, AddressFamily::Inet)
+        .resolve_preferred(
+            "mockhost.local:80",
+            AddressFamily::Unspec,
+            AddressFamily::Inet,
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -102,7 +112,11 @@ async fn test_resolver_with_cache_hit() {
     );
 
     let pref_v6 = resolver
-        .resolve_preferred("mockhost.local:80", AddressFamily::Unspec, AddressFamily::Inet6)
+        .resolve_preferred(
+            "mockhost.local:80",
+            AddressFamily::Unspec,
+            AddressFamily::Inet6,
+        )
         .await
         .unwrap();
     assert_eq!(

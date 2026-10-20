@@ -49,10 +49,7 @@ fn apply_resume_restores_bitfield_priorities_and_metadata() {
     assert!(download.is_seeder());
     assert_eq!(download.resume_mtimes(), &[MTIME_RECHECK]);
     assert_eq!(download.resume_completed_bytes(), 8);
-    assert_eq!(
-        download.file_list().files()[0].priority(),
-        Priority::High
-    );
+    assert_eq!(download.file_list().files()[0].priority(), Priority::High);
 }
 
 #[test]

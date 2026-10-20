@@ -146,8 +146,7 @@ impl MetadataDownload {
                     .rejected_by
                     .get(&index_u32)
                     .map(|(peers, at)| {
-                        peers.contains(&peer)
-                            && at.elapsed() < METADATA_REQUEST_TIMEOUT
+                        peers.contains(&peer) && at.elapsed() < METADATA_REQUEST_TIMEOUT
                     })
                     .unwrap_or(false);
                 if recently_rejected {
@@ -362,9 +361,7 @@ mod tests {
             Err(MetadataError::InvalidLength { .. })
         ));
 
-        assert!(download
-            .on_data(0, payload.len() as u32, &payload)
-            .unwrap());
+        assert!(download.on_data(0, payload.len() as u32, &payload).unwrap());
         assert!(matches!(
             download.verify_and_take(),
             Err(MetadataError::HashMismatch)
@@ -403,22 +400,16 @@ mod tests {
 
         let first = &payload[..METADATA_PIECE_SIZE];
         let second = &payload[METADATA_PIECE_SIZE..];
-        assert!(!download
-            .on_data(0, payload.len() as u32, first)
-            .unwrap());
+        assert!(!download.on_data(0, payload.len() as u32, first).unwrap());
         // Identical duplicate is accepted.
-        assert!(!download
-            .on_data(0, payload.len() as u32, first)
-            .unwrap());
+        assert!(!download.on_data(0, payload.len() as u32, first).unwrap());
         let mut tampered = first.to_vec();
         tampered[0] ^= 0xff;
         assert!(matches!(
             download.on_data(0, payload.len() as u32, &tampered),
             Err(MetadataError::DuplicateMismatch { piece: 0 })
         ));
-        assert!(download
-            .on_data(1, payload.len() as u32, second)
-            .unwrap());
+        assert!(download.on_data(1, payload.len() as u32, second).unwrap());
         assert_eq!(download.verify_and_take().unwrap(), payload);
     }
 

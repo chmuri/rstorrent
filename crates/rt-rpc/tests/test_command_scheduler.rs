@@ -1,7 +1,7 @@
-use std::time::Duration;
 use lt_common::Object;
 use rt_rpc::exec_flags::*;
 use rt_rpc::{CommandScheduler, ExecFile};
+use std::time::Duration;
 
 #[test]
 fn test_parse_rearms_existing_key() {
@@ -46,10 +46,7 @@ fn test_find_locates_a_scheduled_key() {
 fn test_exec_file_capture() {
     let exec = ExecFile::new();
 
-    let args = Object::create_list_with(vec![
-        Object::from("echo"),
-        Object::from("rtorrent_test"),
-    ]);
+    let args = Object::create_list_with(vec![Object::from("echo"), Object::from("rtorrent_test")]);
 
     let res = exec.execute_object(&args, FLAG_CAPTURE).unwrap();
     if let Ok(s) = res.as_str() {

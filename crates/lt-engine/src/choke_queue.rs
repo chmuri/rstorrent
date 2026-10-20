@@ -228,10 +228,7 @@ impl ChokeQueue {
 
                 for (index, entry) in self.entries.iter().enumerate() {
                     if let Some(peer) = entry.unchoked.first() {
-                        if best
-                            .map(|(_, weight)| peer.weight < weight)
-                            .unwrap_or(true)
-                        {
+                        if best.map(|(_, weight)| peer.weight < weight).unwrap_or(true) {
                             best = Some((index, peer.weight));
                         }
                     }
@@ -430,7 +427,11 @@ impl ChokeQueue {
         }
     }
 
-    fn calculate_peer_weight(heuristics: Heuristics, peer: &WeightedPeer, is_unchoked: bool) -> u32 {
+    fn calculate_peer_weight(
+        heuristics: Heuristics,
+        peer: &WeightedPeer,
+        is_unchoked: bool,
+    ) -> u32 {
         match heuristics {
             Heuristics::UploadLeech => {
                 if is_unchoked {
@@ -467,7 +468,9 @@ impl ChokeQueue {
                 let down = (peer.rate_down / 64) as u32;
                 let up = (peer.rate_up / 256) as u32;
                 if is_unchoked {
-                    ORDER_BASE.saturating_sub(1).saturating_sub((down + up) * multiplier)
+                    ORDER_BASE
+                        .saturating_sub(1)
+                        .saturating_sub((down + up) * multiplier)
                 } else {
                     ORDER_BASE + down * multiplier
                 }

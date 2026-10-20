@@ -1,13 +1,13 @@
-use std::os::unix::ffi::OsStrExt;
-use std::path::Component;
-use std::sync::{Arc, RwLock};
+use crate::download::Download;
+use crate::download_list::DownloadList;
 use lt_common::{Object, StringUtf8};
+use lt_storage::file::{File, FileFlags, Priority};
 use rt_rpc::command_flags::*;
 use rt_rpc::parse_commands::parse_command;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError, Target};
-use lt_storage::file::{File, FileFlags, Priority};
-use crate::download::Download;
-use crate::download_list::DownloadList;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Component;
+use std::sync::{Arc, RwLock};
 
 fn to_str(obj: &Object) -> Result<String, RpcError> {
     convert_to_string(obj)
@@ -19,12 +19,14 @@ fn get_download_and_file_idx(
 ) -> Result<(Arc<RwLock<Download>>, usize), RpcError> {
     match target {
         Target::File(hash, idx) | Target::FileItr(hash, idx) => {
-            let dl = dl_list.read().unwrap().find(hash).ok_or_else(|| {
-                RpcError::Custom {
+            let dl = dl_list
+                .read()
+                .unwrap()
+                .find(hash)
+                .ok_or_else(|| RpcError::Custom {
                     code: -500,
                     message: format!("Download '{}' not found", hash.to_hex()),
-                }
-            })?;
+                })?;
             Ok((dl, *idx as usize))
         }
         // File commands are strictly file-targeted. A download target must be
@@ -215,7 +217,9 @@ pub fn register_file_commands(
         move |target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("f.multicall: missing arguments".into()));
+                return Err(RpcError::InputError(
+                    "f.multicall: missing arguments".into(),
+                ));
             }
 
             let hash = match target {
@@ -230,12 +234,14 @@ pub fn register_file_commands(
 
             let commands = multicall_commands(list);
 
-            let dl = dl_mc.read().unwrap().find(&hash).ok_or_else(|| {
-                RpcError::Custom {
+            let dl = dl_mc
+                .read()
+                .unwrap()
+                .find(&hash)
+                .ok_or_else(|| RpcError::Custom {
                     code: -500,
                     message: "Download not found".into(),
-                }
-            })?;
+                })?;
 
             let dl_guard = dl.read().unwrap();
             let num_files = dl_guard.metadata().files.len();
@@ -272,7 +278,6 @@ pub fn register_file_commands(
 
     Ok(())
 }
-
 
 fn add_file_getter<F>(
     map: &mut CommandMap,
@@ -511,18 +516,8 @@ fn register_file_extended_commands(
     add_file_getter(map, download_list, "f.frozen_path.or_as_binary", |file| {
         frozen_path_object(file, PathOutput::OrAsBinary)
     })?;
-    add_file_realpath_getter(
-        map,
-        download_list,
-        "f.frozen_path.realpath.or_empty",
-        false,
-    )?;
-    add_file_realpath_getter(
-        map,
-        download_list,
-        "f.frozen_path.realpath.or_throw",
-        true,
-    )?;
+    add_file_realpath_getter(map, download_list, "f.frozen_path.realpath.or_empty", false)?;
+    add_file_realpath_getter(map, download_list, "f.frozen_path.realpath.or_throw", true)?;
 
     add_file_getter(map, download_list, "f.offset", |file| {
         Object::from(file.offset() as i64)

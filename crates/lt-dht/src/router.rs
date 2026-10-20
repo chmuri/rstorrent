@@ -225,9 +225,7 @@ impl DhtRouter {
             .flat_map(|bucket| bucket.nodes.iter().cloned())
             .collect();
 
-        nodes.sort_by(|a, b| {
-            xor_distance(&a.id, target).cmp(&xor_distance(&b.id, target))
-        });
+        nodes.sort_by(|a, b| xor_distance(&a.id, target).cmp(&xor_distance(&b.id, target)));
         nodes.truncate(max);
         nodes
     }
@@ -256,7 +254,11 @@ impl DhtRouter {
     /// out and the node id is not known to the caller.
     pub fn mark_inactive_by_address(&mut self, address: &SocketAddress) {
         for bucket in &mut self.buckets {
-            if let Some(node) = bucket.nodes.iter_mut().find(|node| &node.address == address) {
+            if let Some(node) = bucket
+                .nodes
+                .iter_mut()
+                .find(|node| &node.address == address)
+            {
                 node.inactive();
                 return;
             }
@@ -292,7 +294,12 @@ impl DhtRouter {
                 .retain(|node| !(node.is_bad() && node.age(now) >= remove_age));
         }
 
-        before - self.buckets.iter().map(|bucket| bucket.nodes.len()).sum::<usize>()
+        before
+            - self
+                .buckets
+                .iter()
+                .map(|bucket| bucket.nodes.len())
+                .sum::<usize>()
     }
 
     /// Prunes peers that have not re-announced for `max_age` seconds, drops

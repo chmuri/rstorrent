@@ -1,9 +1,9 @@
+use super::storer::{is_correct_format, DirectoryEntry, DownloadStorer};
+use crate::commands::system::resolve_path;
+use lt_sys::lockfile::Lockfile;
 use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::path::Path;
-use lt_sys::lockfile::Lockfile;
-use crate::commands::system::resolve_path;
-use super::storer::{DirectoryEntry, DownloadStorer, is_correct_format};
 
 /// One download's already-serialized session streams.
 ///
@@ -122,7 +122,10 @@ impl SessionManager {
     }
 
     pub fn is_locked(&self) -> bool {
-        self.lockfile.as_ref().map(Lockfile::is_locked).unwrap_or(false)
+        self.lockfile
+            .as_ref()
+            .map(Lockfile::is_locked)
+            .unwrap_or(false)
     }
 
     pub fn use_fsyncdisk(&self) -> bool {
@@ -397,7 +400,12 @@ impl SessionManager {
 
         let base = DownloadStorer::build_path(&self.path, info_hash_hex)?;
         DownloadStorer::unlink_files(&base);
-        for suffix in [".new", ".libtorrent_resume.new", ".rtorrent.new", ".meta.new"] {
+        for suffix in [
+            ".new",
+            ".libtorrent_resume.new",
+            ".rtorrent.new",
+            ".meta.new",
+        ] {
             let _ = fs::remove_file(format!("{base}{suffix}"));
         }
         Ok(true)

@@ -267,9 +267,7 @@ impl PeerPool {
 
     pub fn set_limits(&mut self, max_peers: usize, max_connecting: usize) {
         self.config.max_peers = max_peers.max(1);
-        self.config.max_connecting = max_connecting
-            .max(1)
-            .min(self.config.max_peers);
+        self.config.max_connecting = max_connecting.max(1).min(self.config.max_peers);
     }
 
     /// Whether a source is allowed for this torrent.
@@ -396,9 +394,10 @@ impl PeerPool {
                     return false;
                 }
                 match entry.state {
-                    PeerState::Available | PeerState::Failed | PeerState::Disconnected => {
-                        entry.retry_at.map(|deadline| deadline <= now).unwrap_or(true)
-                    }
+                    PeerState::Available | PeerState::Failed | PeerState::Disconnected => entry
+                        .retry_at
+                        .map(|deadline| deadline <= now)
+                        .unwrap_or(true),
                     PeerState::Connecting | PeerState::Connected => false,
                 }
             })
@@ -690,10 +689,7 @@ mod tests {
         pool.record_failure(peer, start + Duration::from_millis(100));
         let entry = pool.get(peer).expect("peer should be pooled");
         assert_eq!(entry.failure_count(), 2);
-        assert_eq!(
-            entry.retry_at(),
-            Some(start + Duration::from_millis(300))
-        );
+        assert_eq!(entry.retry_at(), Some(start + Duration::from_millis(300)));
 
         assert!(pool
             .next_connect_batch(start + Duration::from_millis(299), 10)
@@ -714,7 +710,10 @@ mod tests {
         });
 
         let peers: Vec<_> = (1..=5).map(addr).collect();
-        assert_eq!(pool.merge(peers.iter().copied(), PeerSource::Tracker, false), 5);
+        assert_eq!(
+            pool.merge(peers.iter().copied(), PeerSource::Tracker, false),
+            5
+        );
 
         let first = pool.next_connect_batch(start, 10);
         assert_eq!(first.len(), 2);
@@ -736,7 +735,10 @@ mod tests {
         });
 
         let peers: Vec<_> = (1..=5).map(addr).collect();
-        assert_eq!(pool.merge(peers.iter().copied(), PeerSource::Tracker, false), 5);
+        assert_eq!(
+            pool.merge(peers.iter().copied(), PeerSource::Tracker, false),
+            5
+        );
 
         let first = pool.next_connect_batch(start, 10);
         assert_eq!(first.len(), 2);
@@ -764,7 +766,9 @@ mod tests {
 
         assert_eq!(pool.next_connect_batch(start, 10), vec![peer]);
         // The slot is still held before the timeout expires.
-        assert!(pool.next_connect_batch(start + Duration::from_secs(1), 10).is_empty());
+        assert!(pool
+            .next_connect_batch(start + Duration::from_secs(1), 10)
+            .is_empty());
 
         pool.reap_stale(start + Duration::from_secs(2), Duration::from_secs(2));
         let entry = pool.get(peer).expect("peer should be pooled");

@@ -261,14 +261,9 @@ fn transfer_list_paging_and_stale_rows_clamp_selection() {
 
     let rows: Vec<TransferRow> = (0..20)
         .map(|index| {
-            TransferRow::new(
-                index / 2,
-                (index % 2) * 16384,
-                16384,
-                index as usize,
-            )
-            .with_peer_address(format!("peer-{index}"))
-            .with_progress((index % 5) as usize, 5)
+            TransferRow::new(index / 2, (index % 2) * 16384, 16384, index as usize)
+                .with_peer_address(format!("peer-{index}"))
+                .with_progress((index % 5) as usize, 5)
         })
         .collect();
 

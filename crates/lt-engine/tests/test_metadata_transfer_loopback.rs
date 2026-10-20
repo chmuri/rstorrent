@@ -102,7 +102,8 @@ fn padded_info(name: &str, payload_size: usize) -> Vec<u8> {
     info.insert_key("name", Object::from(name)).unwrap();
     info.insert_key("piece length", Object::from(piece_length as i64))
         .unwrap();
-    info.insert_key("pieces", Object::create_string(pieces)).unwrap();
+    info.insert_key("pieces", Object::create_string(pieces))
+        .unwrap();
     info.insert_key("length", Object::from(payload_size as i64))
         .unwrap();
     // Unknown keys are preserved because the metadata is transferred as raw
@@ -118,11 +119,13 @@ async fn magnet_metadata_is_downloaded_from_pieces_and_applied() {
     let info_hash = HashString::new(sha1_hash(&info_bytes));
     assert!(info_bytes.len() > 16_384, "test fixture must span pieces");
 
-    let uri = format!("magnet:?xt=urn:btih:{}&dn=magnet-loopback", info_hash.to_hex());
+    let uri = format!(
+        "magnet:?xt=urn:btih:{}&dn=magnet-loopback",
+        info_hash.to_hex()
+    );
     let metadata = DownloadConstructor::from_magnet_uri(&uri).unwrap();
     let download = Arc::new(Mutex::new(Download::new(metadata)));
-    let remote_peer_id =
-        HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
+    let remote_peer_id = HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
 
     let (mut client, session, shutdown_tx) =
         start_inbound(Arc::clone(&download), remote_peer_id, None).await;
@@ -188,8 +191,7 @@ async fn metadata_requests_are_served_from_local_cache() {
     let metadata =
         DownloadConstructor::from_info_bytes(&info_bytes, info_hash, None, Vec::new()).unwrap();
     let download = Arc::new(Mutex::new(Download::new(metadata)));
-    let remote_peer_id =
-        HashString::from_hex("cccccccccccccccccccccccccccccccccccccccc").unwrap();
+    let remote_peer_id = HashString::from_hex("cccccccccccccccccccccccccccccccccccccccc").unwrap();
 
     let (mut client, session, shutdown_tx) =
         start_inbound(Arc::clone(&download), remote_peer_id, None).await;
@@ -212,7 +214,11 @@ async fn metadata_requests_are_served_from_local_cache() {
             .await
             .expect("timed out waiting for metadata data")
             .expect("peer closed before metadata data");
-        if let PeerMessage::Extended { id: LOCAL_METADATA_ID, payload } = message {
+        if let PeerMessage::Extended {
+            id: LOCAL_METADATA_ID,
+            payload,
+        } = message
+        {
             if let Ok(UtMetadataMessage::Data {
                 piece,
                 total_size,
@@ -240,8 +246,7 @@ async fn malformed_metadata_is_rejected_without_panicking() {
     let metadata =
         DownloadConstructor::from_info_bytes(&info_bytes, info_hash, None, Vec::new()).unwrap();
     let download = Arc::new(Mutex::new(Download::new(metadata)));
-    let remote_peer_id =
-        HashString::from_hex("dddddddddddddddddddddddddddddddddddddddd").unwrap();
+    let remote_peer_id = HashString::from_hex("dddddddddddddddddddddddddddddddddddddddd").unwrap();
 
     let (mut client, session, shutdown_tx) = start_inbound(download, remote_peer_id, None).await;
     exchange_handshake(&mut client, 2, Some(info_bytes.len() as u32)).await;

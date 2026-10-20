@@ -1,7 +1,7 @@
+use crate::chunk_statistics::ChunkStatistics;
 use lt_common::bitfield::Bitfield;
 use lt_common::collections::PartialQueue;
 use lt_common::ranges::Ranges;
-use crate::chunk_statistics::ChunkStatistics;
 
 pub const INVALID_CHUNK: u32 = u32::MAX;
 
@@ -132,7 +132,12 @@ impl ChunkSelector {
         self.high_priority.has(index) || self.normal_priority.has(index)
     }
 
-    pub fn received_have_chunk(&mut self, cache: &mut PartialQueue, index: u32, stats: &ChunkStatistics) -> bool {
+    pub fn received_have_chunk(
+        &mut self,
+        cache: &mut PartialQueue,
+        index: u32,
+        stats: &ChunkStatistics,
+    ) -> bool {
         if !self.is_wanted(index) {
             return false;
         }
@@ -179,7 +184,10 @@ impl ChunkSelector {
         let mut found = None;
         while queue.prepare_pop() {
             if let Some(pos) = queue.pop() {
-                if (pos as usize) < self.size && self.untouched.get(pos as usize) && self.is_wanted(pos) {
+                if (pos as usize) < self.size
+                    && self.untouched.get(pos as usize)
+                    && self.is_wanted(pos)
+                {
                     found = Some(pos);
                     break;
                 }
@@ -193,7 +201,14 @@ impl ChunkSelector {
             let size_u32 = self.size as u32;
             let pos = self.position;
 
-            self.search_linear(peer_bf, queue, &self.high_priority.clone(), pos, size_u32, stats);
+            self.search_linear(
+                peer_bf,
+                queue,
+                &self.high_priority.clone(),
+                pos,
+                size_u32,
+                stats,
+            );
             self.search_linear(peer_bf, queue, &self.high_priority.clone(), 0, pos, stats);
 
             if queue.prepare_pop() {
@@ -203,7 +218,14 @@ impl ChunkSelector {
             if found.is_none() {
                 // 2. Search normal priority
                 queue.clear();
-                self.search_linear(peer_bf, queue, &self.normal_priority.clone(), pos, size_u32, stats);
+                self.search_linear(
+                    peer_bf,
+                    queue,
+                    &self.normal_priority.clone(),
+                    pos,
+                    size_u32,
+                    stats,
+                );
                 self.search_linear(peer_bf, queue, &self.normal_priority.clone(), 0, pos, stats);
 
                 if queue.prepare_pop() {
@@ -316,7 +338,8 @@ impl ChunkSelector {
 
         let size_u32 = self.size as u32;
 
-        let pos = self.find_next_wanted(&self.high_priority, start, size_u32)
+        let pos = self
+            .find_next_wanted(&self.high_priority, start, size_u32)
             .or_else(|| self.find_next_wanted(&self.high_priority, 0, start))
             .or_else(|| self.find_next_wanted(&self.normal_priority, start, size_u32))
             .or_else(|| self.find_next_wanted(&self.normal_priority, 0, start));

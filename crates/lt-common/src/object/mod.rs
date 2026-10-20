@@ -9,7 +9,9 @@ use std::fmt;
 pub use bencode::{decode, encode, encode_with_mask, object_sha1, read_bencode, write_bencode};
 pub use fixed_key::FixedKey;
 pub use raw::{RawBencode, RawList, RawMap, RawString};
-pub use static_map::{static_map_read_bencode, static_map_write_bencode, StaticMap, StaticMapMapping};
+pub use static_map::{
+    static_map_read_bencode, static_map_write_bencode, StaticMap, StaticMapMapping,
+};
 
 pub mod flags {
     pub const TYPE_NONE: u32 = 0;
@@ -475,11 +477,18 @@ impl Object {
         self.get_key(k)?.as_list()
     }
 
-    pub fn get_key_map(&self, k: impl AsRef<[u8]>) -> Result<&BTreeMap<Vec<u8>, Object>, BencodeError> {
+    pub fn get_key_map(
+        &self,
+        k: impl AsRef<[u8]>,
+    ) -> Result<&BTreeMap<Vec<u8>, Object>, BencodeError> {
         self.get_key(k)?.as_map()
     }
 
-    pub fn insert_key(&mut self, k: impl Into<Vec<u8>>, v: Object) -> Result<&mut Object, BencodeError> {
+    pub fn insert_key(
+        &mut self,
+        k: impl Into<Vec<u8>>,
+        v: Object,
+    ) -> Result<&mut Object, BencodeError> {
         let key = k.into();
         let map = self.as_map_mut()?;
         map.insert(key.clone(), v);
@@ -648,10 +657,16 @@ mod tests {
     #[test]
     fn test_create_normal() {
         let raw_val = RawBencode(b"i45e".to_vec());
-        assert_eq!(object_create_normal(&raw_val).unwrap().as_value().unwrap(), 45);
+        assert_eq!(
+            object_create_normal(&raw_val).unwrap().as_value().unwrap(),
+            45
+        );
 
         let raw_str = RawBencode(b"4:test".to_vec());
-        assert_eq!(object_create_normal(&raw_str).unwrap().as_str().unwrap(), "test");
+        assert_eq!(
+            object_create_normal(&raw_str).unwrap().as_str().unwrap(),
+            "test"
+        );
 
         let raw_list = RawBencode(b"li5ee".to_vec());
         assert_eq!(
@@ -663,16 +678,27 @@ mod tests {
 
         let raw_map = RawBencode(b"d1:ai6ee".to_vec());
         assert_eq!(
-            object_create_normal(&raw_map).unwrap().get_key("a").unwrap().as_value().unwrap(),
+            object_create_normal(&raw_map)
+                .unwrap()
+                .get_key("a")
+                .unwrap()
+                .as_value()
+                .unwrap(),
             6
         );
 
         let r_str = RawString(b"test".to_vec());
-        assert_eq!(object_create_normal_raw_string(&r_str).as_str().unwrap(), "test");
+        assert_eq!(
+            object_create_normal_raw_string(&r_str).as_str().unwrap(),
+            "test"
+        );
 
         let r_list = RawList(b"i5ei6e".to_vec());
         assert_eq!(
-            object_create_normal_raw_list(&r_list).unwrap().as_list().unwrap()[1]
+            object_create_normal_raw_list(&r_list)
+                .unwrap()
+                .as_list()
+                .unwrap()[1]
                 .as_value()
                 .unwrap(),
             6
@@ -680,7 +706,12 @@ mod tests {
 
         let r_map = RawMap(b"1:ai2e1:bi3e".to_vec());
         assert_eq!(
-            object_create_normal_raw_map(&r_map).unwrap().get_key("b").unwrap().as_value().unwrap(),
+            object_create_normal_raw_map(&r_map)
+                .unwrap()
+                .get_key("b")
+                .unwrap()
+                .as_value()
+                .unwrap(),
             3
         );
     }
@@ -708,8 +739,14 @@ mod tests {
         let mut normal_obj = decode(b"d1:ai1e1:bi2e1:ci3ee").unwrap();
         assert_eq!(encode(&normal_obj).unwrap(), b"d1:ai1e1:bi2e1:ci3ee");
 
-        normal_obj.get_key_mut("b").unwrap().set_flags(flags::FLAG_SESSION_DATA);
-        normal_obj.get_key_mut("c").unwrap().set_flags(flags::FLAG_STATIC_DATA);
+        normal_obj
+            .get_key_mut("b")
+            .unwrap()
+            .set_flags(flags::FLAG_SESSION_DATA);
+        normal_obj
+            .get_key_mut("c")
+            .unwrap()
+            .set_flags(flags::FLAG_STATIC_DATA);
 
         let masked = encode_with_mask(&normal_obj, flags::FLAG_SESSION_DATA).unwrap();
         assert_eq!(masked, b"d1:ai1e1:ci3ee");
@@ -786,7 +823,10 @@ mod tests {
         assert_eq!(encode(&obj).unwrap(), b"d1:ai1e1:b4:test1:cl3:fooee");
 
         // Empty objects inside list or map are skipped
-        obj.get_key_mut("c").unwrap().insert_back(Object::create_empty()).unwrap();
+        obj.get_key_mut("c")
+            .unwrap()
+            .insert_back(Object::create_empty())
+            .unwrap();
         obj.insert_key("d", Object::create_empty()).unwrap();
         assert_eq!(encode(&obj).unwrap(), b"d1:ai1e1:b4:test1:cl3:fooee");
     }
@@ -817,11 +857,17 @@ mod tests {
         assert_eq!(decode(b"i0e").unwrap().as_value().unwrap(), 0);
         assert_eq!(decode(b"i-1e").unwrap().as_value().unwrap(), -1);
         assert_eq!(
-            decode(b"i9223372036854775807e").unwrap().as_value().unwrap(),
+            decode(b"i9223372036854775807e")
+                .unwrap()
+                .as_value()
+                .unwrap(),
             i64::MAX
         );
         assert_eq!(
-            decode(b"i-9223372036854775808e").unwrap().as_value().unwrap(),
+            decode(b"i-9223372036854775808e")
+                .unwrap()
+                .as_value()
+                .unwrap(),
             i64::MIN
         );
 
@@ -879,7 +925,8 @@ mod tests {
         let test_read_bencode = b"d3:d_xd1:fi3e1:gli4ei5eee3:l_xli1ei2ei3ee3:s_a1:a3:v_ai2ee";
         let mut test_map: StaticMap<6> = StaticMap::default();
 
-        let consumed = static_map_read_bencode(&mut test_map, &mappings, test_read_bencode).unwrap();
+        let consumed =
+            static_map_read_bencode(&mut test_map, &mappings, test_read_bencode).unwrap();
         assert_eq!(consumed, test_read_bencode.len());
 
         assert_eq!(test_map[KEY_2_D_X_Y].as_value().unwrap(), 3);
@@ -890,7 +937,8 @@ mod tests {
         assert_eq!(test_map[KEY_2_V_A].as_value().unwrap(), 2);
 
         // Test with skipped keys
-        let test_read_skip_bencode = b"d3:d_xd1:fi3e1:gli4ei5eee1:fi1e3:l_xli1ei2ei3ee3:s_a1:a3:v_ai2ee";
+        let test_read_skip_bencode =
+            b"d3:d_xd1:fi3e1:gli4ei5eee1:fi1e3:l_xli1ei2ei3ee3:s_a1:a3:v_ai2ee";
         let mut test_skip_map: StaticMap<6> = StaticMap::default();
         let consumed2 =
             static_map_read_bencode(&mut test_skip_map, &mappings, test_read_skip_bencode).unwrap();

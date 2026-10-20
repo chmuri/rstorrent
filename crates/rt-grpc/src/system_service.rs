@@ -1,12 +1,12 @@
-use std::pin::Pin;
-use std::time::Duration;
-use futures_util::Stream;
-use tokio_stream::wrappers::IntervalStream;
-use tokio_stream::StreamExt;
-use tonic::{Request, Response, Status};
 use crate::proto::system_service_server::SystemService;
 use crate::proto::*;
 use crate::server::GrpcContext;
+use futures_util::Stream;
+use std::pin::Pin;
+use std::time::Duration;
+use tokio_stream::wrappers::IntervalStream;
+use tokio_stream::StreamExt;
+use tonic::{Request, Response, Status};
 
 pub struct SystemServiceImpl {
     ctx: GrpcContext,
@@ -73,9 +73,8 @@ impl SystemService for SystemServiceImpl {
         Ok(Response::new(self.calculate_stats()))
     }
 
-    type StreamStatsStream = Pin<
-        Box<dyn Stream<Item = Result<SessionStatsResponse, Status>> + Send + 'static>,
-    >;
+    type StreamStatsStream =
+        Pin<Box<dyn Stream<Item = Result<SessionStatsResponse, Status>> + Send + 'static>>;
 
     async fn stream_stats(
         &self,

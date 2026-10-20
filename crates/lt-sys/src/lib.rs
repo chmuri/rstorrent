@@ -11,21 +11,18 @@ pub mod watch;
 
 pub use fs::FileStat;
 pub use instrumentation::{
-    instrumentation_get, instrumentation_initialize, instrumentation_reset,
-    instrumentation_set, instrumentation_tick, instrumentation_update,
-    InstrumentationType,
+    instrumentation_get, instrumentation_initialize, instrumentation_reset, instrumentation_set,
+    instrumentation_tick, instrumentation_update, InstrumentationType,
 };
 pub use lockfile::Lockfile;
 pub use log::{
-    groups as log_groups, log_add_child, log_add_group_output, log_cleanup,
-    log_close_output, log_initialize, log_open_file_output,
-    log_open_gz_file_output, log_open_output, log_print, log_print_dump,
-    log_print_hash, LogGroup, LogSlot,
+    groups as log_groups, log_add_child, log_add_group_output, log_cleanup, log_close_output,
+    log_initialize, log_open_file_output, log_open_gz_file_output, log_open_output, log_print,
+    log_print_dump, log_print_hash, LogGroup, LogSlot,
 };
 pub use log_buffer::{log_open_log_buffer, LogBuffer, LogBufferHandle, LogEntry};
 pub use scheduler::{Scheduler, SchedulerEntry, SchedulerEntryId, SchedulerSlot};
 pub use thread::{flags as thread_flags, Thread, ThreadState};
 pub use watch::{
-    flags as watch_flags, DirectoryEvents, WatchCallback, WatchDescriptor,
-    WatchReadyQueue,
+    flags as watch_flags, DirectoryEvents, WatchCallback, WatchDescriptor, WatchReadyQueue,
 };

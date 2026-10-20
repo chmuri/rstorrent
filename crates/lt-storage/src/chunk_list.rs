@@ -474,11 +474,12 @@ impl ChunkList {
         let mut failed = 0;
         let mut synced_indices = Vec::new();
 
-        let mmap_flags = if flags.contains(ChunkSyncFlags::FORCE) || flags.contains(ChunkSyncFlags::SAFE) {
-            MmapSyncFlags::SYNC
-        } else {
-            MmapSyncFlags::ASYNC
-        };
+        let mmap_flags =
+            if flags.contains(ChunkSyncFlags::FORCE) || flags.contains(ChunkSyncFlags::SAFE) {
+                MmapSyncFlags::SYNC
+            } else {
+                MmapSyncFlags::ASYNC
+            };
 
         for &idx in &self.queue {
             if let Some(ref mut chunk) = self.nodes[idx as usize].chunk_mut() {

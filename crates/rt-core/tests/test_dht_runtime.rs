@@ -68,7 +68,10 @@ async fn runtime_starts_dht_on_override_port() {
 
     let _ = shutdown_tx.send(true);
     let report = runtime.drain(ShutdownTimeouts::default()).await;
-    assert!(report.all_completed(), "network runtime did not drain: {report:?}");
+    assert!(
+        report.all_completed(),
+        "network runtime did not drain: {report:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -111,5 +114,8 @@ async fn runtime_off_mode_does_not_bind_dht() {
 
     let _ = shutdown_tx.send(true);
     let report = runtime.drain(ShutdownTimeouts::default()).await;
-    assert!(report.all_completed(), "network runtime did not drain: {report:?}");
+    assert!(
+        report.all_completed(),
+        "network runtime did not drain: {report:?}"
+    );
 }

@@ -1,8 +1,8 @@
-use std::cell::RefCell;
-use std::sync::Arc;
-use lt_common::Object;
 use crate::error::RpcError;
 use crate::target::Target;
+use lt_common::Object;
+use std::cell::RefCell;
+use std::sync::Arc;
 
 pub mod flags {
     pub const FLAG_DONT_DELETE: u32 = 0x1;
@@ -152,9 +152,9 @@ pub fn parse_command_object(input: &str) -> Result<Object, RpcError> {
         return Ok(Object::create_empty());
     }
 
-    let eq_pos = trimmed
-        .find('=')
-        .ok_or_else(|| RpcError::InputError(format!("Could not find '=' in command '{}'.", trimmed)))?;
+    let eq_pos = trimmed.find('=').ok_or_else(|| {
+        RpcError::InputError(format!("Could not find '=' in command '{}'.", trimmed))
+    })?;
 
     let key = trimmed[..eq_pos].trim();
     if key.is_empty() {
@@ -166,7 +166,11 @@ pub fn parse_command_object(input: &str) -> Result<Object, RpcError> {
     // Delimiters for command object: ';', '\n', '\r'
     if let Some(pos) = rest.find(|c| c == ';' || c == '\n' || c == '\r') {
         let suffix = &rest[pos..];
-        if !suffix.trim().is_empty() || suffix.contains(';') || suffix.contains('\n') || suffix.contains('\r') {
+        if !suffix.trim().is_empty()
+            || suffix.contains(';')
+            || suffix.contains('\n')
+            || suffix.contains('\r')
+        {
             return Err(RpcError::InputError("Junk at end of input.".to_string()));
         }
     }

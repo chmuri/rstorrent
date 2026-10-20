@@ -1,6 +1,6 @@
-use std::process::{Command, Stdio};
-use lt_common::Object;
 use crate::error::RpcError;
+use lt_common::Object;
+use std::process::{Command, Stdio};
 
 pub mod flags {
     pub const FLAG_EXPAND_TILDE: u32 = 0x1;
@@ -43,7 +43,12 @@ impl ExecFile {
         path.to_string()
     }
 
-    pub fn execute(&self, file: &str, args: &[&str], exec_flags: u32) -> Result<(i32, String), RpcError> {
+    pub fn execute(
+        &self,
+        file: &str,
+        args: &[&str],
+        exec_flags: u32,
+    ) -> Result<(i32, String), RpcError> {
         let file_path = if exec_flags & flags::FLAG_EXPAND_TILDE != 0 {
             Self::expand_tilde(file)
         } else {
@@ -83,9 +88,9 @@ impl ExecFile {
             cmd.stdout(Stdio::piped());
         }
 
-        let output = cmd
-            .output()
-            .map_err(|e| RpcError::InputError(format!("Failed to execute process '{}': {}", file_path, e)))?;
+        let output = cmd.output().map_err(|e| {
+            RpcError::InputError(format!("Failed to execute process '{}': {}", file_path, e))
+        })?;
 
         let status_code = output.status.code().unwrap_or(-1);
 
@@ -122,7 +127,9 @@ impl ExecFile {
                 } else if let Ok(v) = item.as_value() {
                     arg_strings.push(v.to_string());
                 } else {
-                    return Err(RpcError::InputError("Invalid argument type for exec.".to_string()));
+                    return Err(RpcError::InputError(
+                        "Invalid argument type for exec.".to_string(),
+                    ));
                 }
             }
         } else if let Ok(s) = raw_args.as_str() {

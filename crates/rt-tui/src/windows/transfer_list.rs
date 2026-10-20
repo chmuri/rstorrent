@@ -11,7 +11,9 @@
 //! refreshes the selection is restored by a semantic key and then clamped, so
 //! stale indices cannot point at another peer's transfer.
 
-use crate::display::{Canvas, TextElement, TextElementList, TextElementString, Window, EXTENT_FULL};
+use crate::display::{
+    Canvas, TextElement, TextElementList, TextElementString, Window, EXTENT_FULL,
+};
 use rt_core::Download;
 use rt_rpc::Target;
 use std::collections::HashMap;
@@ -69,12 +71,7 @@ pub struct TransferRow {
 }
 
 impl TransferRow {
-    pub fn new(
-        piece_index: u32,
-        block_offset: u32,
-        block_length: u32,
-        peer_id: usize,
-    ) -> Self {
+    pub fn new(piece_index: u32, block_offset: u32, block_length: u32, peer_id: usize) -> Self {
         Self {
             piece_index,
             block_index: 0,
@@ -112,12 +109,7 @@ impl TransferRow {
         self
     }
 
-    pub fn with_flags(
-        mut self,
-        is_leader: bool,
-        is_stalled: bool,
-        is_erased: bool,
-    ) -> Self {
+    pub fn with_flags(mut self, is_leader: bool, is_stalled: bool, is_erased: bool) -> Self {
         self.is_leader = is_leader;
         self.is_stalled = is_stalled;
         self.is_erased = is_erased;
@@ -155,7 +147,12 @@ impl TransferRow {
     /// A zero width hides that column.
     pub fn cells(&self, widths: &TransferColumnWidths) -> Vec<String> {
         let mut cells = Vec::with_capacity(7);
-        push_cell(&mut cells, &self.piece_index.to_string(), widths.piece, true);
+        push_cell(
+            &mut cells,
+            &self.piece_index.to_string(),
+            widths.piece,
+            true,
+        );
         push_cell(
             &mut cells,
             &format!("B{}", self.block_index),
@@ -521,11 +518,7 @@ impl TransferListWindow {
 
     fn restore_selection(&mut self, previous: Option<(u32, u32, usize)>) {
         if let Some(key) = previous {
-            if let Some(position) = self
-                .transfers
-                .iter()
-                .position(|row| row.key() == key)
-            {
+            if let Some(position) = self.transfers.iter().position(|row| row.key() == key) {
                 self.selected = position;
             }
         }

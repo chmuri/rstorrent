@@ -494,13 +494,7 @@ impl PeerConnection {
     }
 
     pub fn new(peer_id: HashString, sa: SocketAddress, bitfield_size: usize) -> Self {
-        Self::new_with_direction(
-            peer_id,
-            sa,
-            bitfield_size,
-            PeerDirection::Outgoing,
-            false,
-        )
+        Self::new_with_direction(peer_id, sa, bitfield_size, PeerDirection::Outgoing, false)
     }
 
     pub fn new_with_direction(

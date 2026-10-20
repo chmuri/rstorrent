@@ -20,9 +20,6 @@ pub mod throttle;
 pub mod tracker;
 pub mod view;
 
-use std::sync::{Arc, RwLock};
-use lt_net::config::NetworkConfig;
-use rt_rpc::{CommandMap, ObjectStorage, RpcError};
 use self::convert::register_convert_commands;
 use self::dht::register_dht_commands;
 use self::download::register_download_commands;
@@ -33,10 +30,10 @@ use self::groups::{register_group_commands, ChokeGroupManager};
 use self::ip::{register_ip_commands, IpTableManager};
 use self::log::register_log_commands;
 use self::network::register_network_commands;
+use self::peer::register_peer_commands;
 use self::pieces::register_pieces_commands;
 use self::protocol::register_protocol_commands;
 use self::ratio::register_ratio_commands;
-use self::peer::register_peer_commands;
 use self::string::register_string_commands;
 use self::system::register_system_commands;
 use self::throttle::{register_throttle_commands, ThrottleManager};
@@ -44,6 +41,9 @@ use self::tracker::{register_tracker_commands, DhtConfig};
 use self::view::register_view_commands;
 use crate::download_list::DownloadList;
 use crate::view_manager::ViewManager;
+use lt_net::config::NetworkConfig;
+use rt_rpc::{CommandMap, ObjectStorage, RpcError};
+use std::sync::{Arc, RwLock};
 
 pub fn initialize_builtin_commands(
     map: &mut CommandMap,
@@ -69,31 +69,18 @@ pub fn initialize_builtin_commands(
     register_exec_commands(map)?;
     register_group_commands(map, group_manager)?;
     register_throttle_commands(map, throttle_manager)?;
-    register_tracker_commands(
-        map,
-        Arc::clone(&dht_config),
-        Arc::clone(&download_list),
-    )?;
+    register_tracker_commands(map, Arc::clone(&dht_config), Arc::clone(&download_list))?;
     // Replaces the legacy DHT commands registered with the tracker domain with
     // the runtime-aware versions (statistics, node/bootstrap/refresh control).
     register_dht_commands(map, dht_config)?;
-    register_download_commands(
-        map,
-        Arc::clone(&download_list),
-        Arc::clone(&view_manager),
-    )?;
+    register_download_commands(map, Arc::clone(&download_list), Arc::clone(&view_manager))?;
     register_file_commands(map, Arc::clone(&download_list))?;
     register_peer_commands(map, Arc::clone(&download_list))?;
 
     // View filters evaluate arbitrary d.* commands, so this registration must
     // happen after the rest of the command map exists.
     let view_map = Arc::new(RwLock::new(map.clone()));
-    register_view_commands(
-        map,
-        Arc::clone(&view_manager),
-        download_list,
-        view_map,
-    )?;
+    register_view_commands(map, Arc::clone(&view_manager), download_list, view_map)?;
 
     Ok(())
 }

@@ -3,9 +3,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use lt_common::hash_string::HashString;
 use lt_net::addr::SocketAddress;
 use lt_protocol::client_list::ClientType;
-use lt_protocol::connection::{
-    PeerConnection, PeerDirection, PeerFlags, PeerInfo,
-};
+use lt_protocol::connection::{PeerConnection, PeerDirection, PeerFlags, PeerInfo};
 
 fn peer_id_with_prefix(prefix: &[u8]) -> HashString {
     let mut bytes = [0u8; 20];
@@ -21,13 +19,8 @@ fn peer_info_tracks_client_direction_and_counters() {
     let id = peer_id_with_prefix(b"-lt0100-");
     let address = SocketAddress::from(SocketAddr::from((Ipv4Addr::LOCALHOST, 51413)));
 
-    let mut peer = PeerConnection::new_with_direction(
-        id,
-        address,
-        8,
-        PeerDirection::Incoming,
-        true,
-    );
+    let mut peer =
+        PeerConnection::new_with_direction(id, address, 8, PeerDirection::Incoming, true);
 
     assert!(peer.is_incoming());
     assert!(!peer.is_outgoing());
@@ -62,13 +55,8 @@ fn outgoing_is_the_default_direction() {
 fn snapshot_is_owned_and_captures_flags_and_counters() {
     let id = peer_id_with_prefix(b"-qB4600-");
     let address = SocketAddress::from(SocketAddr::from((Ipv4Addr::LOCALHOST, 51413)));
-    let mut peer = PeerConnection::new_with_direction(
-        id,
-        address.clone(),
-        8,
-        PeerDirection::Incoming,
-        true,
-    );
+    let mut peer =
+        PeerConnection::new_with_direction(id, address.clone(), 8, PeerDirection::Incoming, true);
 
     peer.set_snubbed(true);
     peer.set_preferred(true);

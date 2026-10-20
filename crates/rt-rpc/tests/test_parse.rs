@@ -73,8 +73,14 @@ fn test_dsl_commands() {
         "math.add",
         |_target, obj| {
             if let Ok(list) = obj.as_list() {
-                let a = list.get(0).and_then(|x| rt_rpc::convert_to_value(x, 0, 1).ok()).unwrap_or(0);
-                let b = list.get(1).and_then(|x| rt_rpc::convert_to_value(x, 0, 1).ok()).unwrap_or(0);
+                let a = list
+                    .get(0)
+                    .and_then(|x| rt_rpc::convert_to_value(x, 0, 1).ok())
+                    .unwrap_or(0);
+                let b = list
+                    .get(1)
+                    .and_then(|x| rt_rpc::convert_to_value(x, 0, 1).ok())
+                    .unwrap_or(0);
                 Ok(Object::from(a + b))
             } else {
                 Ok(Object::from(0i64))
@@ -86,14 +92,8 @@ fn test_dsl_commands() {
     )
     .unwrap();
 
-    map.insert_func(
-        "test.echo",
-        |_target, obj| Ok(obj.clone()),
-        0,
-        "",
-        "",
-    )
-    .unwrap();
+    map.insert_func("test.echo", |_target, obj| Ok(obj.clone()), 0, "", "")
+        .unwrap();
 
     let target = Target::None;
 
@@ -111,7 +111,7 @@ fn test_dsl_commands() {
     assert_eq!(res3.as_list().unwrap().len(), 3);
 
     // Test multiple commands separated by ';'
-    let res4 = parse_command_multiple("test.echo=first; test.echo=second", &target, &map, true).unwrap();
+    let res4 =
+        parse_command_multiple("test.echo=first; test.echo=second", &target, &map, true).unwrap();
     assert_eq!(res4, Object::from("second"));
 }
-

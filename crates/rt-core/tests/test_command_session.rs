@@ -35,7 +35,10 @@ fn session_commands_round_trip_and_erase_entries() {
 
     assert!(call(&map, "session.path.set", vec![Object::from(path.as_str())]).is_ok());
     assert_eq!(
-        call(&map, "session.path", vec![]).unwrap().as_str().unwrap(),
+        call(&map, "session.path", vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
         path
     );
 
@@ -43,13 +46,19 @@ fn session_commands_round_trip_and_erase_entries() {
 
     assert!(call(&map, "session.name.set", vec![Object::from("main")]).is_ok());
     assert_eq!(
-        call(&map, "session.name", vec![]).unwrap().as_str().unwrap(),
+        call(&map, "session.name", vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
         "main"
     );
 
     assert!(call(&map, "session.use_lock.set", vec![Object::from(0i64)]).is_err());
     assert_eq!(
-        call(&map, "session.use_lock", vec![]).unwrap().as_value().unwrap(),
+        call(&map, "session.use_lock", vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
         1
     );
 

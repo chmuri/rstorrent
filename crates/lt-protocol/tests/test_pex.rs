@@ -31,8 +31,11 @@ fn pex_round_trip_ipv4_and_ipv6() {
 fn malformed_compact_lists_are_ignored() {
     // 5 bytes is not a valid IPv4 compact entry.
     let mut map = lt_common::Object::create_map();
-    map.insert_key("added", lt_common::Object::create_string(vec![1, 2, 3, 4, 5]))
-        .unwrap();
+    map.insert_key(
+        "added",
+        lt_common::Object::create_string(vec![1, 2, 3, 4, 5]),
+    )
+    .unwrap();
     let payload = lt_common::object::bencode::encode(&map).unwrap();
 
     let parsed = UtPexMessage::parse(&payload).unwrap();
@@ -57,11 +60,7 @@ fn generated_pex_keeps_ipv6_in_its_own_list() {
         SocketAddress::from("127.0.0.1:1".parse::<SocketAddr>().unwrap()),
         SocketAddress::from("[::1]:2".parse::<SocketAddr>().unwrap()),
     ];
-    let bytes = lt_protocol::extensions::ProtocolExtension::generate_ut_pex_message(
-        3,
-        &added,
-        &[],
-    );
+    let bytes = lt_protocol::extensions::ProtocolExtension::generate_ut_pex_message(3, &added, &[]);
     assert_eq!(bytes[4], 20);
     assert_eq!(bytes[5], 3);
 

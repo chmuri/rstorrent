@@ -63,10 +63,7 @@ fn current_view_switching_is_validated_and_marks_ui_dirty() {
         vec![Object::from("started")]
     )
     .is_ok());
-    assert_eq!(
-        harness.ui.lock().unwrap().current_view_name,
-        "started"
-    );
+    assert_eq!(harness.ui.lock().unwrap().current_view_name, "started");
     {
         let ui = harness.ui.lock().unwrap();
         assert!(ui.window_download_list.lock().unwrap().is_dirty());
@@ -80,10 +77,7 @@ fn current_view_switching_is_validated_and_marks_ui_dirty() {
         vec![Object::from("missing")]
     )
     .is_err());
-    assert_eq!(
-        harness.ui.lock().unwrap().current_view_name,
-        "started"
-    );
+    assert_eq!(harness.ui.lock().unwrap().current_view_name, "started");
     // A failed switch must not dirty the UI.
     assert!(!harness
         .ui
@@ -133,15 +127,20 @@ fn color_variables_round_trip_all_kinds_and_validate() {
         registered += 1;
 
         assert!(harness.map.has(name), "missing getter {name}");
-        assert!(harness.map.has(&format!("{name}.set")), "missing setter {name}");
+        assert!(
+            harness.map.has(&format!("{name}.set")),
+            "missing setter {name}"
+        );
 
         let value = format!("bold {}", if registered % 2 == 0 { "red" } else { "green" });
-        assert!(call(&harness.map, &format!("{name}.set"), vec![Object::from(value.as_str())]).is_ok());
+        assert!(call(
+            &harness.map,
+            &format!("{name}.set"),
+            vec![Object::from(value.as_str())]
+        )
+        .is_ok());
         assert_eq!(
-            call(&harness.map, name, vec![])
-                .unwrap()
-                .as_str()
-                .unwrap(),
+            call(&harness.map, name, vec![]).unwrap().as_str().unwrap(),
             value
         );
     }
@@ -307,9 +306,12 @@ fn history_size_is_bounded_and_clear_works() {
 fn ui_scalar_variables_round_trip_and_apply() {
     let harness = setup();
 
-    assert!(
-        call(&harness.map, "ui.input.history.size.set", vec![Object::from(10i64)]).is_ok()
-    );
+    assert!(call(
+        &harness.map,
+        "ui.input.history.size.set",
+        vec![Object::from(10i64)]
+    )
+    .is_ok());
     assert_eq!(
         call(&harness.map, "ui.input.history.size", vec![])
             .unwrap()
@@ -318,7 +320,12 @@ fn ui_scalar_variables_round_trip_and_apply() {
         10
     );
 
-    assert!(call(&harness.map, "ui.keymap.style.set", vec![Object::from("vi")]).is_ok());
+    assert!(call(
+        &harness.map,
+        "ui.keymap.style.set",
+        vec![Object::from("vi")]
+    )
+    .is_ok());
     assert_eq!(
         call(&harness.map, "ui.keymap.style", vec![])
             .unwrap()
@@ -347,7 +354,12 @@ fn ui_scalar_variables_round_trip_and_apply() {
         assert!(ui.window_download_list.lock().unwrap().is_dirty());
     }
 
-    assert!(call(&harness.map, "ui.focus.page_size.set", vec![Object::from(25i64)]).is_ok());
+    assert!(call(
+        &harness.map,
+        "ui.focus.page_size.set",
+        vec![Object::from(25i64)]
+    )
+    .is_ok());
     assert_eq!(
         call(&harness.map, "ui.focus.page_size", vec![])
             .unwrap()
@@ -364,10 +376,14 @@ fn ui_scalar_variables_round_trip_and_apply() {
         )
         .is_ok());
         assert_eq!(
-            call(&harness.map, &format!("ui.throttle.global.step.{name}"), vec![])
-                .unwrap()
-                .as_value()
-                .unwrap(),
+            call(
+                &harness.map,
+                &format!("ui.throttle.global.step.{name}"),
+                vec![]
+            )
+            .unwrap()
+            .as_value()
+            .unwrap(),
             expected
         );
     }

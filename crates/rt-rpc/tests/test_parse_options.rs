@@ -139,14 +139,8 @@ fn test_flags_complex() {
 
 #[test]
 fn test_flags_print_vector() {
-    assert_eq!(
-        parse_option_print_vector(0, FLAG_LIST),
-        "not_bar|not_a12"
-    );
-    assert_eq!(
-        parse_option_print_vector(FLAG_2, FLAG_LIST),
-        "bar|not_a12"
-    );
+    assert_eq!(parse_option_print_vector(0, FLAG_LIST), "not_bar|not_a12");
+    assert_eq!(parse_option_print_vector(FLAG_2, FLAG_LIST), "bar|not_a12");
     assert_eq!(
         parse_option_print_vector(FLAG_2 | FLAG_4, FLAG_LIST),
         "bar|a12"

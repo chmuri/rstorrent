@@ -237,9 +237,7 @@ pub fn register_dht_commands(
     let cfg_get = Arc::clone(&config);
     map.insert_func(
         "dht.override_port",
-        move |_target, _obj| {
-            Ok(Object::from(cfg_get.read().unwrap().override_port as i64))
-        },
+        move |_target, _obj| Ok(Object::from(cfg_get.read().unwrap().override_port as i64)),
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
         "Get DHT override port.",

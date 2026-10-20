@@ -1,10 +1,10 @@
+use crate::chunk_selector::ChunkSelector;
+use crate::chunk_statistics::ChunkStatistics;
 use lt_common::bitfield::Bitfield;
 use lt_common::collections::PartialQueue;
 use lt_storage::block::{BlockList, TransferList, DEFAULT_BLOCK_SIZE};
 use lt_storage::file::Priority;
 use lt_storage::piece::Piece;
-use crate::chunk_selector::ChunkSelector;
-use crate::chunk_statistics::ChunkStatistics;
 
 /// Delegator orchestrates assigning blocks to peer download pipelines and activates Endgame mode.
 #[derive(Debug, Default)]
@@ -54,12 +54,7 @@ impl Delegator {
     }
 
     /// Cancels one specific block request for `peer_id`.
-    pub fn cancel_block(
-        &mut self,
-        peer_id: usize,
-        piece_index: u32,
-        block_offset: u32,
-    ) -> bool {
+    pub fn cancel_block(&mut self, peer_id: usize, piece_index: u32, block_offset: u32) -> bool {
         if let Some(block_list) = self.transfers.find_mut(piece_index) {
             for block in block_list.blocks_mut() {
                 if block.piece().offset() != block_offset {

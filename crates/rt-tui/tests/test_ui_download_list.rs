@@ -73,7 +73,9 @@ fn make_test_download(index: u8) -> Arc<RwLock<rt_core::Download>> {
         is_meta_download: false,
     };
 
-    Arc::new(RwLock::new(rt_core::Download::new(lt_engine::download::Download::new(metadata))))
+    Arc::new(RwLock::new(rt_core::Download::new(
+        lt_engine::download::Download::new(metadata),
+    )))
 }
 
 #[test]

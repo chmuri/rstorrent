@@ -125,15 +125,22 @@ impl DnsResolver {
         let ips = if let Some(cached) = self.cache.get(host) {
             cached
         } else {
-            let lookup = self
-                .resolver
-                .lookup_ip(host)
-                .await
-                .map_err(|e| NetError::Input(format!("DNS resolution failed for {}: {}", host, e)))?;
+            let lookup = self.resolver.lookup_ip(host).await.map_err(|e| {
+                NetError::Input(format!("DNS resolution failed for {}: {}", host, e))
+            })?;
 
             let result_ips: Vec<IpAddr> = lookup.iter().collect();
-            let min_ttl = lookup.as_lookup().record_iter().map(|r| r.ttl()).min().unwrap_or(300);
-            self.cache.insert(host.to_string(), result_ips.clone(), Some(Duration::from_secs(min_ttl as u64)));
+            let min_ttl = lookup
+                .as_lookup()
+                .record_iter()
+                .map(|r| r.ttl())
+                .min()
+                .unwrap_or(300);
+            self.cache.insert(
+                host.to_string(),
+                result_ips.clone(),
+                Some(Duration::from_secs(min_ttl as u64)),
+            );
             result_ips
         };
 
@@ -143,12 +150,16 @@ impl DnsResolver {
         for ip in ips {
             match ip {
                 IpAddr::V4(v4) => {
-                    if sa_v4.is_none() && (family == AddressFamily::Unspec || family == AddressFamily::Inet) {
+                    if sa_v4.is_none()
+                        && (family == AddressFamily::Unspec || family == AddressFamily::Inet)
+                    {
                         sa_v4 = Some(SocketAddress::new_inet(v4, port));
                     }
                 }
                 IpAddr::V6(v6) => {
-                    if sa_v6.is_none() && (family == AddressFamily::Unspec || family == AddressFamily::Inet6) {
+                    if sa_v6.is_none()
+                        && (family == AddressFamily::Unspec || family == AddressFamily::Inet6)
+                    {
                         sa_v6 = Some(SocketAddress::new_inet6(v6, port));
                     }
                 }

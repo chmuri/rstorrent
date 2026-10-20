@@ -52,7 +52,7 @@ fn test_extension_messages_generation() {
     let handshake = ProtocolExtension::generate_handshake_message(1, 2, Some(65536));
     assert!(handshake.len() > 6);
     assert_eq!(handshake[4], 20); // BT extended ID
-    assert_eq!(handshake[5], 0);  // Handshake extended ID
+    assert_eq!(handshake[5], 0); // Handshake extended ID
 
     let pex = ProtocolExtension::generate_ut_pex_message(1, &[], &[]);
     assert_eq!(pex[4], 20);

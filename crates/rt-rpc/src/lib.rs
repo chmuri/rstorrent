@@ -3,17 +3,20 @@ pub mod command_map;
 pub mod error;
 pub mod exec_file;
 pub mod jsonrpc;
+pub mod lua_engine;
 pub mod manager;
 pub mod object_storage;
 pub mod parse;
 pub mod parse_commands;
 pub mod parse_options;
-pub mod lua_engine;
 pub mod scheduler;
 pub mod target;
 pub mod xmlrpc;
 
-pub use command::{flags as command_flags, CommandEntry, CommandFn, CommandStack, PreparsedCommands, parse_command_object};
+pub use command::{
+    flags as command_flags, parse_command_object, CommandEntry, CommandFn, CommandStack,
+    PreparsedCommands,
+};
 pub use command_map::CommandMap;
 pub use error::RpcError;
 pub use exec_file::{flags as exec_flags, ExecFile};

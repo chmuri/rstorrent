@@ -67,7 +67,8 @@ impl ChunkPart {
     }
 
     pub fn remaining_from(&self, pos: u32) -> u32 {
-        self.size().saturating_sub(pos.saturating_sub(self.position))
+        self.size()
+            .saturating_sub(pos.saturating_sub(self.position))
     }
 
     pub fn file_offset(&self) -> u64 {
@@ -112,7 +113,8 @@ impl ChunkPart {
         let rel_pos = pos - self.position;
         let touched = self.chunk.pages_touched(rel_pos as usize, len as usize);
         let mut buf = vec![0u8; touched];
-        self.chunk.incore(&mut buf, rel_pos as usize, len as usize)?;
+        self.chunk
+            .incore(&mut buf, rel_pos as usize, len as usize)?;
 
         let mut dist = 0;
         for &b in &buf {

@@ -426,7 +426,11 @@ impl DiskOpHandle {
         match self.rx.try_recv() {
             Ok(DiskReply::Sync { id, result })
             | Ok(DiskReply::Open { id, result })
-            | Ok(DiskReply::Close { id, result }) if id == self.id => Some(result),
+            | Ok(DiskReply::Close { id, result })
+                if id == self.id =>
+            {
+                Some(result)
+            }
             Ok(reply) => Some(Err(mismatched_reply(self.id, reply.id()))),
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => Some(Err(StorageError::DiskThreadClosed)),
@@ -437,7 +441,11 @@ impl DiskOpHandle {
         match self.rx.recv() {
             Ok(DiskReply::Sync { id, result })
             | Ok(DiskReply::Open { id, result })
-            | Ok(DiskReply::Close { id, result }) if id == self.id => result,
+            | Ok(DiskReply::Close { id, result })
+                if id == self.id =>
+            {
+                result
+            }
             Ok(reply) => Err(mismatched_reply(self.id, reply.id())),
             Err(_) => Err(StorageError::DiskThreadClosed),
         }
@@ -625,15 +633,8 @@ impl DiskThread {
         block_offset: u32,
         data: Vec<u8>,
     ) -> Result<DiskWriteHandle, StorageError> {
-        self.try_submit_write_block(
-            root,
-            files,
-            piece_length,
-            piece_index,
-            block_offset,
-            data,
-        )
-        .map_err(|(err, _data)| err)
+        self.try_submit_write_block(root, files, piece_length, piece_index, block_offset, data)
+            .map_err(|(err, _data)| err)
     }
 
     /// Like [`DiskThread::submit_write_block`] but returns the verified piece
@@ -722,7 +723,10 @@ impl DiskThread {
         }
 
         match reply_rx.recv() {
-            Ok(DiskReply::Write { id: reply_id, result }) if reply_id == id => result,
+            Ok(DiskReply::Write {
+                id: reply_id,
+                result,
+            }) if reply_id == id => result,
             Ok(reply) => Err(mismatched_reply(id, reply.id())),
             Err(_) => Err(StorageError::DiskThreadClosed),
         }
@@ -903,7 +907,10 @@ impl DiskThread {
         })?;
 
         match reply_rx.recv() {
-            Ok(DiskReply::Sync { id: reply_id, result }) if reply_id == id => result,
+            Ok(DiskReply::Sync {
+                id: reply_id,
+                result,
+            }) if reply_id == id => result,
             Ok(reply) => Err(mismatched_reply(id, reply.id())),
             Err(_) => Err(StorageError::DiskThreadClosed),
         }
@@ -941,7 +948,10 @@ impl DiskThread {
             reply: reply_tx,
         })?;
         match reply_rx.recv() {
-            Ok(DiskReply::Open { id: reply_id, result }) if reply_id == id => result,
+            Ok(DiskReply::Open {
+                id: reply_id,
+                result,
+            }) if reply_id == id => result,
             Ok(reply) => Err(mismatched_reply(id, reply.id())),
             Err(_) => Err(StorageError::DiskThreadClosed),
         }
@@ -968,7 +978,10 @@ impl DiskThread {
         })?;
 
         match reply_rx.recv() {
-            Ok(DiskReply::Close { id: reply_id, result }) if reply_id == id => result,
+            Ok(DiskReply::Close {
+                id: reply_id,
+                result,
+            }) if reply_id == id => result,
             Ok(reply) => Err(mismatched_reply(id, reply.id())),
             Err(_) => Err(StorageError::DiskThreadClosed),
         }
@@ -992,7 +1005,10 @@ impl DiskThread {
             reply: reply_tx,
         }) {
             Ok(()) => match reply_rx.recv() {
-                Ok(DiskReply::Shutdown { id: reply_id, result }) if reply_id == id => result,
+                Ok(DiskReply::Shutdown {
+                    id: reply_id,
+                    result,
+                }) if reply_id == id => result,
                 Ok(reply) => Err(mismatched_reply(id, reply.id())),
                 Err(_) => Err(StorageError::DiskThreadClosed),
             },
@@ -1104,10 +1120,7 @@ fn range_segments(
 }
 
 fn resolve_path(root: &Path, file: &TargetFileInfo) -> PathBuf {
-    let relative = file
-        .path
-        .strip_prefix(Path::new("/"))
-        .unwrap_or(&file.path);
+    let relative = file.path.strip_prefix(Path::new("/")).unwrap_or(&file.path);
     root.join(relative)
 }
 
@@ -1354,8 +1367,7 @@ impl DiskWorker {
         self.purge_closed();
 
         if let Some(file) = self.files.get(path) {
-            let suitable =
-                file.is_open() && (!create || file.protection().contains(Prot::WRITE));
+            let suitable = file.is_open() && (!create || file.protection().contains(Prot::WRITE));
             if suitable {
                 self.last_used.insert(path.to_path_buf(), Instant::now());
                 return Ok(());
@@ -1400,11 +1412,7 @@ impl DiskWorker {
         Ok(())
     }
 
-    fn open_files(
-        &mut self,
-        root: &Path,
-        files: &[TargetFileInfo],
-    ) -> Result<(), StorageError> {
+    fn open_files(&mut self, root: &Path, files: &[TargetFileInfo]) -> Result<(), StorageError> {
         for file in files {
             if file.length == 0 || is_padding_path(&file.path) {
                 continue;
@@ -1499,10 +1507,7 @@ impl DiskWorker {
             let path = resolve_path(root, target);
             self.ensure_open(&path, true, false)?;
 
-            let file = self
-                .files
-                .get(&path)
-                .ok_or(StorageError::FileNotOpen)?;
+            let file = self.files.get(&path).ok_or(StorageError::FileNotOpen)?;
             let fd = file.file_descriptor();
             self.manager.begin_io(file);
             let result = pwrite_all(
@@ -1566,10 +1571,7 @@ impl DiskWorker {
             let path = resolve_path(root, target);
             self.ensure_open(&path, false, hashing)?;
 
-            let file = self
-                .files
-                .get(&path)
-                .ok_or(StorageError::FileNotOpen)?;
+            let file = self.files.get(&path).ok_or(StorageError::FileNotOpen)?;
             let fd = file.file_descriptor();
             self.manager.begin_io(file);
             let result = pread_exact(
@@ -1600,15 +1602,8 @@ impl DiskWorker {
         let mut offset = 0u32;
         while offset < piece_size {
             let chunk = (piece_size - offset).min(HASH_READ_CHUNK as u32);
-            let part = self.read_range(
-                root,
-                files,
-                piece_length,
-                piece_index,
-                offset,
-                chunk,
-                true,
-            )?;
+            let part =
+                self.read_range(root, files, piece_length, piece_index, offset, chunk, true)?;
             data[offset as usize..offset as usize + chunk as usize].copy_from_slice(&part);
             offset += chunk;
         }

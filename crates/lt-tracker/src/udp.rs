@@ -444,8 +444,10 @@ mod tests {
         };
         resp.peers
             .push(SocketAddress::new_inet(Ipv4Addr::new(127, 0, 0, 1), 6881));
-        resp.peers
-            .push(SocketAddress::new_inet(Ipv4Addr::new(192, 168, 1, 10), 8080));
+        resp.peers.push(SocketAddress::new_inet(
+            Ipv4Addr::new(192, 168, 1, 10),
+            8080,
+        ));
 
         let encoded = resp.encode();
         assert_eq!(encoded.len(), 20 + 12);

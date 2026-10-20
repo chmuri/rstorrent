@@ -24,7 +24,9 @@ pub fn split_path(path: &Path, part: usize, suffix: &str) -> PathBuf {
 /// Generates all split paths for a file (0-based, like the C++ implementation).
 pub fn split_paths(path: &Path, total_size: u64, split_size: u64, suffix: &str) -> Vec<PathBuf> {
     let count = file_split_count(total_size, split_size);
-    (0..count).map(|part| split_path(path, part, suffix)).collect()
+    (0..count)
+        .map(|part| split_path(path, part, suffix))
+        .collect()
 }
 
 #[cfg(test)]
