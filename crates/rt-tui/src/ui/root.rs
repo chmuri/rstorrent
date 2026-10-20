@@ -1117,6 +1117,10 @@ impl RootUI {
             } else {
                 self.next_download();
             }
+        } else if self.active_screen == ActiveScreen::DownloadDetails
+            && keymap.matches(NavigationKey::PageUp, k)
+        {
+            self.window_details.lock().unwrap().page_up();
         } else if self.active_screen == ActiveScreen::FileList
             && keymap.matches(NavigationKey::PageUp, k)
         {
@@ -1138,6 +1142,10 @@ impl RootUI {
             && keymap.matches(NavigationKey::PageUp, k)
         {
             self.window_transfer_list.lock().unwrap().page_up();
+        } else if self.active_screen == ActiveScreen::DownloadDetails
+            && keymap.matches(NavigationKey::PageDown, k)
+        {
+            self.window_details.lock().unwrap().page_down();
         } else if self.active_screen == ActiveScreen::FileList
             && keymap.matches(NavigationKey::PageDown, k)
         {
@@ -1273,17 +1281,39 @@ impl RootUI {
                 self.switch_view("stopped");
             }
         } else if k == (b'5' as i32) {
-            self.switch_view("complete");
+            if self.active_screen == ActiveScreen::DownloadDetails {
+                self.window_details
+                    .lock()
+                    .unwrap()
+                    .set_tab(DetailTab::Chunks);
+            } else {
+                self.switch_view("complete");
+            }
         } else if k == (b'6' as i32) {
-            self.switch_view("incomplete");
+            if self.active_screen == ActiveScreen::DownloadDetails {
+                self.window_details
+                    .lock()
+                    .unwrap()
+                    .set_tab(DetailTab::Transfers);
+            } else {
+                self.switch_view("incomplete");
+            }
         } else if k == (b'7' as i32) {
-            self.switch_view("hashing");
+            if self.active_screen != ActiveScreen::DownloadDetails {
+                self.switch_view("hashing");
+            }
         } else if k == (b'8' as i32) {
-            self.switch_view("seeding");
+            if self.active_screen != ActiveScreen::DownloadDetails {
+                self.switch_view("seeding");
+            }
         } else if k == (b'9' as i32) {
-            self.switch_view("leeching");
+            if self.active_screen != ActiveScreen::DownloadDetails {
+                self.switch_view("leeching");
+            }
         } else if k == (b'0' as i32) {
-            self.switch_view("active");
+            if self.active_screen != ActiveScreen::DownloadDetails {
+                self.switch_view("active");
+            }
         } else if k == (b'l' as i32) {
             if self.active_screen == ActiveScreen::Log {
                 self.set_active_screen(ActiveScreen::DownloadList);

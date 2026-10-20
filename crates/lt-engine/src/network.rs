@@ -2411,7 +2411,7 @@ async fn run_peer_session(
                                     } else {
                                         match dl.read_piece_block(index, begin, length) {
                                             Ok(data) => {
-                                                dl.record_upload(data.len());
+                                                dl.record_upload_for_peer(&peer_id, data.len());
                                                 Some(data)
                                             }
                                             Err(err) => {
@@ -2439,6 +2439,14 @@ async fn run_peer_session(
                         }
                         PeerMessage::Piece { index, begin, data } => {
                             info!(peer = %peer_addr, index, begin, size = data.len(), "Received Piece block!");
+
+                            // Record downloaded bytes and rate on the peer connection
+                            {
+                                let mut dl = download.lock().unwrap();
+                                if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
+                                    peer.add_downloaded(data.len() as u64);
+                                }
+                            }
 
                             let received = request_list.take_block_at(index, begin);
 
