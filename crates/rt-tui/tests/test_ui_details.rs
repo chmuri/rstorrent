@@ -299,3 +299,35 @@ fn test_details_peers_tab_refresh_throttling() {
     assert_eq!(details.cached_peer_rows().len(), 1);
     assert_eq!(details.cached_peer_rows()[0].addr, "10.0.0.1:5000");
 }
+
+#[test]
+fn test_details_chunks_and_info_refresh_throttling() {
+    let dl = make_test_download("chunks_throttling_test");
+    let mut details = WindowDownloadDetails::new();
+    assert_eq!(details.refresh_interval, std::time::Duration::from_secs(1));
+
+    details.set_download(Some(dl.clone()));
+    details.set_tab(DetailTab::Chunks);
+
+    let mut canvas = Canvas::new(0, 0, 100, 20);
+    details.redraw(&mut canvas);
+    let first_text = canvas.to_string_rows().join("\n");
+    assert!(first_text.contains("Completed Pieces:  0 / 40"));
+
+    // Modify engine chunk state
+    {
+        let mut guard = dl.write().unwrap();
+        guard.download_mut().chunk_selector_mut().mark_completed(0);
+    }
+
+    // Redraw immediately within 1s: throttled, still shows 0 completed
+    details.redraw(&mut canvas);
+    let second_text = canvas.to_string_rows().join("\n");
+    assert!(second_text.contains("Completed Pieces:  0 / 40"));
+
+    // After refresh(): updates immediately
+    details.refresh();
+    details.redraw(&mut canvas);
+    let third_text = canvas.to_string_rows().join("\n");
+    assert!(third_text.contains("Completed Pieces:  1 / 40"));
+}

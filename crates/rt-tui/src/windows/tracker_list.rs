@@ -348,6 +348,9 @@ pub struct TrackerListWindow {
     /// Re-snapshot the live download on every frame, keeping announce/scrape
     /// completions and backoff timers current without external signals.
     pub auto_refresh: bool,
+    /// Throttling interval for auto-refreshing tracker status (default 1.0s).
+    pub refresh_interval: std::time::Duration,
+    last_refresh: Option<std::time::Instant>,
     pub controller_key: u32,
     pub controller_requesting: bool,
     pub controller_promiscuous: bool,
@@ -373,6 +376,8 @@ impl TrackerListWindow {
             page_size: 10,
             column_widths: None,
             auto_refresh: true,
+            refresh_interval: std::time::Duration::from_secs(1),
+            last_refresh: None,
             controller_key: 0,
             controller_requesting: false,
             controller_promiscuous: false,
@@ -393,7 +398,17 @@ impl TrackerListWindow {
             self.scroll_offset = 0;
         }
         self.download = download;
+        self.last_refresh = None;
         self.refresh();
+    }
+
+    pub fn set_refresh_interval(&mut self, interval: std::time::Duration) {
+        self.refresh_interval = interval;
+    }
+
+    pub fn invalidate_refresh(&mut self) {
+        self.last_refresh = None;
+        self.dirty = true;
     }
 
     /// Install a detached snapshot. Useful for tests and callers that already
@@ -445,6 +460,7 @@ impl TrackerListWindow {
     /// group + URL because tracker indices may change when entries are added or
     /// removed.
     pub fn refresh(&mut self) {
+        self.last_refresh = Some(std::time::Instant::now());
         let previous = self
             .selected_tracker()
             .map(|row| (row.group, row.url.clone()));
@@ -721,7 +737,13 @@ impl Window for TrackerListWindow {
         canvas.erase();
 
         if self.auto_refresh && self.download.is_some() {
-            self.refresh();
+            let should_refresh = match self.last_refresh {
+                Some(last) => last.elapsed() >= self.refresh_interval,
+                None => true,
+            };
+            if should_refresh {
+                self.refresh();
+            }
         }
         self.page_size = canvas.height().saturating_sub(LIST_HEADER_ROWS).max(1) as usize;
         self.normalize_selection();
