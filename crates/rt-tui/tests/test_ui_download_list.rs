@@ -125,10 +125,10 @@ fn test_ui_download_list_navigation_and_rendering() {
 
 #[test]
 fn test_other_windows_rendering() {
-    let mut title = WindowTitle::new("rtorrent-rust");
+    let mut title = WindowTitle::new("rstorrent");
     let mut canvas = Canvas::new(0, 0, 80, 1);
     title.redraw(&mut canvas);
-    assert!(canvas.get_line(0).contains("*** rtorrent-rust ***"));
+    assert!(canvas.get_line(0).contains("*** rstorrent ***"));
 
     let mut status = WindowStatusbar::new();
     status.set_status("[Throttle 100/100]");

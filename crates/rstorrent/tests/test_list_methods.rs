@@ -6,7 +6,7 @@ use rt_rpc::Target;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn list_methods_includes_all_command_families() {
-    let cli = Cli::parse_from(["rtorrent", "-n", "--daemon", "-p", "0-0"]);
+    let cli = Cli::parse_from(["rstorrent", "-n", "--daemon", "-p", "0-0"]);
     let mut control = Control::new();
     control.initialize(&cli).expect("control initialization");
 

@@ -19,7 +19,7 @@ fn test_root_ui_initialization_and_layout() {
     let rows = canvas.to_string_rows();
     assert_eq!(rows.len(), 24);
     // Row 0 should be title
-    assert!(rows[0].contains("rTorrent"));
+    assert!(rows[0].contains("rstorrent"));
     // Row 1 should be view
     assert!(rows[1].contains("[View: main]"));
     // Row 23 should be statusbar

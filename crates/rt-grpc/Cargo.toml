@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "gRPC interface for rtorrent (TorrentService, SystemService, CommandService)"
+description = "gRPC interface for rstorrent (TorrentService, SystemService, CommandService)"
 build = "build.rs"
 
 [dependencies]

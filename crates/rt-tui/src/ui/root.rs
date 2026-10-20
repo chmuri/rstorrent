@@ -496,7 +496,7 @@ impl RootUI {
         self.window_title
             .lock()
             .unwrap()
-            .set_title(format!("rTorrent - View: {}", view_name));
+            .set_title(format!("rstorrent - View: {}", view_name));
 
         if self.active_screen == ActiveScreen::FileList {
             self.refresh_file_list();
