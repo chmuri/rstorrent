@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-20
+
+Maintenance release unifying application naming to `rstorrent` across the TUI window title and runtime messages.
+
+### Changed
+
+- **Unified Application Branding (`rt-tui`, `rstorrent`)**:
+  - Updated main window view title in `RootUI::switch_view` to display `rstorrent - View: <name>` (previously `rTorrent - View: <name>`).
+  - Standardized panic handler reporting to prefix messages with `rstorrent: panic`.
+  - Updated crate documentation headers, gRPC crate description, and test expectations to consistently reference `rstorrent`.
+
 ## [0.10.3] - 2026-10-20
 
 Performance and stability release introducing 1-second background refresh throttling across all TUI views and detail tabs to eliminate lock contention, fixing a re-entrant deadlock in the Info detail tab, and adding verification tests.
@@ -156,7 +167,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.3...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.4
 [0.10.3]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.3
 [0.10.2]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.2
 [0.10.1]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.1
