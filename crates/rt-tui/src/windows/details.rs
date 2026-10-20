@@ -435,7 +435,12 @@ impl Window for WindowDownloadDetails {
                         } else {
                             format!(
                                 "  {:<18} | {:<15} | {:>9.1} | {:>8.1} | {:>10} | {:<5} ",
-                                row.addr, row.client, row.rate_down_kb, row.rate_up_kb, down_str, row.flags
+                                row.addr,
+                                row.client,
+                                row.rate_down_kb,
+                                row.rate_up_kb,
+                                down_str,
+                                row.flags
                             )
                         };
                         canvas.print_at(0, y, &line);
