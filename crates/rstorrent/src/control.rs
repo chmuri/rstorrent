@@ -83,7 +83,7 @@ impl Control {
 
         let mut id_bytes = [0u8; 20];
         id_bytes[0..8].copy_from_slice(b"-RS0100-");
-        let _ = getrandom::getrandom(&mut id_bytes[8..20]);
+        let _ = getrandom::fill(&mut id_bytes[8..20]);
         let our_peer_id = lt_common::hash_string::HashString::new(id_bytes);
 
         let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);

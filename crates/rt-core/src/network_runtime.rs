@@ -431,7 +431,7 @@ fn candidate_ports(first: u16, last: u16, random: bool) -> Vec<u16> {
     let count = (last as u32 - first as u32 + 1) as u32;
     let start = if random {
         let mut bytes = [0u8; 2];
-        if getrandom::getrandom(&mut bytes).is_ok() {
+        if getrandom::fill(&mut bytes).is_ok() {
             (u16::from_be_bytes(bytes) as u32) % count
         } else {
             0
@@ -1125,7 +1125,7 @@ impl NetworkRuntime {
         };
         let dht_handle = if dht_port != 0 || dht_cache_path.is_some() {
             let mut id_bytes = [0u8; 20];
-            let own_id = match getrandom::getrandom(&mut id_bytes) {
+            let own_id = match getrandom::fill(&mut id_bytes) {
                 Ok(()) => HashString::new(id_bytes),
                 Err(err) => {
                     warn!(error = %err, "Could not generate DHT node id");
