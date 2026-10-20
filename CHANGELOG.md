@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-20
+
+Performance and stability release introducing 1-second background refresh throttling across all TUI views and detail tabs to eliminate lock contention, fixing a re-entrant deadlock in the Info detail tab, and adding verification tests.
+
+### Added
+
+- **TUI Refresh Throttling & Lock Contention Optimization (`rt-tui`)**:
+  - Implemented 1-second background refresh throttling across all tabs in `WindowDownloadDetails` (`Info`, `Peers`, `Files`, `Trackers`, `Chunks`, `Transfers`).
+  - Implemented 1-second background refresh throttling across dedicated inspection windows: `PeerListWindow` (`'4'`), `ChunksSeenWindow` (`'5'`), `TransferListWindow` (`'6'`), `FileListWindow` (`'v'`), and `TrackerListWindow` (`'t'`).
+  - Preserved instantaneous responsiveness: navigation, paging, and scrolling draw from memory caches without locking the engine; tab switching and torrent switching immediately invalidate caches for zero latency.
+  - Eliminated high-frequency lock contention on `Download` (`RwLock` and `EngineDownload` mutex) and visual jitter during high-throughput downloads.
+  - Added throttling and cache invalidation unit tests in `test_ui_details.rs` and `test_ui_chunks_transfer.rs`.
+
+### Fixed
+
+- **Re-entrant Deadlock in Torrent Details Info Tab**:
+  - Fixed deadlock in `WindowDownloadDetails::render_info_tab` where `dl.download()` was held while calling `dl.downloaded_bytes()`. Query now directly inspects engine counters and releases guards safely.
+
 ## [0.10.2] - 2026-10-20
 
 Point release overhauling the TUI torrent detail views, adding full per-peer download/upload rate and progress tracking, introducing auto-refresh for file completion, and fixing UI key navigation.
@@ -138,6 +156,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.3...HEAD
+[0.10.3]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.3
+[0.10.2]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.2
 [0.10.1]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.1
 [0.10.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.0
