@@ -7,6 +7,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use lt_common::object::bencode;
+use lt_common::Object;
 use lt_engine::constructor::{TorrentFileEntry, TorrentMetadata};
 use lt_storage::file::Priority;
 use lt_storage::resume::{
@@ -19,7 +20,7 @@ use crate::download_factory::DownloadFactory;
 pub use manager::{SessionCommitEntry, SessionManager};
 pub use storer::{
     get_formatted_entries, is_correct_format, load_resume_file, recover_staged_entries,
-    DirectoryEntry, DownloadStorer,
+    DirectoryEntry, DownloadStorer, SessionEntry,
 };
 
 /// Per-file decisions made while validating persisted resume data.
@@ -72,14 +73,18 @@ pub struct RestoredSessionDownload {
     pub outcome: ResumeApplyOutcome,
 }
 
-/// Restore the `.rtorrent` sidecar (directory, priority, transfer totals).
-///
-/// Missing sidecars are not an error: the download is simply restored with its
-/// defaults. The directory must be restored before resume validation because
-/// per-file mtimes are checked relative to it.
-///
-/// Returns whether the download was active when the sidecar was written.
-pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> bool {
+/// Restored values from a `.rtorrent` sidecar.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RtorrentSessionState {
+    /// The download was active when the sidecar was written.
+    pub was_active: bool,
+    /// Original magnet URI, present for downloads added before their metadata
+    /// was available. Used to recreate a placeholder when `<hash>.torrent` is
+    /// missing.
+    pub magnet_uri: Option<String>,
+}
+
+fn read_rtorrent_object(base_path: &str) -> Option<Object> {
     let path = format!("{}.rtorrent", base_path);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
@@ -87,16 +92,27 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> bool 
             if err.kind() != ErrorKind::NotFound {
                 tracing::warn!(path = %path, error = %err, "Could not read session state file.");
             }
-            return false;
+            return None;
         }
     };
 
-    let object = match bencode::decode(&bytes) {
-        Ok(object) => object,
+    match bencode::decode(&bytes) {
+        Ok(object) => Some(object),
         Err(err) => {
             tracing::warn!(path = %path, error = %err, "Could not decode session state file.");
-            return false;
+            None
         }
+    }
+}
+
+/// Restore the `.rtorrent` sidecar (directory, priority, transfer totals).
+///
+/// Missing sidecars are not an error: the download is simply restored with its
+/// defaults. The directory must be restored before resume validation because
+/// per-file mtimes are checked relative to it.
+pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> RtorrentSessionState {
+    let Some(object) = read_rtorrent_object(base_path) else {
+        return RtorrentSessionState::default();
     };
 
     if let Ok(directory) = object.get_key_string("directory") {
@@ -112,10 +128,35 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> bool 
         }
     }
 
+    if let Ok(magnet_uri) = object.get_key_string("magnet_uri") {
+        if !magnet_uri.is_empty() {
+            if let Ok(uri) = std::str::from_utf8(magnet_uri) {
+                download.set_magnet_uri(uri);
+            }
+        }
+    }
+
+    RtorrentSessionState {
+        was_active: object
+            .get_key_value("state")
+            .map(|state| state > 0)
+            .unwrap_or(false),
+        magnet_uri: object
+            .get_key_string("magnet_uri")
+            .ok()
+            .and_then(|value| String::from_utf8(value.to_vec()).ok())
+            .filter(|uri| !uri.is_empty()),
+    }
+}
+
+/// Reads just the persisted magnet URI from a `.rtorrent` sidecar.
+pub fn load_magnet_uri_from_sidecar(base_path: &str) -> Option<String> {
+    let object = read_rtorrent_object(base_path)?;
     object
-        .get_key_value("state")
-        .map(|state| state > 0)
-        .unwrap_or(false)
+        .get_key_string("magnet_uri")
+        .ok()
+        .and_then(|value| String::from_utf8(value.to_vec()).ok())
+        .filter(|uri| !uri.is_empty())
 }
 
 /// Load a `.libtorrent_resume` file, validate it against the download's
@@ -343,7 +384,7 @@ pub fn load_session_download(
         ));
     }
 
-    let was_active = restore_rtorrent_state(torrent_path, &mut download);
+    let was_active = restore_rtorrent_state(torrent_path, &mut download).was_active;
 
     let resume_path = format!("{}.libtorrent_resume", torrent_path);
     let (resume_loaded, resume_error, outcome) =
@@ -369,6 +410,16 @@ pub fn load_session_download(
         download.stop();
     }
 
+    // A resume snapshot taken before the initial recheck finished contains an
+    // empty bitfield even though the payload already exists. Trusting it would
+    // re-download every piece. Verify the existing files instead.
+    if outcome.completed_chunks == 0 && download.queue_recheck_if_files_exist() {
+        tracing::info!(
+            path = %torrent_path,
+            "Queued hash recheck for existing payload files after session restore."
+        );
+    }
+
     Ok(RestoredSessionDownload {
         download,
         resume_loaded,
@@ -376,4 +427,68 @@ pub fn load_session_download(
         resume_error,
         outcome,
     })
+}
+
+/// Recreates a magnet placeholder when its `<hash>.torrent` file was never
+/// written (metadata not fetched before the previous shutdown).
+///
+/// No resume data can be applied yet because the piece layout is unknown. The
+/// sidecar still restores the save directory, priority and active state; once
+/// metadata arrives the normal persistence path writes the real `.torrent`.
+pub fn load_magnet_session_download(
+    base_path: &str,
+    expected_hash: &str,
+    magnet_uri: &str,
+) -> io::Result<RestoredSessionDownload> {
+    let mut factory = DownloadFactory::new();
+    factory.set_session(true);
+    factory.set_init_load(true);
+    factory.set_print_log(false);
+    factory.load_magnet(magnet_uri)?;
+
+    let mut download = factory.create_download()?;
+
+    let actual_hash = download.info_hash_hex();
+    if !actual_hash.eq_ignore_ascii_case(expected_hash) {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "session magnet hash {} does not match file name hash {}",
+                actual_hash, expected_hash
+            ),
+        ));
+    }
+
+    let was_active = restore_rtorrent_state(base_path, &mut download).was_active;
+    if was_active {
+        download.stop();
+    }
+
+    Ok(RestoredSessionDownload {
+        download,
+        resume_loaded: false,
+        was_active,
+        resume_error: None,
+        outcome: ResumeApplyOutcome::default(),
+    })
+}
+
+/// Loads one session entry, transparently falling back to the persisted magnet
+/// URI when the static `.torrent` file is missing.
+pub fn restore_session_entry(
+    base_path: &str,
+    expected_hash: &str,
+    has_torrent: bool,
+) -> io::Result<RestoredSessionDownload> {
+    if has_torrent {
+        return load_session_download(base_path, expected_hash);
+    }
+
+    match load_magnet_uri_from_sidecar(base_path) {
+        Some(uri) => load_magnet_session_download(base_path, expected_hash, &uri),
+        None => Err(Error::new(
+            ErrorKind::NotFound,
+            "session entry is missing both the .torrent file and a persisted magnet URI",
+        )),
+    }
 }

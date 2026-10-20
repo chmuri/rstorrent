@@ -106,10 +106,8 @@ fn start_with_partial_file_rechecks_and_downloads_remainder() {
 
 #[test]
 fn start_without_existing_files_marks_checked_and_downloads() {
-    let root = std::env::temp_dir().join(format!(
-        "rtorrent_test_no_existing_{}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("rtorrent_test_no_existing_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
 

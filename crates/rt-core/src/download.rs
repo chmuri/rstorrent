@@ -12,6 +12,10 @@ pub struct Download {
     download: Arc<Mutex<EngineDownload>>,
     metadata: TorrentMetadata,
     bencode: Option<Object>,
+    /// Original magnet URI for downloads that were added before their info
+    /// dictionary was available. Persisted in the `.rtorrent` sidecar so the
+    /// placeholder can be recreated after a restart.
+    magnet_uri: Option<String>,
     message: String,
     priority: u32,
     resume_flags: u32,
@@ -37,6 +41,7 @@ impl Download {
             download: Arc::new(Mutex::new(download)),
             metadata,
             bencode: None,
+            magnet_uri: None,
             message: String::new(),
             priority: 2, // normal
             resume_flags: DEFAULT_RESUME_FLAGS,
@@ -75,25 +80,88 @@ impl Download {
         &self.metadata
     }
 
+    /// The magnet URI this download was created from, if any.
+    pub fn magnet_uri(&self) -> Option<&str> {
+        self.magnet_uri.as_deref()
+    }
+
+    pub fn set_magnet_uri(&mut self, uri: impl Into<String>) {
+        self.magnet_uri = Some(uri.into());
+    }
+
     pub fn is_metadata_download(&self) -> bool {
         self.metadata.is_meta_download
     }
 
     /// Updates the wrapper's metadata snapshot once the network layer has
     /// fetched the info dictionary for a magnet download.
+    ///
+    /// When metadata becomes available this also reconstructs the torrent's
+    /// bencode (`info` + trackers) so the session writer can persist the
+    /// missing `<info-hash>.torrent` file. Without it a magnet download is
+    /// never restorable after a restart.
     pub fn sync_metadata_from_engine(&mut self) -> bool {
         if !self.metadata.is_meta_download {
             return false;
         }
 
-        let engine = self.download.lock().unwrap();
-        if engine.is_metadata_download() {
-            return false;
+        let (metadata, info_bytes) = {
+            let mut engine = self.download.lock().unwrap();
+            if engine.is_metadata_download() {
+                return false;
+            }
+
+            let metadata = engine.metadata().clone();
+            let info_bytes = lt_engine::network::download_info_bytes(&engine);
+            // Once the real file layout is known, an already present payload
+            // (e.g. an ISO downloaded earlier) must be verified before it is
+            // used for seeding.
+            let _ = engine.queue_recheck_if_files_exist();
+            (metadata, info_bytes)
+        };
+
+        self.metadata = metadata;
+        self.hash_checked = false;
+
+        if self.bencode.is_none() {
+            if let Some(bytes) = info_bytes {
+                self.bencode = Self::bencode_from_info(&self.metadata, bytes.as_slice());
+            }
         }
 
-        self.metadata = engine.metadata().clone();
-        self.hash_checked = false;
         true
+    }
+
+    /// Builds the top-level torrent dictionary from the verified raw `info`
+    /// bytes. Re-encoding [`TorrentMetadata`] directly is not safe because
+    /// unknown extension keys would change the info-hash.
+    fn bencode_from_info(metadata: &TorrentMetadata, info_bytes: &[u8]) -> Option<Object> {
+        let info = lt_common::object::bencode::decode(info_bytes).ok()?;
+
+        let mut root = Object::create_map();
+        root.insert_key("info", info).ok()?;
+
+        if let Some(announce) = metadata.announce.as_deref().filter(|url| !url.is_empty()) {
+            root.insert_key("announce", Object::from(announce)).ok()?;
+        }
+
+        if !metadata.announce_list.is_empty() {
+            let mut tiers = Object::create_list();
+            for tier in &metadata.announce_list {
+                let mut urls = Object::create_list();
+                for url in tier {
+                    urls.insert_back(Object::from(url.as_str())).ok()?;
+                }
+                if !urls.as_list().map(|list| list.is_empty()).unwrap_or(true) {
+                    tiers.insert_back(urls).ok()?;
+                }
+            }
+            if !tiers.as_list().map(|list| list.is_empty()).unwrap_or(true) {
+                root.insert_key("announce-list", tiers).ok()?;
+            }
+        }
+
+        Some(root)
     }
 
     pub fn is_sequential(&self) -> bool {

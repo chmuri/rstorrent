@@ -40,6 +40,11 @@ fn magnet_download_can_apply_verified_metadata() {
     assert_eq!(download.metadata().num_pieces, 1);
     assert_eq!(download.metadata().total_size, 16384);
     assert_eq!(download.total_chunks(), 1);
+
+    let recovered = lt_engine::network::download_info_bytes(&download)
+        .expect("verified info bytes must be recoverable after metadata applies");
+    assert_eq!(recovered.as_slice(), bytes.as_slice());
+    assert_eq!(HashString::new(sha1_hash(&recovered)), info_hash);
 }
 
 #[test]

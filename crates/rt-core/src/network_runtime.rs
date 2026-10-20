@@ -1319,8 +1319,17 @@ impl NetworkRuntime {
                     // Magnet downloads start without an info dictionary; the
                     // coordinator applies the fetched metadata to the engine
                     // download, so the command-layer snapshot must follow.
-                    if dl_arc.read().unwrap().is_metadata_download() {
-                        dl_arc.write().unwrap().sync_metadata_from_engine();
+                    // Persist immediately once the static torrent can be built.
+                    let metadata_updated = if dl_arc.read().unwrap().is_metadata_download() {
+                        dl_arc.write().unwrap().sync_metadata_from_engine()
+                    } else {
+                        false
+                    };
+                    if metadata_updated {
+                        download_list
+                            .read()
+                            .unwrap()
+                            .notify_metadata_updated(dl_arc);
                     }
 
                     let (hash, is_active, _is_done, engine_dl, raw_info) = {

@@ -5,6 +5,7 @@ use nix::sys::stat::Mode;
 #[cfg(target_os = "linux")]
 use nix::unistd::fdatasync;
 use nix::unistd::{fsync, write};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::path::Path;
@@ -21,6 +22,18 @@ impl DirectoryEntry {
     }
 }
 
+/// A restorable session base name such as `<info-hash>.torrent`.
+///
+/// Unlike [`get_formatted_entries`], sidecar-only entries are included. They
+/// are restorable when the `.rtorrent` sidecar carries a magnet URI, even if
+/// metadata was never fetched and `<base>.torrent` does not exist yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionEntry {
+    pub base_name: String,
+    pub has_torrent: bool,
+    pub has_sidecar: bool,
+}
+
 pub fn is_correct_format(f: &str) -> bool {
     if f.len() != 48 || !f.ends_with(".torrent") {
         return false;
@@ -28,9 +41,7 @@ pub fn is_correct_format(f: &str) -> bool {
 
     // Work on bytes: slicing a UTF-8 string at a fixed byte offset can panic
     // when the directory contains a non-ASCII file name.
-    f.as_bytes()[..40]
-        .iter()
-        .all(|b| b.is_ascii_hexdigit())
+    f.as_bytes()[..40].iter().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Loads a `.libtorrent_resume` file.
@@ -194,6 +205,69 @@ pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntr
         entries.push(DirectoryEntry {
             s_name: name_str.to_string(),
             is_file,
+        });
+    }
+
+    Ok(entries)
+}
+
+/// Enumerates every restorable session base in a directory.
+///
+/// The base name is the `<40-hex>.torrent` prefix. Entries are discovered from
+/// the static torrent, the `.rtorrent` sidecar or the resume stream, so a
+/// magnet placeholder that never received metadata is not silently lost.
+/// Temporary/staged `.new` files and names for other hashes are ignored.
+pub fn get_restorable_entries(session_path: &str) -> io::Result<Vec<SessionEntry>> {
+    if session_path.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    recover_staged_entries(session_path)?;
+
+    let separator = if session_path.ends_with('/') { "" } else { "/" };
+    let mut bases = BTreeSet::new();
+
+    for entry in fs::read_dir(session_path)? {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let base = if is_correct_format(&name) {
+            name.to_string()
+        } else if let Some(base) = name.strip_suffix(".rtorrent") {
+            if is_correct_format(base) {
+                base.to_string()
+            } else {
+                continue;
+            }
+        } else if let Some(base) = name.strip_suffix(".libtorrent_resume") {
+            if is_correct_format(base) {
+                base.to_string()
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
+        bases.insert(base);
+    }
+
+    let mut entries = Vec::with_capacity(bases.len());
+    for base_name in bases {
+        let torrent_path = format!("{}{}{}", session_path, separator, base_name);
+        let sidecar_path = format!("{}.rtorrent", torrent_path);
+        entries.push(SessionEntry {
+            has_torrent: Path::new(&torrent_path).is_file(),
+            has_sidecar: Path::new(&sidecar_path).is_file(),
+            base_name,
         });
     }
 

@@ -315,6 +315,19 @@ fn reconstruct_info_bytes(download: &Download) -> Option<Vec<u8>> {
     lt_common::object::bencode::encode(&info).ok()
 }
 
+/// Returns the verified, bencoded `info` dictionary for a download.
+///
+/// The bytes are taken from the process-wide metadata cache when available.
+/// Otherwise the dictionary is rebuilt from the parsed metadata and only
+/// returned if the rebuilt bytes still hash to the torrent's info-hash.
+///
+/// Callers must not re-encode [`lt_engine::constructor::TorrentMetadata`]
+/// themselves: unknown extension keys would change the info-hash. This helper
+/// is the only safe source of raw `info` bytes for session persistence.
+pub fn download_info_bytes(download: &Download) -> Option<Arc<Vec<u8>>> {
+    ensure_local_metadata(download)
+}
+
 /// Ensures the process-wide metadata cache has an entry for this download.
 /// The rebuilt dictionary is only inserted if its SHA-1 matches the info-hash.
 fn ensure_local_metadata(download: &Download) -> Option<Arc<Vec<u8>>> {

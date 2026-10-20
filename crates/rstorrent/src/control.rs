@@ -379,6 +379,35 @@ impl Control {
                                 ),
                             }
                         }
+                        "event.download.metadata" => {
+                            // Magnet metadata just arrived: write the missing
+                            // `<info-hash>.torrent` immediately instead of
+                            // waiting for the periodic session save.
+                            let session = session_manager.lock().unwrap();
+                            if !session.is_active() {
+                                return;
+                            }
+                            let guard = download.read().unwrap();
+                            match CoreManager::build_commit_entry(&guard) {
+                                Ok(entry) => {
+                                    if let Err(err) = session.commit(&[entry]) {
+                                        tracing::warn!(
+                                            error = %err,
+                                            "Could not persist fetched magnet metadata to session"
+                                        );
+                                    } else {
+                                        tracing::info!(
+                                            info_hash = %guard.info_hash_hex(),
+                                            "Persisted fetched magnet metadata to session"
+                                        );
+                                    }
+                                }
+                                Err(err) => tracing::warn!(
+                                    error = %err,
+                                    "Could not serialize fetched magnet metadata"
+                                ),
+                            }
+                        }
                         _ => {}
                     }
                 }));
@@ -416,7 +445,10 @@ impl Control {
                 if let Err(e) = sm.set_path(&session_path) {
                     tracing::warn!("Failed to set session path '{}': {}", session_path, e);
                 } else if let Err(e) = sm.start() {
-                    tracing::error!("Failed to lock/start session: {}", e);
+                    // Continuing without an active session would silently drop
+                    // every torrent state change. Refuse to start instead; the
+                    // lock is the only guard against two writers.
+                    return Err(format!("Failed to lock/start session: {}", e));
                 }
             }
         }
@@ -438,28 +470,50 @@ impl Control {
             if !session_path.is_empty() {
                 let entries = {
                     let session = self.session_manager.lock().unwrap();
-                    // Only regular, correctly named entries are restorable.
-                    // Symlinks, temporary files and malformed names are
-                    // ignored instead of aborting startup.
-                    session.get_valid_entries().unwrap_or_default()
+                    // Restore every valid base, including magnet placeholders
+                    // that never received metadata. Symlinks, temporary files
+                    // and malformed names are ignored instead of aborting
+                    // startup.
+                    session.get_restorable_entries().unwrap_or_default()
                 };
 
                 for entry in entries {
-                    let torrent_path = format!("{}{}", session_path, entry.s_name);
-                    let hash_hex = &entry.s_name[..40];
+                    let torrent_path = format!("{}{}", session_path, entry.base_name);
+                    let hash_hex = &entry.base_name[..40];
 
-                    let restored =
-                        match rt_core::session::load_session_download(&torrent_path, hash_hex) {
-                            Ok(restored) => restored,
-                            Err(err) => {
-                                tracing::warn!(
-                                    path = %torrent_path,
-                                    error = %err,
-                                    "Skipping invalid session torrent entry."
-                                );
-                                continue;
-                            }
-                        };
+                    if self
+                        .download_list
+                        .read()
+                        .unwrap()
+                        .find_hex(hash_hex)
+                        .is_some()
+                    {
+                        // The download was just loaded from the command line
+                        // (and may already have been written to the session).
+                        tracing::debug!(
+                            path = %torrent_path,
+                            "Session entry already loaded; skipping duplicate."
+                        );
+                        continue;
+                    }
+
+                    let restored = match rt_core::session::restore_session_entry(
+                        &torrent_path,
+                        hash_hex,
+                        entry.has_torrent,
+                    ) {
+                        Ok(restored) => restored,
+                        Err(err) => {
+                            tracing::warn!(
+                                path = %torrent_path,
+                                has_torrent = entry.has_torrent,
+                                has_sidecar = entry.has_sidecar,
+                                error = %err,
+                                "Skipping invalid session torrent entry."
+                            );
+                            continue;
+                        }
+                    };
 
                     if let Some(err) = &restored.resume_error {
                         tracing::warn!(
@@ -743,7 +797,11 @@ impl Control {
         let mut first_error = None;
 
         for download in downloads {
-            let guard = download.read().unwrap();
+            let mut guard = download.write().unwrap();
+            // Refresh magnet metadata (and its bencode) that may have arrived
+            // since the last network supervisor tick, so a shutdown always
+            // persists the static torrent as well.
+            guard.sync_metadata_from_engine();
             match CoreManager::build_commit_entry(&guard) {
                 Ok(entry) => entries.push(entry),
                 Err(err) => {

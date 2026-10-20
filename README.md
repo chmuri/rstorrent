@@ -107,6 +107,24 @@ cargo build --release -p rstorrent
 ./target/release/rstorrent
 ```
 
+### Running on a server over SSH
+
+The interactive TUI is tied to the terminal that started it: closing the SSH
+session sends `SIGHUP` and the process performs a clean shutdown. For
+unattended downloads use daemon mode under `tmux`/`screen`, `nohup` or a
+systemd unit:
+
+```bash
+tmux new -s rstorrent
+rstorrent --daemon --session /var/lib/rstorrent/session "magnet:?xt=urn:btih:..."
+```
+
+The session directory stores both the static `.torrent` files and resume data,
+so downloads are restored after a restart. Magnet downloads persist their
+metadata as soon as it is fetched; while metadata is still missing the original
+magnet URI is kept in the `.rtorrent` sidecar so the placeholder can be
+recreated.
+
 ---
 
 ## Releases & Packages

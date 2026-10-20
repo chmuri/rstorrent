@@ -28,3 +28,6 @@ nix.workspace = true
 thiserror.workspace = true
 getrandom.workspace = true
 base64.workspace = true
+
+[dev-dependencies]
+lt-crypto.workspace = true
