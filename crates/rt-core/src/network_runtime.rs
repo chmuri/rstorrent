@@ -1323,7 +1323,7 @@ impl NetworkRuntime {
                         dl_arc.write().unwrap().sync_metadata_from_engine();
                     }
 
-                    let (hash, is_active, is_done, engine_dl, raw_info) = {
+                    let (hash, is_active, _is_done, engine_dl, raw_info) = {
                         let dl = dl_arc.read().unwrap();
                         let raw_info = dl.bencode().and_then(|bencode| {
                             bencode
@@ -1353,7 +1353,7 @@ impl NetworkRuntime {
                         }
                     }
 
-                    if is_active && !is_done {
+                    if is_active {
                         if !active_coordinators.contains_key(&hash) {
                             debug!(hash = %hash.to_hex(), "Spawning network coordinator for torrent");
                             let coordinator = DownloadNetworkCoordinator::new_with_shared_policy(

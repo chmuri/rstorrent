@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-20
+
+Stability and state persistence release fixing session data loss on application restart, resolving existing file hash rechecking and seeding transitions, and ensuring continuous tracker announces and peer serving for completed downloads.
+
+### Fixed
+
+- **Session Persistence Out-of-the-Box (`rstorrent`, `rt-core`)**:
+  - Automatically initialize default session directory (`$XDG_DATA_HOME/rstorrent/session` or `~/.local/share/rstorrent/session`) if no session path was configured via CLI or `.rtorrent.rc`.
+  - Ensure session directory is created on disk (`fs::create_dir_all`) and expanded (`~`) before attempting to load or save session data.
+  - Relaxed session filename validation to accept case-insensitive hex filenames.
+  - Eliminated deadlock in `Control::try_load_torrent` by releasing write lock on `download_list` prior to invoking `save_session`.
+  - Added integration test `test_session_persistence_default.rs` ensuring state is saved and restored across clean restarts.
+
+- **Existing File Detection, Hash Recheck & Seeding (`lt-engine`, `rt-core`, `rstorrent`)**:
+  - Added `queue_recheck_if_files_exist()` and `has_existing_files()` to automatically schedule chunk verification when adding or restoring torrents that have existing files in their destination directory.
+  - Fixed download directory assignment in `try_load_torrent` and `apply_load_command` (`directory.default`) so file paths are properly located before rechecking pieces.
+  - Fixed premature coordinator termination in `NetworkRuntime` by running `DownloadNetworkCoordinator` whenever a torrent is active (even when `is_done == true`).
+  - Fixed tracker announce suppression in `lt-engine::network` to announce completed torrents with `left: 0` and keep listening for peer requests.
+  - Added integration test `test_existing_file_seeding.rs` verifying complete/partial existing file rechecking, completion transition, and seeding state.
+
+
 ## [0.10.4] - 2026-10-20
 
 Maintenance release unifying application naming to `rstorrent` across the TUI window title and runtime messages.

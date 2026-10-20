@@ -667,8 +667,12 @@ impl DownloadNetworkCoordinator {
                     }
                 }
 
-                if is_active && !is_done {
-                    let left = total_size.saturating_sub(downloaded);
+                if is_active {
+                    let left = if is_done {
+                        0
+                    } else {
+                        total_size.saturating_sub(downloaded)
+                    };
                     let event = if is_first_announce {
                         is_first_announce = false;
                         Some("started".to_string())

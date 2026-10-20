@@ -824,6 +824,44 @@ impl Download {
         &self.metadata
     }
 
+    /// Checks if any non-empty target files already exist in `save_directory`.
+    pub fn has_existing_files(&self) -> bool {
+        if self.save_directory.as_os_str().is_empty() || self.target_files.is_empty() {
+            return false;
+        }
+
+        for target in self.target_files.iter() {
+            if target.length == 0 {
+                continue;
+            }
+            let relative = target
+                .path
+                .strip_prefix(std::path::Path::new("/"))
+                .unwrap_or(&target.path);
+            let path = self.save_directory.join(relative);
+            if path.exists() {
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    if meta.len() > 0 {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Queues all pieces for hash verification if non-empty files already exist on disk.
+    pub fn queue_recheck_if_files_exist(&mut self) -> bool {
+        if self.has_existing_files() {
+            self.pending_hash_pieces = (0..self.metadata.num_pieces as u32).collect();
+            self.hash_checked = false;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Applies persisted resume data (bitfield, priorities, mtimes).
     ///
     /// The stored bitfield is only trusted for files whose size and mtime
@@ -1698,6 +1736,8 @@ impl Download {
                 self.tracker_controller.send_start_event();
                 return Ok(());
             }
+        } else if !self.hash_checked {
+            self.hash_checked = true;
         }
 
         let next = if self.is_seeder() {

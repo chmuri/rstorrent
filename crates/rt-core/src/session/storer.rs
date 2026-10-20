@@ -30,7 +30,7 @@ pub fn is_correct_format(f: &str) -> bool {
     // when the directory contains a non-ASCII file name.
     f.as_bytes()[..40]
         .iter()
-        .all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(b))
+        .all(|b| b.is_ascii_hexdigit())
 }
 
 /// Loads a `.libtorrent_resume` file.

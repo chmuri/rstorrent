@@ -384,7 +384,7 @@ impl Control {
                 }));
         }
 
-        // 7. Start session manager if session directory is configured
+        // 7. Start session manager if session directory is configured, or use XDG default
         {
             let mut sm = self.session_manager.lock().unwrap();
             // Read the path from the manager directly. Calling the
@@ -392,13 +392,30 @@ impl Control {
             // deadlock while the mutex is held.
             let session_path = if let Some(session) = &cli.session {
                 session.clone()
-            } else {
+            } else if !sm.path().is_empty() {
                 sm.path().to_string()
+            } else {
+                let base = if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+                    if !xdg.is_empty() {
+                        std::path::PathBuf::from(xdg).join("rstorrent/session")
+                    } else if let Ok(home) = std::env::var("HOME") {
+                        std::path::PathBuf::from(home).join(".local/share/rstorrent/session")
+                    } else {
+                        std::path::PathBuf::from("./.session")
+                    }
+                } else if let Ok(home) = std::env::var("HOME") {
+                    std::path::PathBuf::from(home).join(".local/share/rstorrent/session")
+                } else {
+                    std::path::PathBuf::from("./.session")
+                };
+                base.to_string_lossy().to_string()
             };
 
             if !session_path.is_empty() {
-                sm.set_path(&session_path).map_err(|e| e.to_string())?;
-                if let Err(e) = sm.start() {
+                let _ = std::fs::create_dir_all(&session_path);
+                if let Err(e) = sm.set_path(&session_path) {
+                    tracing::warn!("Failed to set session path '{}': {}", session_path, e);
+                } else if let Err(e) = sm.start() {
                     tracing::error!("Failed to lock/start session: {}", e);
                 }
             }
@@ -469,6 +486,7 @@ impl Control {
                             .unwrap_or_else(|| ".".to_string())
                         };
                         download.set_directory(default_dir);
+                        download.queue_recheck_if_files_exist();
                     }
 
                     let download = Arc::new(RwLock::new(download));
@@ -564,7 +582,7 @@ impl Control {
         }
 
         let mut factory = DownloadFactory::new();
-        factory.set_start(start);
+        factory.set_start(false);
         factory.set_init_load(true);
 
         if trimmed.starts_with("data:") {
@@ -626,9 +644,16 @@ impl Control {
             .unwrap_or_else(|| ".".to_string())
         };
         download.write().unwrap().set_directory(&default_dir);
+        download.write().unwrap().queue_recheck_if_files_exist();
+
+        if start {
+            dl_list.start(&download);
+        }
+        drop(dl_list);
 
         let mut vm = self.view_manager.write().unwrap();
-        vm.insert_download_to_all(download);
+        vm.insert_download_to_all(Arc::clone(&download));
+        let _ = self.save_session();
         self.root_ui
             .lock()
             .unwrap()
