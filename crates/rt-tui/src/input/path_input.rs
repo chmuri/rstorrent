@@ -73,6 +73,12 @@ impl PathInput {
         self.inner.set_pos(pos);
     }
 
+    pub fn insert_str(&mut self, text: &str) {
+        self.show_next = false;
+        self.cancel_completion();
+        self.inner.insert_str(text);
+    }
+
     /// Enables/disables asynchronous path completion.
     ///
     /// Asynchronous mode is intended for the live UI; tests and other callers
@@ -231,6 +237,10 @@ impl InputTarget for PathInput {
 
     fn pos(&self) -> usize {
         PathInput::pos(self)
+    }
+
+    fn insert_str(&mut self, text: &str) {
+        PathInput::insert_str(self, text);
     }
 }
 

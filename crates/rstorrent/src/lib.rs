@@ -151,10 +151,13 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                // Mouse/paste/focus handlers are not required yet; consuming
+                TerminalEvent::Paste(text) => {
+                    let mut ui = control.root_ui.lock().unwrap();
+                    ui.handle_paste(&text);
+                }
+                // Mouse/focus handlers are not required yet; consuming
                 // them here keeps the event loop alive and bounded.
                 TerminalEvent::Mouse(_)
-                | TerminalEvent::Paste(_)
                 | TerminalEvent::FocusGained
                 | TerminalEvent::FocusLost
                 | TerminalEvent::Unknown => {}

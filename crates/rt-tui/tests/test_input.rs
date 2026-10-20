@@ -461,3 +461,54 @@ fn test_root_ui_command_completion_uses_command_map() {
     assert!(ui.handle_key(b'\t' as i32).is_none());
     assert_eq!(current_prompt_text(&ui), "ui.test.alp");
 }
+
+#[test]
+fn test_paste_into_active_input_prompt() {
+    let mut ui = RootUI::new();
+    ui.enable_input("load.start", InputPromptMode::LoadStart);
+
+    // Paste text with trailing carriage return and newline.
+    let pasted = ui.handle_paste("magnet:?xt=urn:btih:abcdef1234567890\r\n");
+    assert!(pasted);
+    assert_eq!(
+        current_prompt_text(&ui),
+        "magnet:?xt=urn:btih:abcdef1234567890"
+    );
+
+    // Pressing enter submits the pasted text.
+    let (mode, text) = ui.handle_key(10).unwrap();
+    assert_eq!(mode, InputPromptMode::LoadStart);
+    assert_eq!(text, "magnet:?xt=urn:btih:abcdef1234567890");
+}
+
+#[test]
+fn test_paste_auto_opens_load_start_on_download_list() {
+    let mut ui = RootUI::new();
+    // Default screen is DownloadList and input_mode is None.
+    assert_eq!(ui.input_mode, InputPromptMode::None);
+
+    let pasted = ui.handle_paste("https://example.com/archlinux.iso.torrent\n");
+    assert!(pasted);
+    assert_eq!(ui.input_mode, InputPromptMode::LoadStart);
+    assert_eq!(
+        current_prompt_text(&ui),
+        "https://example.com/archlinux.iso.torrent"
+    );
+}
+
+#[test]
+fn test_input_target_insert_str() {
+    let mut target = TextInput::new();
+    target.insert_str("hello");
+    assert_eq!(target.text(), "hello");
+    assert_eq!(target.pos(), 5);
+
+    target.set_pos(0);
+    target.insert_str("say ");
+    assert_eq!(target.text(), "say hello");
+    assert_eq!(target.pos(), 4);
+
+    let mut path_input = PathInput::new();
+    path_input.insert_str("/var/torrents/");
+    assert_eq!(path_input.text(), "/var/torrents/");
+}
