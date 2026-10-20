@@ -62,7 +62,7 @@ base64 = "0.23"
 sha1 = "0.11"
 rc4 = "0.1"
 getrandom = "0.2"
-hickory-resolver = "0.24"
+hickory-resolver = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 ratatui = "0.29"
