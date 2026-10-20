@@ -93,7 +93,7 @@ docker compose up -d
 ### 2. Building from Source
 
 #### Prerequisites
-- Rust 1.75+ (stable toolchain)
+- Rust 1.99+ (stable toolchain)
 - Cargo
 
 ```bash
