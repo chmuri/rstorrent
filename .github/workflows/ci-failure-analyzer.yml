@@ -1,0 +1,87 @@
+name: "CI Failure Copilot Analyzer"
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  analyze-and-report:
+    name: "Analyze CI failure & plan remediation"
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: "Identify Pull Request"
+        id: pr
+        run: |
+          PR_NUMBER="${{ github.event.workflow_run.pull_requests[0].number }}"
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            PR_NUMBER=$(gh pr list --search "${{ github.event.workflow_run.head_sha }}" --json number --jq '.[0].number')
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Download and parse failed CI logs"
+        id: logs
+        run: |
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "Fetching failed logs for CI run $RUN_ID..."
+          mkdir -p ci-logs
+          gh run view "$RUN_ID" --log-failed > ci-logs/failed_raw.txt 2>&1 || true
+
+          # Extract meaningful Rust compiler errors or test panic messages
+          grep -E "error\[E[0-9]+\]|FAILED|panicked at|cannot find|mismatched types|unresolved import" -B 1 -A 5 ci-logs/failed_raw.txt | head -n 60 > ci-logs/summary.txt || true
+          if [ ! -s ci-logs/summary.txt ]; then
+            tail -n 40 ci-logs/failed_raw.txt > ci-logs/summary.txt
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Post Copilot analysis and remediation plan on Pull Request"
+        if: steps.pr.outputs.pr_number != ''
+        run: |
+          PR="${{ steps.pr.outputs.pr_number }}"
+          LOG_SNIPPET=$(cat ci-logs/summary.txt)
+
+          cat << 'EOF' > comment_template.md
+          ### 🤖 CI Failure Analysis & Copilot Remediation Plan
+
+          The CI pipeline failed on commit `${{ github.event.workflow_run.head_sha }}`.
+
+          #### Detected Diagnostic Summary:
+          ```text
+          LOG_PLACEHOLDER
+          ```
+
+          #### Recommended Action & Copilot Autofix:
+          1. **Native Copilot Autofix**: If GitHub Copilot is enabled on this repository, you can open the failed run in the **Checks** tab and click **"Fix with Copilot"** to automatically generate a proposed patch.
+          2. **Interactive Copilot PR Command**: Mention Copilot in a PR comment to generate a fix:
+             > `@github-copilot please analyze the compiler errors above and propose a patch following .github/copilot-instructions.md`
+          3. **Branch Protection**: Merging is held until all diagnostics are addressed and CI checks report green.
+          EOF
+
+          # Safely inject log snippet into comment
+          python3 -c "
+          with open('comment_template.md', 'r') as f:
+              tmpl = f.read()
+          with open('ci-logs/summary.txt', 'r') as f:
+              summary = f.read()
+          out = tmpl.replace('LOG_PLACEHOLDER', summary)
+          with open('final_comment.md', 'w') as f:
+              f.write(out)
+          "
+
+          gh pr comment "$PR" --body-file final_comment.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
