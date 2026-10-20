@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-10-20
+
+Magnet session persistence release: downloads added from a magnet link now save
+their fetched metadata as a static `.torrent` and are restored after a restart.
+Placeholders whose metadata has not arrived yet survive restarts through the
+original magnet URI, and session saves are triggered immediately when metadata
+becomes available.
+
+### Fixed
+
+- **Magnet Session Persistence (`rt-core`, `lt-engine`, `rstorrent`)**:
+  - Rebuild and persist the top-level torrent bencode (`info` + trackers) when
+    metadata fetched through `ut_metadata` becomes available. Previously the
+    wrapper kept `bencode == None`, so `Manager::build_commit_entry()` wrote only
+    `.rtorrent` and `.libtorrent_resume` streams and never
+    `<info-hash>.torrent`. `SessionManager::get_valid_entries()` then found no
+    restorable entry and the torrent disappeared after every restart.
+  - Added `lt_engine::network::download_info_bytes()` as the only safe source of
+    verified raw `info` bytes. Re-encoding `TorrentMetadata` directly can change
+    the info-hash when extension keys are present.
+  - Queue a hash recheck for already existing payload files as soon as magnet
+    metadata is applied, so an ISO/torrent payload downloaded earlier is
+    verified and seeded.
+  - Trigger an immediate session commit (`event.download.metadata`) instead of
+    waiting for the 20-minute periodic save. Shutdown and `session.save`
+    refresh pending magnet metadata before serializing as well.
+  - Persist `magnet_uri` in the `.rtorrent` sidecar and recreate the placeholder
+    on startup when `<info-hash>.torrent` is still missing. A magnet added and
+    closed before metadata arrives is no longer lost.
+  - Session restore now enumerates sidecar-only entries, transparently falls
+    back to the persisted magnet URI, and silently skips entries already loaded
+    from the command line instead of logging a duplicate warning.
+
+- **Session Directory Lock (`rstorrent`)**:
+  - Failure to acquire the session lock is now fatal at startup instead of
+    logging an error and continuing without persistence, which could silently
+    discard all torrent state when a second instance was started.
+
 ## [0.10.5] - 2026-10-20
 
 Stability and state persistence release fixing session data loss on application restart, resolving existing file hash rechecking and seeding transitions, and ensuring continuous tracker announces and peer serving for completed downloads.
