@@ -61,7 +61,7 @@ flate2 = "1.0"
 base64 = "0.23"
 sha1 = "0.11"
 rc4 = "0.2"
-getrandom = "0.2"
+getrandom = "0.4"
 hickory-resolver = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 quick-xml = { version = "0.42", features = ["serialize"] }
