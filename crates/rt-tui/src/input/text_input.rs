@@ -15,6 +15,7 @@ pub trait InputTarget: Send + Sync {
     fn pressed(&mut self, key: i32) -> bool;
     fn text(&self) -> &str;
     fn pos(&self) -> usize;
+    fn insert_str(&mut self, text: &str);
 }
 
 /// Clamps `pos` to the text and snaps it down to the nearest UTF-8 scalar
@@ -232,5 +233,9 @@ impl InputTarget for TextInput {
 
     fn pos(&self) -> usize {
         TextInput::pos(self)
+    }
+
+    fn insert_str(&mut self, text: &str) {
+        TextInput::insert_str(self, text);
     }
 }

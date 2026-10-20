@@ -70,6 +70,16 @@ impl InputManager {
         self.keymap.key(navigation)
     }
 
+    pub fn paste(&mut self, text: &str) -> bool {
+        if let Some(target) = &self.text_input {
+            let mut input = target.lock().unwrap();
+            input.insert_str(text);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn pressed(&mut self, key: i32) -> bool {
         if let Some(target) = &self.text_input {
             let mut input = target.lock().unwrap();

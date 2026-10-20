@@ -869,6 +869,39 @@ impl RootUI {
         (mode, text)
     }
 
+    /// Handles bracketed paste events.
+    ///
+    /// If text input is active, inserts the sanitized text at the current cursor
+    /// position. If text input is not active and the user is on the main download
+    /// list, automatically initiates `load.start` with the pasted text.
+    pub fn handle_paste(&mut self, text: &str) -> bool {
+        let sanitized = text
+            .trim_matches(|c| c == '\r' || c == '\n')
+            .replace(['\r', '\n'], " ");
+        if sanitized.is_empty() {
+            return false;
+        }
+
+        if self.input_mode != InputPromptMode::None {
+            self.input_history_search = None;
+            self.input_history.reset_navigation();
+            let handled = self.input_manager.lock().unwrap().paste(&sanitized);
+            self.window_input.lock().unwrap().mark_dirty();
+            self.poll_active_completion();
+            return handled;
+        }
+
+        // If not in a prompt and on the main download list, auto-open load.start
+        if self.active_screen == ActiveScreen::DownloadList {
+            self.enable_input("load.start", InputPromptMode::LoadStart);
+            let handled = self.input_manager.lock().unwrap().paste(&sanitized);
+            self.window_input.lock().unwrap().mark_dirty();
+            return handled;
+        }
+
+        false
+    }
+
     pub fn handle_key(&mut self, key: i32) -> Option<(InputPromptMode, String)> {
         // If text input is active
         if self.input_mode != InputPromptMode::None {
