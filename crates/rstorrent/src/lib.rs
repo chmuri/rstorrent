@@ -123,10 +123,14 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = control.execute_command(&text);
                             }
                             InputPromptMode::LoadStart => {
-                                let _ = control.try_load_torrent(&text, true);
+                                if let Err(e) = control.try_load_torrent(&text, true) {
+                                    control.root_ui.lock().unwrap().push_log(e);
+                                }
                             }
                             InputPromptMode::LoadNormal => {
-                                let _ = control.try_load_torrent(&text, false);
+                                if let Err(e) = control.try_load_torrent(&text, false) {
+                                    control.root_ui.lock().unwrap().push_log(e);
+                                }
                             }
                             InputPromptMode::Filter => {
                                 let win =

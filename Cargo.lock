@@ -1943,6 +1943,7 @@ dependencies = [
 name = "rstorrent"
 version = "0.10.1"
 dependencies = [
+ "base64 0.22.1",
  "clap",
  "crossterm",
  "getrandom 0.2.17",
