@@ -267,7 +267,10 @@ fn test_root_ui_details_keys_and_tabs_switching() {
 fn test_details_peers_tab_refresh_throttling() {
     let dl = make_test_download("throttling_test");
     let mut details = WindowDownloadDetails::new();
-    assert_eq!(details.peer_refresh_interval, std::time::Duration::from_secs(1));
+    assert_eq!(
+        details.peer_refresh_interval,
+        std::time::Duration::from_secs(1)
+    );
 
     details.set_download(Some(dl.clone()));
     details.set_tab(DetailTab::Peers);
