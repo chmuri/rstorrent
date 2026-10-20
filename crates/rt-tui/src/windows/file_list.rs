@@ -120,6 +120,9 @@ pub struct WindowFileList {
     last_height: u32,
     all_files: Vec<FileTarget>,
     pub auto_refresh: bool,
+    /// Throttling interval for auto-refreshing file completion (default 1.0s).
+    pub refresh_interval: std::time::Duration,
+    last_refresh: Option<std::time::Instant>,
     dirty: bool,
 }
 
@@ -148,6 +151,8 @@ impl WindowFileList {
             last_height: 24,
             all_files: Vec::new(),
             auto_refresh: true,
+            refresh_interval: std::time::Duration::from_secs(1),
+            last_refresh: None,
             dirty: true,
         }
     }
@@ -165,7 +170,17 @@ impl WindowFileList {
             self.scroll_offset = 0;
         }
         self.download = download;
+        self.last_refresh = None;
         self.refresh();
+    }
+
+    pub fn set_refresh_interval(&mut self, interval: std::time::Duration) {
+        self.refresh_interval = interval;
+    }
+
+    pub fn invalidate_refresh(&mut self) {
+        self.last_refresh = None;
+        self.dirty = true;
     }
 
     pub fn selected_row(&self) -> Option<&FileListRow> {
@@ -187,6 +202,7 @@ impl WindowFileList {
     /// Rebuilds the flattened view from the current download's `FileList`.
     /// The selected row is preserved by path when possible.
     pub fn refresh(&mut self) {
+        self.last_refresh = Some(std::time::Instant::now());
         let focus_key = self
             .rows
             .get(self.cursor)
@@ -751,7 +767,13 @@ impl Window for WindowFileList {
 
         canvas.erase();
         if self.auto_refresh && self.download.is_some() {
-            self.refresh();
+            let should_refresh = match self.last_refresh {
+                Some(last) => last.elapsed() >= self.refresh_interval,
+                None => true,
+            };
+            if should_refresh {
+                self.refresh();
+            }
         }
         self.last_height = canvas.height();
         self.clamp_focus();

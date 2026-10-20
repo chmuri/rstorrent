@@ -125,8 +125,11 @@ pub struct ChunksSeenWindow {
     /// First visible virtual row (band * peer_count + peer).
     pub scroll_row: usize,
     pub page_size: usize,
-    /// When true, `redraw` re-snapshots the live download every frame.
+    /// When true, `redraw` re-snapshots the live download at the configured interval.
     pub auto_refresh: bool,
+    /// Throttling interval for auto-refreshing the chunks seen grid (default 1.0s).
+    pub refresh_interval: std::time::Duration,
+    last_refresh: Option<std::time::Instant>,
     /// Total peers that reported a complete bitfield (seeders).
     pub complete_peers: u32,
     /// Peers included in the rarity accounting (non-seeders).
@@ -157,6 +160,8 @@ impl ChunksSeenWindow {
             scroll_row: 0,
             page_size: 10,
             auto_refresh: true,
+            refresh_interval: std::time::Duration::from_secs(1),
+            last_refresh: None,
             complete_peers: 0,
             accounted_peers: 0,
             last_width: 80,
@@ -186,7 +191,17 @@ impl ChunksSeenWindow {
             self.focused_peer = 0;
             self.scroll_row = 0;
         }
+        self.last_refresh = None;
         self.refresh();
+    }
+
+    pub fn set_refresh_interval(&mut self, interval: std::time::Duration) {
+        self.refresh_interval = interval;
+    }
+
+    pub fn invalidate_refresh(&mut self) {
+        self.last_refresh = None;
+        self.dirty = true;
     }
 
     /// Install a detached peer snapshot. Primarily useful for tests and for
@@ -407,6 +422,7 @@ impl ChunksSeenWindow {
 
     /// Re-snapshot the live download's availability matrix.
     pub fn refresh(&mut self) {
+        self.last_refresh = Some(std::time::Instant::now());
         let focus = (self.focused_band, self.focused_peer);
         match self.snapshot_live() {
             Some(snapshot) => {
@@ -717,7 +733,13 @@ impl Window for ChunksSeenWindow {
         self.last_width = canvas.width();
         self.page_size = canvas.height().saturating_sub(HEADER_ROWS).max(1) as usize;
         if self.auto_refresh && self.download.is_some() {
-            self.refresh();
+            let should_refresh = match self.last_refresh {
+                Some(last) => last.elapsed() >= self.refresh_interval,
+                None => true,
+            };
+            if should_refresh {
+                self.refresh();
+            }
         }
         self.clamp_focus();
 

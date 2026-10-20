@@ -309,3 +309,48 @@ fn transfer_list_live_download_without_transfers_is_safe() {
     assert!(lines[0].contains("[Transfers: transfer-live] 0 active"));
     assert!(lines[1].starts_with("[No active transfers]"));
 }
+
+#[test]
+fn chunks_seen_and_transfer_list_refresh_throttling() {
+    let download = make_download("throttling-live", 4, 1024, 4096);
+    let mut chunks_win = ChunksSeenWindow::new();
+    assert_eq!(
+        chunks_win.refresh_interval,
+        std::time::Duration::from_secs(1)
+    );
+
+    chunks_win.set_download(Some(download.clone()));
+    let mut canvas = Canvas::new(0, 0, 60, 6);
+    chunks_win.redraw(&mut canvas);
+    assert_eq!(chunks_win.complete_peers, 0);
+
+    // Modify download state
+    {
+        let mut guard = download.write().unwrap();
+        let mut engine = guard.download_mut();
+        let mut bitfield = Bitfield::new(4);
+        bitfield.set_all();
+        engine
+            .chunk_statistics_mut()
+            .add_peer(HashString::new([5u8; 20]), &bitfield);
+    }
+
+    // Immediate redraw within 1s: throttled, still 0 complete peers
+    chunks_win.redraw(&mut canvas);
+    assert_eq!(chunks_win.complete_peers, 0);
+
+    // Invalidate refresh: updates immediately
+    chunks_win.invalidate_refresh();
+    chunks_win.redraw(&mut canvas);
+    assert_eq!(chunks_win.complete_peers, 1);
+
+    // TransferListWindow throttling test
+    let mut trans_win = TransferListWindow::new();
+    assert_eq!(
+        trans_win.refresh_interval,
+        std::time::Duration::from_secs(1)
+    );
+    trans_win.set_download(Some(download));
+    trans_win.redraw(&mut canvas);
+    assert_eq!(trans_win.len(), 0);
+}

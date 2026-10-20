@@ -305,8 +305,11 @@ pub struct TransferListWindow {
     pub page_size: usize,
     /// `None` uses [`TransferColumnWidths::for_width`] at draw time.
     pub column_widths: Option<TransferColumnWidths>,
-    /// When true, `redraw` re-snapshots the live delegator every frame.
+    /// When true, `redraw` re-snapshots the live delegator at the configured interval.
     pub auto_refresh: bool,
+    /// Throttling interval for auto-refreshing the transfer list (default 1.0s).
+    pub refresh_interval: std::time::Duration,
+    last_refresh: Option<std::time::Instant>,
     dirty: bool,
 }
 
@@ -328,6 +331,8 @@ impl TransferListWindow {
             page_size: 10,
             column_widths: None,
             auto_refresh: true,
+            refresh_interval: std::time::Duration::from_secs(1),
+            last_refresh: None,
             dirty: true,
         }
     }
@@ -347,7 +352,17 @@ impl TransferListWindow {
             self.selected = 0;
             self.scroll_offset = 0;
         }
+        self.last_refresh = None;
         self.refresh();
+    }
+
+    pub fn set_refresh_interval(&mut self, interval: std::time::Duration) {
+        self.refresh_interval = interval;
+    }
+
+    pub fn invalidate_refresh(&mut self) {
+        self.last_refresh = None;
+        self.dirty = true;
     }
 
     /// Install detached rows. Selection is preserved by transfer key when the
@@ -405,6 +420,7 @@ impl TransferListWindow {
     /// Re-snapshot the live delegator. Returns no rows when no download is
     /// bound. Selection is restored by [`TransferRow::key`] before clamping.
     pub fn refresh(&mut self) {
+        self.last_refresh = Some(std::time::Instant::now());
         let previous = self.selected_transfer().map(TransferRow::key);
         match self.snapshot_live() {
             Some(snapshot) => {
@@ -703,7 +719,13 @@ impl Window for TransferListWindow {
         canvas.erase();
 
         if self.auto_refresh && self.download.is_some() {
-            self.refresh();
+            let should_refresh = match self.last_refresh {
+                Some(last) => last.elapsed() >= self.refresh_interval,
+                None => true,
+            };
+            if should_refresh {
+                self.refresh();
+            }
         }
         self.normalize_selection();
 
