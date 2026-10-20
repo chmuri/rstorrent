@@ -1,0 +1,3 @@
+[alias]
+trim = "sweep --maxsize 4GB"
+clean-cache = "sweep --installed"
