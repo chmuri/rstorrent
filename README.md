@@ -6,9 +6,11 @@
 [![Rust: 2021](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-informational.svg)](#supported-platforms)
 
-A modern, high-performance, memory-safe BitTorrent client and engine written in pure Rust. `rstorrent` is a complete re-implementation and architectural evolution of the legendary [rTorrent](https://github.com/rakshasa/rtorrent) and [libtorrent](https://github.com/rakshasa/libtorrent) C++ codebase.
+## About
 
-It provides 100% behavioral parity with rTorrent's RPC and SCGI protocol, allowing drop-in compatibility with frontends such as [Flood](https://github.com/jesec/flood) and [ruTorrent](https://github.com/Novik/ruTorrent), while offering memory safety, non-blocking asynchronous I/O, and modern concurrency.
+`rstorrent` is a modern, high-performance, and memory-safe BitTorrent client and engine written from scratch in pure Rust. It represents a complete re-implementation and architectural evolution of the legendary [rTorrent](https://github.com/rakshasa/rtorrent) and [libtorrent](https://github.com/rakshasa/libtorrent) C++ codebase.
+
+It provides 100% behavioral parity with rTorrent's RPC and SCGI protocol, enabling seamless drop-in compatibility with frontends like [Flood](https://github.com/jesec/flood) and [ruTorrent](https://github.com/Novik/ruTorrent), alongside modern push-streaming gRPC, asynchronous disk I/O, and an interactive, highly responsive Ratatui-based TUI with real-time peer transfer tracking.
 
 ---
 
@@ -60,6 +62,7 @@ rstorrent/
 │   ├── lt-engine     # Engine coordinator, disk threads, download lifecycle state machine
 │   ├── rt-rpc        # Command DSL engine, command registry, XML-RPC & JSON-RPC parser, Lua bridge
 │   ├── rt-scgi       # Non-blocking SCGI server over TCP & UNIX sockets with keep-alive
+│   ├── rt-grpc       # gRPC rtorrent.v1 service endpoints & push streams (Tonic)
 │   ├── rt-core       # Session manager, download views, schedules, throttle groups
 │   ├── rt-tui        # Terminal UI (Ratatui / Crossterm), views, canvas buffer, frame balancing
 │   └── rstorrent     # CLI entry point, signal handlers, lifecycle supervisor
