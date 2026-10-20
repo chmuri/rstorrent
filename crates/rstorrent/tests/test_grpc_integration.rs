@@ -49,7 +49,7 @@ async fn test_grpc_daemon_integration() {
         .expect("GetVersion failed")
         .into_inner();
 
-    assert!(version_resp.version.contains("0.10.0"));
+    assert!(version_resp.version.contains(env!("CARGO_PKG_VERSION")));
     assert_eq!(version_resp.api_version, "0.10.0");
 
     // Test CommandService
