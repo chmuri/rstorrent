@@ -1,0 +1,48 @@
+name: Bug Report
+description: Create a report to help us improve rstorrent
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide as much relevant detail as possible.
+  - type: input
+    id: version
+    attributes:
+      label: rstorrent Version
+      description: What version of rstorrent are you running? (Run `rstorrent --version`)
+      placeholder: "e.g. 0.10.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What platform are you running on?
+      options:
+        - Linux (x86_64)
+        - Linux (aarch64 / ARM)
+        - macOS (Apple Silicon - M1/M2/M3)
+        - macOS (Intel)
+        - Docker container
+        - Other (specify in description)
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description & Steps to Reproduce
+      description: A clear description of the bug and how to reproduce it.
+      placeholder: |
+        1. Start rtorrent with command '...'
+        2. Load torrent '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output or Terminal Screenshots
+      description: Please copy and paste any relevant terminal output or log entries.
+      render: shell
