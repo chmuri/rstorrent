@@ -153,10 +153,7 @@ impl HashTorrent {
     }
 
     /// Runs the full pass, invoking `progress(checked, total)` after each piece.
-    pub fn hash_all_with_progress<F>(
-        &self,
-        progress: F,
-    ) -> Result<HashResult, StorageError>
+    pub fn hash_all_with_progress<F>(&self, progress: F) -> Result<HashResult, StorageError>
     where
         F: FnMut(u32, u32),
     {
@@ -234,12 +231,10 @@ impl HashTorrent {
 
             let matches = match expected {
                 None => false,
-                Some(expected_hash) => {
-                    match self.hash_piece(&mut cache, index, piece_size) {
-                        Ok(data) => sha1_hash(&data) == expected_hash,
-                        Err(_) => false,
-                    }
-                }
+                Some(expected_hash) => match self.hash_piece(&mut cache, index, piece_size) {
+                    Ok(data) => sha1_hash(&data) == expected_hash,
+                    Err(_) => false,
+                },
             };
 
             if matches {
@@ -353,10 +348,8 @@ mod tests {
 
     #[test]
     fn hashes_existing_multi_file_torrent() {
-        let root = std::env::temp_dir().join(format!(
-            "rtorrent_hash_torrent_{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("rtorrent_hash_torrent_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
@@ -377,8 +370,7 @@ mod tests {
         // Three pieces of 8 bytes.
         for index in 0..3u32 {
             let start = (index as usize) * 8;
-            write_piece_to_disk(&root, &files, 8, index, &payload[start..start + 8])
-                .unwrap();
+            write_piece_to_disk(&root, &files, 8, index, &payload[start..start + 8]).unwrap();
         }
 
         let hashes: Vec<[u8; 20]> = (0..3)
@@ -494,8 +486,7 @@ mod tests {
         }]);
         for index in 0..3u32 {
             let start = index as usize * 8;
-            write_piece_to_disk(&root, &files, 8, index, &payload[start..start + 8])
-                .unwrap();
+            write_piece_to_disk(&root, &files, 8, index, &payload[start..start + 8]).unwrap();
         }
 
         // Pretend piece 0 and 2 are already known-good but piece 1 is stale.
@@ -550,10 +541,8 @@ mod tests {
 
     #[test]
     fn zero_length_files_do_not_produce_chunks() {
-        let root = std::env::temp_dir().join(format!(
-            "rtorrent_hash_torrent_zero_{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("rtorrent_hash_torrent_zero_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 

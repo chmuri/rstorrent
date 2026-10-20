@@ -17,36 +17,62 @@ fn legacy_full_schema_is_decoded() {
 
     let mut files = Object::create_list();
     let mut first = Object::create_map();
-    first.insert_key("mtime", Object::create_value(1_690_000_000)).unwrap();
-    first.insert_key("priority", Object::create_value(2)).unwrap();
-    first.insert_key("completed", Object::create_value(3)).unwrap();
+    first
+        .insert_key("mtime", Object::create_value(1_690_000_000))
+        .unwrap();
+    first
+        .insert_key("priority", Object::create_value(2))
+        .unwrap();
+    first
+        .insert_key("completed", Object::create_value(3))
+        .unwrap();
     files.insert_back(first).unwrap();
 
     let mut second = Object::create_map();
-    second.insert_key("mtime", Object::create_value(MTIME_DOWNLOADING)).unwrap();
-    second.insert_key("priority", Object::create_value(0)).unwrap();
-    second.insert_key("completed", Object::create_value(1)).unwrap();
+    second
+        .insert_key("mtime", Object::create_value(MTIME_DOWNLOADING))
+        .unwrap();
+    second
+        .insert_key("priority", Object::create_value(0))
+        .unwrap();
+    second
+        .insert_key("completed", Object::create_value(1))
+        .unwrap();
     files.insert_back(second).unwrap();
 
     let mut third = Object::create_map();
     // Missing optional fields must fall back to safe defaults.
-    third.insert_key("completed", Object::create_value(0)).unwrap();
+    third
+        .insert_key("completed", Object::create_value(0))
+        .unwrap();
     files.insert_back(third).unwrap();
 
     object.insert_key("files", files).unwrap();
-    object.insert_key("completed", Object::create_value(4096)).unwrap();
+    object
+        .insert_key("completed", Object::create_value(4096))
+        .unwrap();
 
     // Fields written by rtorrent/libtorrent that ResumeData does not model
     // must be ignored rather than rejected.
     let mut trackers = Object::create_map();
     let mut tracker = Object::create_map();
-    tracker.insert_key("enabled", Object::create_value(0)).unwrap();
-    tracker.insert_key("extra_tracker", Object::create_value(1)).unwrap();
-    trackers.insert_key("http://tracker/announce", tracker).unwrap();
+    tracker
+        .insert_key("enabled", Object::create_value(0))
+        .unwrap();
+    tracker
+        .insert_key("extra_tracker", Object::create_value(1))
+        .unwrap();
+    trackers
+        .insert_key("http://tracker/announce", tracker)
+        .unwrap();
     object.insert_key("trackers", trackers).unwrap();
-    object.insert_key("uncertain_pieces", Object::create_string(vec![0u8; 4])).unwrap();
+    object
+        .insert_key("uncertain_pieces", Object::create_string(vec![0u8; 4]))
+        .unwrap();
     object.insert_key("peers", Object::create_list()).unwrap();
-    object.insert_key("future_field", Object::create_value(42)).unwrap();
+    object
+        .insert_key("future_field", Object::create_value(42))
+        .unwrap();
 
     let resume = ResumeData::from_object_with_piece_count(&object, 8).unwrap();
     assert_eq!(resume.bitfield.unwrap().size_set(), 2);
@@ -64,19 +90,25 @@ fn legacy_full_schema_is_decoded() {
 #[test]
 fn legacy_uniform_integer_bitfields_are_decoded() {
     let mut object = Object::create_map();
-    object.insert_key("bitfield", Object::create_value(10)).unwrap();
+    object
+        .insert_key("bitfield", Object::create_value(10))
+        .unwrap();
 
     let all_set = ResumeData::from_object_with_piece_count(&object, 10).unwrap();
     assert!(all_set.bitfield.unwrap().is_all_set());
 
-    object.insert_key("bitfield", Object::create_value(0)).unwrap();
+    object
+        .insert_key("bitfield", Object::create_value(0))
+        .unwrap();
     let all_unset = ResumeData::from_object_with_piece_count(&object, 10).unwrap();
     let all_unset = all_unset.bitfield.unwrap();
     assert_eq!(all_unset.size_bits(), 10);
     assert!(all_unset.is_all_unset());
 
     // A value that is neither zero nor the piece count is invalid progress.
-    object.insert_key("bitfield", Object::create_value(5)).unwrap();
+    object
+        .insert_key("bitfield", Object::create_value(5))
+        .unwrap();
     let invalid = ResumeData::from_object_with_piece_count(&object, 10).unwrap();
     assert!(invalid.bitfield.is_none());
 }
@@ -200,7 +232,9 @@ fn legacy_extras_round_trip_per_file_completed_and_trackers() {
 
     // The regular ResumeData fields survived the extra merge.
     let resume = ResumeData::from_object_with_piece_count(&object, 2).unwrap();
-    assert_eq!(resume.file_priorities, vec![Priority::Normal, Priority::High]);
+    assert_eq!(
+        resume.file_priorities,
+        vec![Priority::Normal, Priority::High]
+    );
     assert_eq!(resume.file_mtimes, vec![MTIME_RECHECK, 1234]);
 }
-

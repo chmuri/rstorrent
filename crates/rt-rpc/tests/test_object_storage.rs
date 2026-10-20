@@ -39,11 +39,17 @@ fn test_basics() {
 fn test_conversions() {
     let mut storage = ObjectStorage::new();
 
-    assert!(storage.insert_str("test_1", Object::from("a"), FLAG_STRING_TYPE).is_ok());
-    assert!(storage.insert_str("test_2", Object::from("a"), FLAG_STRING_TYPE).is_ok());
+    assert!(storage
+        .insert_str("test_1", Object::from("a"), FLAG_STRING_TYPE)
+        .is_ok());
+    assert!(storage
+        .insert_str("test_2", Object::from("a"), FLAG_STRING_TYPE)
+        .is_ok());
 
     let raw_3 = b"test_3";
-    assert!(storage.insert(raw_3, Object::from("a"), FLAG_STRING_TYPE).is_ok());
+    assert!(storage
+        .insert(raw_3, Object::from("a"), FLAG_STRING_TYPE)
+        .is_ok());
     assert_eq!(storage.get_str("test_3").unwrap(), &Object::from("a"));
 
     storage.clear();
@@ -65,7 +71,9 @@ fn test_validate_keys() {
     ));
 
     let key_max = "k".repeat(KEY_SIZE - 1);
-    assert!(storage.insert_str(&key_max, Object::from("a"), FLAG_STRING_TYPE).is_ok());
+    assert!(storage
+        .insert_str(&key_max, Object::from("a"), FLAG_STRING_TYPE)
+        .is_ok());
 
     let key_too_long = "k".repeat(KEY_SIZE);
     assert!(matches!(
@@ -78,7 +86,9 @@ fn test_validate_keys() {
     assert!(storage.find_raw_string(key_too_long.as_bytes()).is_none());
 
     storage.clear();
-    storage.insert_str("test_5", Object::from("a"), FLAG_STRING_TYPE).unwrap();
+    storage
+        .insert_str("test_5", Object::from("a"), FLAG_STRING_TYPE)
+        .unwrap();
 
     // Lookup with nul-char must not match
     assert!(storage.find_raw_string(b"test_5\0x").is_none());
@@ -91,14 +101,24 @@ fn test_validate_keys() {
 fn test_access() {
     let mut storage = ObjectStorage::new();
 
-    storage.insert_str("string_1", Object::from("gen_a"), FLAG_STRING_TYPE).unwrap();
-    storage.insert_str("value_1", Object::from(1i64), FLAG_VALUE_TYPE).unwrap();
+    storage
+        .insert_str("string_1", Object::from("gen_a"), FLAG_STRING_TYPE)
+        .unwrap();
+    storage
+        .insert_str("value_1", Object::from(1i64), FLAG_VALUE_TYPE)
+        .unwrap();
 
     assert_eq!(storage.get_str("string_1").unwrap(), &Object::from("gen_a"));
-    assert_eq!(storage.set_str_string("string_1", "test").unwrap(), Object::from("test"));
+    assert_eq!(
+        storage.set_str_string("string_1", "test").unwrap(),
+        Object::from("test")
+    );
 
     assert_eq!(storage.get_str("value_1").unwrap(), &Object::from(1i64));
-    assert_eq!(storage.set_str_value("value_1", 2).unwrap(), Object::from(2i64));
+    assert_eq!(
+        storage.set_str_value("value_1", 2).unwrap(),
+        Object::from(2i64)
+    );
 }
 
 #[test]
@@ -107,16 +127,21 @@ fn test_multi_key_and_rlookup() {
 
     // Multi-type with rlookup requires FLAG_STATIC
     assert!(matches!(
-        storage.insert_str("multi_1", Object::create_empty(), FLAG_MULTI_TYPE | FLAG_RLOOKUP),
+        storage.insert_str(
+            "multi_1",
+            Object::create_empty(),
+            FLAG_MULTI_TYPE | FLAG_RLOOKUP
+        ),
         Err(RpcError::InputError(_))
     ));
 
-    storage.insert_str(
-        "multi_1",
-        Object::create_empty(),
-        FLAG_MULTI_TYPE | FLAG_STATIC | FLAG_RLOOKUP,
-    )
-    .unwrap();
+    storage
+        .insert_str(
+            "multi_1",
+            Object::create_empty(),
+            FLAG_MULTI_TYPE | FLAG_STATIC | FLAG_RLOOKUP,
+        )
+        .unwrap();
 
     assert!(!storage.has_multi_key(b"multi_1", "cmd_a").unwrap());
     storage

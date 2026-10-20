@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
 use lt_common::hash_string::HashString;
 use lt_common::object::bencode;
 use lt_net::addr::SocketAddress;
+use std::net::SocketAddr;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::net::UdpSocket;
 use tokio::time::{sleep, timeout};
@@ -14,8 +14,8 @@ use crate::http::{
 };
 use crate::udp::{
     AnnounceRequest, AnnounceResponse, ConnectRequest, ConnectResponse, ErrorResponse,
-    ScrapeRequest, ScrapeResponse, UdpTrackerError, ACTION_ANNOUNCE, ACTION_CONNECT,
-    ACTION_ERROR, ACTION_SCRAPE,
+    ScrapeRequest, ScrapeResponse, UdpTrackerError, ACTION_ANNOUNCE, ACTION_CONNECT, ACTION_ERROR,
+    ACTION_SCRAPE,
 };
 use crate::udp_router::UdpRouter;
 
@@ -116,7 +116,9 @@ pub async fn announce(
     url: &str,
     params: &AnnounceParams,
 ) -> Result<Vec<SocketAddr>, TrackerClientError> {
-    announce_detailed(url, params).await.map(|result| result.peers)
+    announce_detailed(url, params)
+        .await
+        .map(|result| result.peers)
 }
 
 /// Like [`announce`], but also returns the tracker interval and swarm counts.
@@ -308,14 +310,7 @@ async fn ensure_udp_connection(
         let transaction_id = router.allocate_transaction_id();
         let request = ConnectRequest::new(transaction_id).encode();
 
-        let result = udp_exchange(
-            socket,
-            &request,
-            transaction_id,
-            ACTION_CONNECT,
-            attempt,
-        )
-        .await;
+        let result = udp_exchange(socket, &request, transaction_id, ACTION_CONNECT, attempt).await;
 
         router.release_transaction_id(transaction_id);
 
@@ -385,11 +380,10 @@ pub async fn announce_udp_detailed_with_router(
     let mut last_error = TrackerClientError::Timeout;
 
     for attempt in 0..attempts {
-        let connection_id =
-            match ensure_udp_connection(&socket, router, &tracker_address).await {
-                Ok(id) => id,
-                Err(err) => return Err(err),
-            };
+        let connection_id = match ensure_udp_connection(&socket, router, &tracker_address).await {
+            Ok(id) => id,
+            Err(err) => return Err(err),
+        };
 
         let transaction_id = router.allocate_transaction_id();
         let request = AnnounceRequest {
@@ -408,14 +402,8 @@ pub async fn announce_udp_detailed_with_router(
         }
         .encode();
 
-        let result = udp_exchange(
-            &socket,
-            &request,
-            transaction_id,
-            ACTION_ANNOUNCE,
-            attempt,
-        )
-        .await;
+        let result =
+            udp_exchange(&socket, &request, transaction_id, ACTION_ANNOUNCE, attempt).await;
 
         router.release_transaction_id(transaction_id);
 
@@ -446,10 +434,7 @@ pub async fn announce_udp_detailed_with_router(
 }
 
 /// Dispatches a scrape request to an HTTP or UDP tracker.
-pub async fn scrape(
-    url: &str,
-    info_hash: HashString,
-) -> Result<ScrapeStats, TrackerClientError> {
+pub async fn scrape(url: &str, info_hash: HashString) -> Result<ScrapeStats, TrackerClientError> {
     if url.starts_with("http://") || url.starts_with("https://") {
         scrape_http(url, info_hash).await
     } else if url.starts_with("udp://") {
@@ -518,9 +503,9 @@ pub async fn scrape_http(
 
     let entry = files
         .get(info_hash.as_slice())
-        .ok_or(TrackerClientError::TrackerHttp(HttpTrackerError::MissingKey(
-            "files[info_hash]",
-        )))?;
+        .ok_or(TrackerClientError::TrackerHttp(
+            HttpTrackerError::MissingKey("files[info_hash]"),
+        ))?;
 
     fn scrape_count(entry: &lt_common::object::Object, key: &str) -> u32 {
         entry
@@ -561,11 +546,10 @@ pub async fn scrape_udp_with_router(
     let mut last_error = TrackerClientError::Timeout;
 
     for attempt in 0..attempts {
-        let connection_id =
-            match ensure_udp_connection(&socket, router, &tracker_address).await {
-                Ok(id) => id,
-                Err(err) => return Err(err),
-            };
+        let connection_id = match ensure_udp_connection(&socket, router, &tracker_address).await {
+            Ok(id) => id,
+            Err(err) => return Err(err),
+        };
 
         let transaction_id = router.allocate_transaction_id();
         let request = ScrapeRequest {
@@ -575,14 +559,7 @@ pub async fn scrape_udp_with_router(
         }
         .encode();
 
-        let result = udp_exchange(
-            &socket,
-            &request,
-            transaction_id,
-            ACTION_SCRAPE,
-            attempt,
-        )
-        .await;
+        let result = udp_exchange(&socket, &request, transaction_id, ACTION_SCRAPE, attempt).await;
 
         router.release_transaction_id(transaction_id);
 
@@ -629,7 +606,9 @@ mod tests {
             numwant: 50,
             event: None,
         };
-        let err = announce("ftp://tracker.example.com", &params).await.unwrap_err();
+        let err = announce("ftp://tracker.example.com", &params)
+            .await
+            .unwrap_err();
         assert!(matches!(err, TrackerClientError::UnsupportedScheme(_)));
     }
 }

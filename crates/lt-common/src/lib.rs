@@ -17,7 +17,10 @@ pub use collections::{PartialQueue, QueueBuckets, UnorderedVector};
 pub use encoding::StringUtf8;
 pub use extents::{Extents, ExtentsError};
 pub use hash_string::HashString;
-pub use object::{BencodeError, FixedKey, Object, ObjectType, ObjectVal, RawBencode, RawList, RawMap, RawString, StaticMap, StaticMapMapping};
+pub use object::{
+    BencodeError, FixedKey, Object, ObjectType, ObjectVal, RawBencode, RawList, RawMap, RawString,
+    StaticMap, StaticMapMapping,
+};
 pub use option_strings::OptionEnum;
 pub use path::Path;
 pub use ranges::Ranges;

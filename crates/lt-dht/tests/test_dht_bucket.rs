@@ -5,9 +5,13 @@ use lt_dht::node::DhtNode;
 
 fn make_cached_node(index: usize, last_seen: u32) -> DhtNode {
     let mut cache = Object::create_map();
-    cache.insert_key("i", Object::create_value(0x01020300 + index as i64)).unwrap();
+    cache
+        .insert_key("i", Object::create_value(0x01020300 + index as i64))
+        .unwrap();
     cache.insert_key("p", Object::create_value(6881)).unwrap();
-    cache.insert_key("t", Object::create_value(last_seen as i64)).unwrap();
+    cache
+        .insert_key("t", Object::create_value(last_seen as i64))
+        .unwrap();
 
     let mut id = HashString::default();
     id.clear_byte(0x11);

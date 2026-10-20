@@ -185,7 +185,12 @@ impl Chunk {
         Ok(success)
     }
 
-    pub fn preload(&self, position: u32, length: u32, use_advise: bool) -> Result<(), StorageError> {
+    pub fn preload(
+        &self,
+        position: u32,
+        length: u32,
+        use_advise: bool,
+    ) -> Result<(), StorageError> {
         if position >= self.chunk_size {
             return Err(StorageError::InvalidRange {
                 offset: position as u64,
@@ -210,8 +215,11 @@ impl Chunk {
             let to_preload = (part_len - offset_in_part).min(end_pos - curr_pos);
 
             if use_advise {
-                part.chunk()
-                    .advise(offset_in_part as usize, to_preload as usize, Advice::WillNeed)?;
+                part.chunk().advise(
+                    offset_in_part as usize,
+                    to_preload as usize,
+                    Advice::WillNeed,
+                )?;
             } else {
                 let slice = part.chunk().as_slice();
                 let seg = &slice[offset_in_part as usize..(offset_in_part + to_preload) as usize];
@@ -246,7 +254,12 @@ impl Chunk {
         Ok(())
     }
 
-    pub fn to_buffer(&self, buffer: &mut [u8], position: u32, length: u32) -> Result<(), StorageError> {
+    pub fn to_buffer(
+        &self,
+        buffer: &mut [u8],
+        position: u32,
+        length: u32,
+    ) -> Result<(), StorageError> {
         Self::check_bounds(self.chunk_size, position, length)?;
         if length == 0 {
             return Ok(());
@@ -288,7 +301,12 @@ impl Chunk {
         Ok(())
     }
 
-    pub fn from_buffer(&mut self, buffer: &[u8], position: u32, length: u32) -> Result<(), StorageError> {
+    pub fn from_buffer(
+        &mut self,
+        buffer: &[u8],
+        position: u32,
+        length: u32,
+    ) -> Result<(), StorageError> {
         Self::check_bounds(self.chunk_size, position, length)?;
         if length == 0 {
             return Ok(());
@@ -330,7 +348,12 @@ impl Chunk {
         Ok(())
     }
 
-    pub fn compare_buffer(&self, buffer: &[u8], position: u32, length: u32) -> Result<bool, StorageError> {
+    pub fn compare_buffer(
+        &self,
+        buffer: &[u8],
+        position: u32,
+        length: u32,
+    ) -> Result<bool, StorageError> {
         Self::check_bounds(self.chunk_size, position, length)?;
         if length == 0 {
             return Ok(true);

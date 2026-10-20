@@ -1,7 +1,7 @@
-use std::sync::{Arc, Mutex};
 use lt_common::Object;
 use rt_core::download_factory::DownloadFactory;
 use rt_core::download_list::DownloadList;
+use std::sync::{Arc, Mutex};
 
 fn create_test_torrent_object() -> Object {
     let mut info = Object::create_map();

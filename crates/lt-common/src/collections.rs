@@ -280,14 +280,20 @@ impl PartialQueue {
         self.layers[idx].1 += 1;
 
         if self.is_layer_full(idx) {
-            self.ceiling = if idx > 0 { Self::ceiling_of(idx - 1) } else { 0 };
+            self.ceiling = if idx > 0 {
+                Self::ceiling_of(idx - 1)
+            } else {
+                0
+            };
         }
 
         true
     }
 
     pub fn prepare_pop(&mut self) -> bool {
-        while self.index < Self::NUM_LAYERS && self.layers[self.index].0 == self.layers[self.index].1 {
+        while self.index < Self::NUM_LAYERS
+            && self.layers[self.index].0 == self.layers[self.index].1
+        {
             if self.is_layer_full(self.index) || self.index + 1 == Self::NUM_LAYERS {
                 return false;
             }
@@ -297,7 +303,8 @@ impl PartialQueue {
     }
 
     pub fn pop(&mut self) -> Option<u32> {
-        if self.index >= Self::NUM_LAYERS || self.layers[self.index].0 >= self.layers[self.index].1 {
+        if self.index >= Self::NUM_LAYERS || self.layers[self.index].0 >= self.layers[self.index].1
+        {
             return None;
         }
         let pos = self.index * self.max_layer_size + self.layers[self.index].0;
@@ -305,7 +312,6 @@ impl PartialQueue {
         Some(self.data[pos])
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -444,4 +450,3 @@ mod tests {
         assert_eq!(pq.pop(), None);
     }
 }
-

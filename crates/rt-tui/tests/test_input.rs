@@ -1,8 +1,8 @@
 use lt_common::Object;
 use rt_rpc::CommandMap;
 use rt_tui::input::{
-    Bindings, InputHistory, InputManager, Keymap, KeymapStyle, NavigationKey,
-    PathInput, TextInput, KEY_BACKSPACE, KEY_DC, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP,
+    Bindings, InputHistory, InputManager, Keymap, KeymapStyle, NavigationKey, PathInput, TextInput,
+    KEY_BACKSPACE, KEY_DC, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP,
 };
 use rt_tui::ui::{InputPromptMode, RootUI};
 use std::fs;

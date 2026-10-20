@@ -77,12 +77,8 @@ fn test_text_element_command() {
     let cmd = TextElementCommand::new("test.greet", 0, Style::default());
     assert_eq!(cmd.render(&target, Some(&map)), "Welcome");
 
-    let cmd_fixed = TextElementCommand::with_length(
-        "test.greet",
-        FLAG_FIXED_WIDTH,
-        Style::default(),
-        10,
-    );
+    let cmd_fixed =
+        TextElementCommand::with_length("test.greet", FLAG_FIXED_WIDTH, Style::default(), 10);
     assert_eq!(cmd_fixed.render(&target, Some(&map)), "Welcome   ");
 }
 

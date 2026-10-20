@@ -52,7 +52,11 @@ impl ResumeData {
             let mut files_list = Object::create_list();
             for idx in 0..file_count {
                 let mut file_dict = Object::create_map();
-                let mtime = self.file_mtimes.get(idx).copied().unwrap_or(MTIME_UNCHECKED);
+                let mtime = self
+                    .file_mtimes
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(MTIME_UNCHECKED);
                 let prio = self
                     .file_priorities
                     .get(idx)
@@ -329,10 +333,8 @@ impl ResumeExtras {
                 if !entries[index].is_map() {
                     entries[index] = Object::create_map();
                 }
-                let _ = entries[index].insert_key(
-                    b"completed",
-                    Object::create_value(*completed as i64),
-                );
+                let _ = entries[index]
+                    .insert_key(b"completed", Object::create_value(*completed as i64));
             }
 
             let mut files = Object::create_list();
@@ -356,18 +358,12 @@ impl ResumeExtras {
                 );
                 if tracker.extra_tracker {
                     let _ = entry.insert_key(b"extra_tracker", Object::create_value(1));
-                    let _ = entry.insert_key(
-                        b"group",
-                        Object::create_value(tracker.group as i64),
-                    );
+                    let _ = entry.insert_key(b"group", Object::create_value(tracker.group as i64));
                 }
                 trackers.insert(tracker.url.clone().into_bytes(), entry);
             }
 
-            let _ = object.insert_key(
-                b"trackers",
-                Object::from(trackers),
-            );
+            let _ = object.insert_key(b"trackers", Object::from(trackers));
         }
     }
 }
@@ -461,14 +457,18 @@ mod tests {
     #[test]
     fn legacy_integer_bitfields_are_supported() {
         let mut object = Object::create_map();
-        object.insert_key(b"bitfield", Object::create_value(10)).unwrap();
+        object
+            .insert_key(b"bitfield", Object::create_value(10))
+            .unwrap();
 
         let all_set = ResumeData::from_object_with_piece_count(&object, 10).unwrap();
         let bitfield = all_set.bitfield.unwrap();
         assert_eq!(bitfield.size_bits(), 10);
         assert!(bitfield.is_all_set());
 
-        object.insert_key(b"bitfield", Object::create_value(0)).unwrap();
+        object
+            .insert_key(b"bitfield", Object::create_value(0))
+            .unwrap();
         let all_unset = ResumeData::from_object_with_piece_count(&object, 10).unwrap();
         let bitfield = all_unset.bitfield.unwrap();
         assert_eq!(bitfield.size_bits(), 10);
@@ -478,13 +478,21 @@ mod tests {
     #[test]
     fn unknown_keys_and_trackers_are_ignored() {
         let mut object = Object::create_map();
-        object.insert_key(b"bitfield", Object::create_string(vec![0x80])).unwrap();
-        object.insert_key(b"future_key", Object::create_value(7)).unwrap();
+        object
+            .insert_key(b"bitfield", Object::create_string(vec![0x80]))
+            .unwrap();
+        object
+            .insert_key(b"future_key", Object::create_value(7))
+            .unwrap();
 
         let mut trackers = Object::create_map();
         let mut tracker = Object::create_map();
-        tracker.insert_key(b"enabled", Object::create_value(0)).unwrap();
-        tracker.insert_key(b"extra_tracker", Object::create_value(1)).unwrap();
+        tracker
+            .insert_key(b"enabled", Object::create_value(0))
+            .unwrap();
+        tracker
+            .insert_key(b"extra_tracker", Object::create_value(1))
+            .unwrap();
         trackers
             .insert_key(b"http://tracker/announce", tracker)
             .unwrap();

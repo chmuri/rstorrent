@@ -92,9 +92,11 @@ impl Thread {
     }
 
     pub fn stop_thread_wait(&mut self) {
-        self.flags.fetch_or(flags::FLAG_DO_SHUTDOWN, Ordering::SeqCst);
+        self.flags
+            .fetch_or(flags::FLAG_DO_SHUTDOWN, Ordering::SeqCst);
         self.interrupt();
-        self.flags.fetch_or(flags::FLAG_DID_SHUTDOWN, Ordering::SeqCst);
+        self.flags
+            .fetch_or(flags::FLAG_DID_SHUTDOWN, Ordering::SeqCst);
         self.state = ThreadState::Inactive;
     }
 }

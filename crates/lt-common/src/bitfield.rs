@@ -172,11 +172,7 @@ impl Bitfield {
 
 impl fmt::Debug for Bitfield {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Bitfield({}/{} bits set)",
-            self.size_set, self.size_bits
-        )
+        write!(f, "Bitfield({}/{} bits set)", self.size_set, self.size_bits)
     }
 }
 

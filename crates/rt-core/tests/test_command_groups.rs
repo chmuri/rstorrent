@@ -1,8 +1,8 @@
-use std::sync::{Arc, RwLock};
 use lt_common::hash_string::HashString;
 use lt_common::Object;
 use rt_core::commands::groups::{register_group_commands, ChokeGroupManager};
 use rt_rpc::{CommandMap, Target};
+use std::sync::{Arc, RwLock};
 
 fn setup_groups() -> (CommandMap, Arc<RwLock<ChokeGroupManager>>) {
     let mut map = CommandMap::new();
@@ -12,10 +12,7 @@ fn setup_groups() -> (CommandMap, Arc<RwLock<ChokeGroupManager>>) {
 }
 
 fn call_set(map: &CommandMap, value: &str) -> Result<(), rt_rpc::RpcError> {
-    let args = Object::create_list_with(vec![
-        Object::from(0i64),
-        Object::from(value.to_string()),
-    ]);
+    let args = Object::create_list_with(vec![Object::from(0i64), Object::from(value.to_string())]);
     map.call_command("choke_group.up.max.set", &args, &Target::None, true)?;
     Ok(())
 }
@@ -52,11 +49,7 @@ fn test_max_unchoked_out_of_range() {
     assert_eq!(50, call_get(&map, "choke_group.up.max"));
 }
 
-fn call(
-    map: &CommandMap,
-    key: &str,
-    args: Vec<Object>,
-) -> Result<Object, rt_rpc::RpcError> {
+fn call(map: &CommandMap, key: &str, args: Vec<Object>) -> Result<Object, rt_rpc::RpcError> {
     let obj = if args.is_empty() {
         Object::create_empty()
     } else {
@@ -116,7 +109,10 @@ fn test_group_min_max_and_membership_commands() {
 
     // Removing the group reassigns its downloads to the global group.
     call(&map, "choke_group.remove", vec![Object::from(index)]).unwrap();
-    assert_eq!(value(&map, "choke_group.general.size", vec![Object::from(0i64)]), 1);
+    assert_eq!(
+        value(&map, "choke_group.general.size", vec![Object::from(0i64)]),
+        1
+    );
     assert!(call(&map, "choke_group.remove", vec![Object::from(0i64)]).is_err());
     assert!(call(&map, "choke_group.remove", vec![Object::from(99i64)]).is_err());
 
@@ -148,10 +144,7 @@ fn test_group_seeding_ratio_commands_target_groups() {
         ),
         1
     );
-    assert_eq!(
-        value(&map, "group.seeding.ratio.enabled", vec![]),
-        0
-    );
+    assert_eq!(value(&map, "group.seeding.ratio.enabled", vec![]), 0);
 
     call(
         &map,
@@ -173,19 +166,11 @@ fn test_group_seeding_ratio_commands_target_groups() {
     .unwrap();
 
     assert_eq!(
-        value(
-            &map,
-            "group.seeding.ratio.min",
-            vec![Object::from(index)]
-        ),
+        value(&map, "group.seeding.ratio.min", vec![Object::from(index)]),
         150
     );
     assert_eq!(
-        value(
-            &map,
-            "group.seeding.ratio.max",
-            vec![Object::from(index)]
-        ),
+        value(&map, "group.seeding.ratio.max", vec![Object::from(index)]),
         250
     );
     assert_eq!(
@@ -205,11 +190,7 @@ fn test_group_seeding_ratio_commands_target_groups() {
     )
     .is_err());
     assert_eq!(
-        value(
-            &map,
-            "group.seeding.ratio.min",
-            vec![Object::from(index)]
-        ),
+        value(&map, "group.seeding.ratio.min", vec![Object::from(index)]),
         150
     );
 

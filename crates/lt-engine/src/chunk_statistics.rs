@@ -54,13 +54,8 @@ impl AvailableList {
         bitfield: Bitfield,
         counted: bool,
     ) -> Option<PeerAvailability> {
-        self.peers.insert(
-            peer_id,
-            PeerAvailability {
-                bitfield,
-                counted,
-            },
-        )
+        self.peers
+            .insert(peer_id, PeerAvailability { bitfield, counted })
     }
 
     pub(crate) fn get_mut(&mut self, peer_id: &HashString) -> Option<&mut PeerAvailability> {
@@ -161,8 +156,7 @@ impl ChunkStatistics {
             false
         };
 
-        self.available
-            .insert(peer_id, bitfield.clone(), counted);
+        self.available.insert(peer_id, bitfield.clone(), counted);
     }
 
     /// Replaces a peer's bitfield after a `bitfield`/`have_all`/`have_none`
@@ -399,7 +393,10 @@ mod tests {
                 }
                 _ => {
                     // Adding an empty peer models a bitfield-less handshake.
-                    let bf = model.entry(peer).or_insert_with(|| Bitfield::new(PIECES)).clone();
+                    let bf = model
+                        .entry(peer)
+                        .or_insert_with(|| Bitfield::new(PIECES))
+                        .clone();
                     stats.received_bitfield(peer, &bf);
                 }
             }

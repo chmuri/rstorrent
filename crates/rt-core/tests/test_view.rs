@@ -1,13 +1,13 @@
-use std::sync::{Arc, Mutex, RwLock};
 use lt_common::hash_string::HashString;
 use lt_common::Object;
+use lt_engine::constructor::TorrentMetadata;
+use lt_engine::download::Download as EngineDownload;
 use rt_core::download::Download;
 use rt_core::view::View;
 use rt_core::view_manager::ViewManager;
-use lt_engine::constructor::TorrentMetadata;
-use lt_engine::download::Download as EngineDownload;
 use rt_rpc::command_flags::FLAG_PUBLIC_RPC;
 use rt_rpc::{CommandMap, Target};
+use std::sync::{Arc, Mutex, RwLock};
 
 fn make_test_download(index: u8) -> Arc<RwLock<Download>> {
     let mut hash_bytes = [0u8; 20];

@@ -1,13 +1,16 @@
 use crate::cli::Cli;
-use crate::setup::{find_config_file, parse_config_file_comments, setup_default_schedule, setup_default_views};
+use crate::setup::{
+    find_config_file, parse_config_file_comments, setup_default_schedule, setup_default_views,
+};
 use crate::signals::SignalState;
 use lt_common::Object;
+use lt_net::config::NetworkConfig;
 use rt_core::commands::download::register_download_session_commands;
 use rt_core::commands::groups::ChokeGroupManager;
 use rt_core::commands::initialize_builtin_commands;
-use rt_core::commands::session::register_session_commands;
-use rt_core::commands::scheduler::register_scheduler_commands;
 use rt_core::commands::ip::IpTableManager;
+use rt_core::commands::scheduler::register_scheduler_commands;
+use rt_core::commands::session::register_session_commands;
 use rt_core::commands::throttle::ThrottleManager;
 use rt_core::commands::tracker::DhtConfig;
 use rt_core::network_runtime::{DhtLifecycleConfig, DhtMode};
@@ -15,7 +18,6 @@ use rt_core::session::SessionManager;
 use rt_core::{DownloadFactory, DownloadList, Manager as CoreManager, ViewManager};
 use rt_rpc::{parse_command, CommandMap, CommandScheduler, ObjectStorage, Target};
 use rt_tui::RootUI;
-use lt_net::config::NetworkConfig;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -153,11 +155,8 @@ impl Control {
             )
             .map_err(|e| format!("Failed to register session commands: {}", e))?;
 
-            register_scheduler_commands(
-                &mut map,
-                Arc::clone(&self.command_scheduler),
-            )
-            .map_err(|e| format!("Failed to register scheduler commands: {}", e))?;
+            register_scheduler_commands(&mut map, Arc::clone(&self.command_scheduler))
+                .map_err(|e| format!("Failed to register scheduler commands: {}", e))?;
 
             crate::scgi::register_scgi_commands(&mut map, Arc::clone(&self.command_map))
                 .map_err(|e| format!("Failed to register SCGI commands: {}", e))?;
@@ -193,8 +192,7 @@ impl Control {
             map.insert_func(
                 "system.listMethods",
                 move |_target, _obj| Ok(Object::create_list_with((*method_names).clone())),
-                rt_rpc::command_flags::FLAG_PUBLIC_RPC
-                    | rt_rpc::command_flags::FLAG_UNTRUSTED_SAFE,
+                rt_rpc::command_flags::FLAG_PUBLIC_RPC | rt_rpc::command_flags::FLAG_UNTRUSTED_SAFE,
                 "",
                 "List all registered methods.",
             )
@@ -238,7 +236,10 @@ impl Control {
                         }
                     }
                 } else if cli.config_file.is_some() {
-                    tracing::warn!("Specified configuration file '{}' does not exist.", path_str);
+                    tracing::warn!(
+                        "Specified configuration file '{}' does not exist.",
+                        path_str
+                    );
                 }
             }
         }
@@ -505,7 +506,10 @@ impl Control {
             if session.path().is_empty() {
                 None
             } else {
-                Some(std::path::PathBuf::from(format!("{}dht.cache", session.path())))
+                Some(std::path::PathBuf::from(format!(
+                    "{}dht.cache",
+                    session.path()
+                )))
             }
         };
 
@@ -522,15 +526,20 @@ impl Control {
             self.listen_port
         } else {
             let map = self.command_map.read().unwrap();
-            map.call_command("network.port_range", &Object::create_empty(), &Target::None, false)
-                .ok()
-                .and_then(|obj| {
-                    obj.as_str().ok().and_then(|s| {
-                        let first = s.split_once('-').map(|(f, _)| f).unwrap_or(s);
-                        first.parse::<u16>().ok().filter(|&p| p != 0)
-                    })
+            map.call_command(
+                "network.port_range",
+                &Object::create_empty(),
+                &Target::None,
+                false,
+            )
+            .ok()
+            .and_then(|obj| {
+                obj.as_str().ok().and_then(|s| {
+                    let first = s.split_once('-').map(|(f, _)| f).unwrap_or(s);
+                    first.parse::<u16>().ok().filter(|&p| p != 0)
                 })
-                .unwrap_or(self.listen_port)
+            })
+            .unwrap_or(self.listen_port)
         };
         self.listen_port = listen_port;
 
@@ -562,10 +571,15 @@ impl Control {
 
         let default_dir = {
             let map = self.command_map.read().unwrap();
-            map.call_command("directory.default", &Object::create_empty(), &Target::None, false)
-                .ok()
-                .and_then(|obj| obj.as_str().map(|s| s.to_string()).ok())
-                .unwrap_or_else(|| ".".to_string())
+            map.call_command(
+                "directory.default",
+                &Object::create_empty(),
+                &Target::None,
+                false,
+            )
+            .ok()
+            .and_then(|obj| obj.as_str().map(|s| s.to_string()).ok())
+            .unwrap_or_else(|| ".".to_string())
         };
         download.write().unwrap().set_directory(&default_dir);
 
@@ -618,12 +632,9 @@ impl Control {
             for (key, command) in due {
                 {
                     let map = self.command_map.read().unwrap();
-                    if let Err(err) = rt_rpc::scheduler::call_command_object(
-                        &command,
-                        &map,
-                        &Target::None,
-                        true,
-                    ) {
+                    if let Err(err) =
+                        rt_rpc::scheduler::call_command_object(&command, &map, &Target::None, true)
+                    {
                         tracing::warn!("Scheduled command '{}' failed: {}", key, err);
                     }
                 }

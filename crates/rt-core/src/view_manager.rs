@@ -1,8 +1,8 @@
-use std::sync::{Arc, RwLock};
-use lt_common::Object;
-use rt_rpc::CommandMap;
 use crate::download::Download;
 use crate::view::View;
+use lt_common::Object;
+use rt_rpc::CommandMap;
+use std::sync::{Arc, RwLock};
 
 pub struct ViewManager {
     views: Vec<View>,
@@ -89,7 +89,11 @@ impl ViewManager {
         }
     }
 
-    pub fn erase_download_from_all(&mut self, hash: &lt_common::HashString, map: Option<&CommandMap>) {
+    pub fn erase_download_from_all(
+        &mut self,
+        hash: &lt_common::HashString,
+        map: Option<&CommandMap>,
+    ) {
         for view in &mut self.views {
             view.erase(hash, map);
         }

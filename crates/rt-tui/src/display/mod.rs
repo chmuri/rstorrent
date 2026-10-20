@@ -12,8 +12,8 @@ pub use frame::{Bounds, Frame, FrameNode};
 pub use terminal::{TerminalBackend, TerminalEvent, TerminalGuard};
 pub use text_element::{
     TextElement, TextElementCommand, TextElementList, TextElementString, TextElementValue,
-    FLAG_DATE, FLAG_ELAPSED, FLAG_ESCAPE_HEX, FLAG_ESCAPE_HTML, FLAG_FIXED_WIDTH, FLAG_KB,
-    FLAG_MB, FLAG_NORMAL, FLAG_REMAINING, FLAG_TIME, FLAG_TIMER, FLAG_XB,
+    FLAG_DATE, FLAG_ELAPSED, FLAG_ESCAPE_HEX, FLAG_ESCAPE_HTML, FLAG_FIXED_WIDTH, FLAG_KB, FLAG_MB,
+    FLAG_NORMAL, FLAG_REMAINING, FLAG_TIME, FLAG_TIMER, FLAG_XB,
 };
 pub use utils::*;
 pub use window::{

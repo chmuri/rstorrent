@@ -39,10 +39,7 @@ fn network_port_range_random_and_aliases() {
         vec![Object::from("7000-7100")]
     )
     .is_ok());
-    assert_eq!(
-        text(&map, "network.listen.port.range", vec![]),
-        "7000-7100"
-    );
+    assert_eq!(text(&map, "network.listen.port.range", vec![]), "7000-7100");
 
     // Legacy aliases.
     assert_eq!(text(&map, "network.port_range", vec![]), "7000-7100");
@@ -52,23 +49,12 @@ fn network_port_range_random_and_aliases() {
         vec![Object::from("7200-7300")]
     )
     .is_ok());
-    assert_eq!(
-        text(&map, "network.listen.port.range", vec![]),
-        "7200-7300"
-    );
+    assert_eq!(text(&map, "network.listen.port.range", vec![]), "7200-7300");
     assert!(call(&map, "port_range", vec![Object::from("7400-7500")]).is_ok());
-    assert_eq!(
-        text(&map, "network.listen.port.range", vec![]),
-        "7400-7500"
-    );
+    assert_eq!(text(&map, "network.listen.port.range", vec![]), "7400-7500");
 
     assert_eq!(value(&map, "network.listen.port.random", vec![]), 1);
-    assert!(call(
-        &map,
-        "network.port_random.set",
-        vec![Object::from(0i64)]
-    )
-    .is_ok());
+    assert!(call(&map, "network.port_random.set", vec![Object::from(0i64)]).is_ok());
     assert_eq!(value(&map, "network.listen.port.random", vec![]), 0);
     assert!(call(&map, "port_random", vec![Object::from(1i64)]).is_ok());
     assert_eq!(value(&map, "network.port_random", vec![]), 1);
@@ -93,24 +79,9 @@ fn network_port_range_random_and_aliases() {
         );
     }
 
-    assert!(call(
-        &map,
-        "network.local_port.set",
-        vec![Object::from(65536i64)]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "network.local_port.set",
-        vec![Object::from(-1i64)]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "network.listen.port.set",
-        vec![Object::from(7000i64)]
-    )
-    .is_ok());
+    assert!(call(&map, "network.local_port.set", vec![Object::from(65536i64)]).is_err());
+    assert!(call(&map, "network.local_port.set", vec![Object::from(-1i64)]).is_err());
+    assert!(call(&map, "network.listen.port.set", vec![Object::from(7000i64)]).is_ok());
     assert_eq!(value(&map, "network.listen.port", vec![]), 7000);
     assert!(call(
         &map,
@@ -126,10 +97,7 @@ fn network_port_range_random_and_aliases() {
         vec![Object::from("1mb")]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "network.send_buffer.size", vec![]),
-        1024 * 1024
-    );
+    assert_eq!(value(&map, "network.send_buffer.size", vec![]), 1024 * 1024);
     assert!(call(
         &map,
         "network.receive_buffer.size.set",
@@ -153,7 +121,10 @@ fn network_proxy_http_and_rpc_toggles() {
     let mut map = CommandMap::new();
     register_network_commands(&mut map, NetworkConfig::new()).unwrap();
 
-    assert_eq!(value(&map, "network.http.max_total_connections", vec![]), 32);
+    assert_eq!(
+        value(&map, "network.http.max_total_connections", vec![]),
+        32
+    );
     assert_eq!(value(&map, "network.http.ssl_verify_host", vec![]), 1);
     assert_eq!(value(&map, "network.http.ssl_verify_peer", vec![]), 1);
     assert_eq!(value(&map, "network.http.dns_cache_timeout", vec![]), 60);
@@ -181,10 +152,7 @@ fn network_proxy_http_and_rpc_toggles() {
         vec![Object::from(8i64)]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "network.http.max_host_connections", vec![]),
-        8
-    );
+    assert_eq!(value(&map, "network.http.max_host_connections", vec![]), 8);
     assert!(call(
         &map,
         "network.http.max_cache_connections.set",
@@ -243,20 +211,13 @@ fn network_proxy_http_and_rpc_toggles() {
     )
     .is_err());
 
-    assert!(call(
-        &map,
-        "network.http.max_open.set",
-        vec![Object::from(10i64)]
-    )
-    .is_ok());
-    assert_eq!(value(&map, "network.http.max_total_connections", vec![]), 10);
+    assert!(call(&map, "network.http.max_open.set", vec![Object::from(10i64)]).is_ok());
+    assert_eq!(
+        value(&map, "network.http.max_total_connections", vec![]),
+        10
+    );
     assert_eq!(value(&map, "network.http.max_open", vec![]), 10);
-    assert!(call(
-        &map,
-        "network.http.max_open.set",
-        vec![Object::from(-1i64)]
-    )
-    .is_err());
+    assert!(call(&map, "network.http.max_open.set", vec![Object::from(-1i64)]).is_err());
     assert!(call(
         &map,
         "network.http.max_open.set",
@@ -308,50 +269,21 @@ fn system_file_advice_umask_and_shutdown() {
     let mut map = CommandMap::new();
     register_system_commands(&mut map).unwrap();
 
-    assert_eq!(
-        value(&map, "system.file.max_size", vec![]),
-        512i64 << 30
-    );
+    assert_eq!(value(&map, "system.file.max_size", vec![]), 512i64 << 30);
     assert_eq!(value(&map, "system.file.split_size", vec![]), -1);
     assert_eq!(text(&map, "system.file.split_suffix", vec![]), ".part");
     assert_eq!(text(&map, "system.file_name.replace_slash", vec![]), "_");
     assert_eq!(value(&map, "system.files.advise_random", vec![]), 1);
-    assert_eq!(
-        value(&map, "system.files.advise_random.hashing", vec![]),
-        0
-    );
-    assert_eq!(
-        value(&map, "system.files.session.fdatasync", vec![]),
-        1
-    );
+    assert_eq!(value(&map, "system.files.advise_random.hashing", vec![]), 0);
+    assert_eq!(value(&map, "system.files.session.fdatasync", vec![]), 1);
     assert_eq!(value(&map, "system.daemon", vec![]), 0);
 
-    assert!(call(
-        &map,
-        "system.file.max_size.set",
-        vec![Object::from("1gb")]
-    )
-    .is_ok());
+    assert!(call(&map, "system.file.max_size.set", vec![Object::from("1gb")]).is_ok());
     assert_eq!(value(&map, "system.file.max_size", vec![]), 1i64 << 30);
-    assert!(call(
-        &map,
-        "system.file.split_size.set",
-        vec![Object::from("-1")]
-    )
-    .is_ok());
+    assert!(call(&map, "system.file.split_size.set", vec![Object::from("-1")]).is_ok());
     assert_eq!(value(&map, "system.file.split_size", vec![]), -1);
-    assert!(call(
-        &map,
-        "system.file.split_size.set",
-        vec![Object::from("-2")]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "system.file.allocate.set",
-        vec![Object::from(-1i64)]
-    )
-    .is_err());
+    assert!(call(&map, "system.file.split_size.set", vec![Object::from("-2")]).is_err());
+    assert!(call(&map, "system.file.allocate.set", vec![Object::from(-1i64)]).is_err());
 
     assert!(call(
         &map,
@@ -380,25 +312,12 @@ fn system_file_advice_umask_and_shutdown() {
         vec![Object::from(0i64)]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "system.files.session.fdatasync", vec![]),
-        0
-    );
-    assert!(call(
-        &map,
-        "system.daemon.set",
-        vec![Object::from(1i64)]
-    )
-    .is_ok());
+    assert_eq!(value(&map, "system.files.session.fdatasync", vec![]), 0);
+    assert!(call(&map, "system.daemon.set", vec![Object::from(1i64)]).is_ok());
     assert_eq!(value(&map, "system.daemon", vec![]), 1);
 
     // Invalid umask is rejected before changing the process value.
-    assert!(call(
-        &map,
-        "system.umask.set",
-        vec![Object::from(0o1000i64)]
-    )
-    .is_err());
+    assert!(call(&map, "system.umask.set", vec![Object::from(0o1000i64)]).is_err());
 
     clear_shutdown_request();
     assert!(call(&map, "system.shutdown.normal", vec![]).is_ok());
@@ -437,20 +356,14 @@ fn system_socket_accounting_and_aliases() {
         vec![Object::from(16i64)]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "system.sockets.files.min_alloc", vec![]),
-        16
-    );
+    assert_eq!(value(&map, "system.sockets.files.min_alloc", vec![]), 16);
     assert!(call(
         &map,
         "system.sockets.files.max_alloc.set",
         vec![Object::from(1024i64)]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "system.sockets.files.max_alloc", vec![]),
-        1024
-    );
+    assert_eq!(value(&map, "system.sockets.files.max_alloc", vec![]), 1024);
     assert!(call(
         &map,
         "system.sockets.files.max_alloc.set",
@@ -460,10 +373,7 @@ fn system_socket_accounting_and_aliases() {
 
     assert!(call(&map, "system.sockets.adjust_alloc", vec![]).is_ok());
     assert!(value(&map, "system.sockets.available_alloc", vec![]) > 0);
-    assert_eq!(
-        value(&map, "system.sockets.generic.size", vec![]),
-        0
-    );
+    assert_eq!(value(&map, "system.sockets.generic.size", vec![]), 0);
 
     assert_eq!(value(&map, "network.max_open_files", vec![]), 500);
     assert!(call(
@@ -473,12 +383,7 @@ fn system_socket_accounting_and_aliases() {
     )
     .is_ok());
     assert_eq!(value(&map, "network.max_open_files", vec![]), 1024);
-    assert!(call(
-        &map,
-        "network.max_open_files.set",
-        vec![Object::from(2i64)]
-    )
-    .is_err());
+    assert!(call(&map, "network.max_open_files.set", vec![Object::from(2i64)]).is_err());
 
     assert!(value(&map, "network.total_handshakes", vec![]) >= 0);
     assert!(call(
@@ -590,9 +495,7 @@ fn system_file_counters_and_open_files_use_disk_worker_stats() {
         length: 4,
         offset: 0,
     }]);
-    assert!(thread
-        .read_block(&root, missing, 4, 0, 0, 4)
-        .is_err());
+    assert!(thread.read_block(&root, missing, 4, 0, 0, 4).is_err());
     let failed = global_file_manager_stats().unwrap();
     assert!(failed.files_failed > before.files_failed);
     assert_eq!(
@@ -617,12 +520,7 @@ fn pieces_real_memory_stats_and_validation() {
     let mut map = CommandMap::new();
     register_pieces_commands(&mut map).unwrap();
 
-    assert!(call(
-        &map,
-        "pieces.memory.max.set",
-        vec![Object::from("8mb")]
-    )
-    .is_ok());
+    assert!(call(&map, "pieces.memory.max.set", vec![Object::from("8mb")]).is_ok());
     assert_eq!(value(&map, "pieces.memory.max", vec![]), 8 * 1024 * 1024);
     assert!(value(&map, "pieces.memory.current", vec![]) >= 0);
     assert!(value(&map, "pieces.memory.block_count", vec![]) >= 0);
@@ -639,10 +537,7 @@ fn pieces_real_memory_stats_and_validation() {
         .hashes_submitted
         .saturating_sub(stats.hashes_completed)
         .min(i64::MAX as u64) as i64;
-    assert_eq!(
-        value(&map, "pieces.hash.queue_size", vec![]),
-        outstanding
-    );
+    assert_eq!(value(&map, "pieces.hash.queue_size", vec![]), outstanding);
 
     // Read-only counters must not expose setters.
     assert!(call(
@@ -651,37 +546,12 @@ fn pieces_real_memory_stats_and_validation() {
         vec![Object::from(1i64)]
     )
     .is_err());
-    assert!(call(
-        &map,
-        "pieces.sync.queue_size.set",
-        vec![Object::from(1i64)]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "pieces.hash.queue_size.set",
-        vec![Object::from(1i64)]
-    )
-    .is_err());
+    assert!(call(&map, "pieces.sync.queue_size.set", vec![Object::from(1i64)]).is_err());
+    assert!(call(&map, "pieces.hash.queue_size.set", vec![Object::from(1i64)]).is_err());
 
-    assert!(call(
-        &map,
-        "pieces.sync.timeout.set",
-        vec![Object::from(3600i64)]
-    )
-    .is_ok());
-    assert!(call(
-        &map,
-        "pieces.sync.timeout.set",
-        vec![Object::from(3601i64)]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "pieces.preload.type.set",
-        vec![Object::from(3i64)]
-    )
-    .is_err());
+    assert!(call(&map, "pieces.sync.timeout.set", vec![Object::from(3600i64)]).is_ok());
+    assert!(call(&map, "pieces.sync.timeout.set", vec![Object::from(3601i64)]).is_err());
+    assert!(call(&map, "pieces.preload.type.set", vec![Object::from(3i64)]).is_err());
     assert!(call(
         &map,
         "pieces.preload.min_size.set",
@@ -694,10 +564,7 @@ fn pieces_real_memory_stats_and_validation() {
         vec![Object::from("1kb")]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "pieces.preload.min_size", vec![]),
-        1024
-    );
+    assert_eq!(value(&map, "pieces.preload.min_size", vec![]), 1024);
 
     assert!(call(
         &map,
@@ -707,12 +574,14 @@ fn pieces_real_memory_stats_and_validation() {
     .is_ok());
     assert_eq!(value(&map, "pieces.sync.always_safe", vec![]), 1);
 
-    assert!(call(&map, "pieces.hash.on_completion.set", vec![Object::from(0i64)]).is_ok());
+    assert!(call(
+        &map,
+        "pieces.hash.on_completion.set",
+        vec![Object::from(0i64)]
+    )
+    .is_ok());
     assert!(call(&map, "check_hash", vec![Object::from(1i64)]).is_ok());
-    assert_eq!(
-        value(&map, "pieces.hash.on_completion", vec![]),
-        1
-    );
+    assert_eq!(value(&map, "pieces.hash.on_completion", vec![]), 1);
 
     assert!(call(
         &map,
@@ -720,10 +589,7 @@ fn pieces_real_memory_stats_and_validation() {
         vec![Object::from(4 * 1024 * 1024i64)]
     )
     .is_ok());
-    assert_eq!(
-        value(&map, "pieces.memory.max", vec![]),
-        4 * 1024 * 1024
-    );
+    assert_eq!(value(&map, "pieces.memory.max", vec![]), 4 * 1024 * 1024);
 }
 
 #[test]
@@ -731,10 +597,7 @@ fn protocol_encryption_aliases_and_defaults() {
     let mut map = CommandMap::new();
     register_protocol_commands(&mut map, NetworkConfig::new()).unwrap();
 
-    assert_eq!(
-        text(&map, "protocol.encryption", vec![]),
-        "allow,allow"
-    );
+    assert_eq!(text(&map, "protocol.encryption", vec![]), "allow,allow");
     assert!(call(
         &map,
         "protocol.encryption.set",
@@ -744,30 +607,18 @@ fn protocol_encryption_aliases_and_defaults() {
         ]
     )
     .is_ok());
-    assert_eq!(
-        text(&map, "protocol.encryption", vec![]),
-        "require,prefer"
-    );
+    assert_eq!(text(&map, "protocol.encryption", vec![]), "require,prefer");
     assert_eq!(
         text(&map, "protocol.encryption.handshake", vec![]),
         "require"
     );
-    assert_eq!(
-        text(&map, "protocol.encryption.stream", vec![]),
-        "prefer"
-    );
+    assert_eq!(text(&map, "protocol.encryption.stream", vec![]), "prefer");
 
     // Legacy single-value alias.
     assert!(call(&map, "encryption", vec![Object::from("none")]).is_ok());
-    assert_eq!(
-        text(&map, "protocol.encryption", vec![]),
-        "deny,deny"
-    );
+    assert_eq!(text(&map, "protocol.encryption", vec![]), "deny,deny");
     assert!(call(&map, "encryption", vec![Object::from("require_RC4")]).is_ok());
-    assert_eq!(
-        text(&map, "protocol.encryption", vec![]),
-        "require,require"
-    );
+    assert_eq!(text(&map, "protocol.encryption", vec![]), "require,require");
     assert!(call(&map, "protocol.encryption.set", vec![Object::from("bogus")]).is_err());
 
     assert_eq!(
@@ -775,15 +626,9 @@ fn protocol_encryption_aliases_and_defaults() {
         "upload_leech"
     );
     assert!(call(&map, "connection_leech", vec![Object::from("seed")]).is_ok());
-    assert_eq!(
-        text(&map, "protocol.connection.leech", vec![]),
-        "seed"
-    );
+    assert_eq!(text(&map, "protocol.connection.leech", vec![]), "seed");
     assert!(call(&map, "connection_seed", vec![Object::from("leech")]).is_ok());
-    assert_eq!(
-        text(&map, "protocol.connection.seed", vec![]),
-        "leech"
-    );
+    assert_eq!(text(&map, "protocol.connection.seed", vec![]), "leech");
     assert!(call(&map, "connection_seed", vec![Object::from("initial_seed")]).is_ok());
     assert!(call(&map, "connection_seed", vec![Object::from("bogus")]).is_err());
     assert_eq!(
@@ -870,17 +715,8 @@ fn choke_group_names_negative_indexes_and_validation() {
     let mut map = CommandMap::new();
     register_group_commands(&mut map, Arc::clone(&manager)).unwrap();
 
-    assert!(call(
-        &map,
-        "choke_group.insert",
-        vec![Object::from("named")]
-    )
-    .is_ok());
-    let index = value(
-        &map,
-        "choke_group.index_of",
-        vec![Object::from("named")],
-    );
+    assert!(call(&map, "choke_group.insert", vec![Object::from("named")]).is_ok());
+    let index = value(&map, "choke_group.index_of", vec![Object::from("named")]);
     assert!(index >= 1);
 
     // Group names are accepted anywhere an index is accepted.
@@ -930,36 +766,11 @@ fn choke_group_names_negative_indexes_and_validation() {
     )
     .is_err());
 
-    assert!(call(
-        &map,
-        "choke_group.insert",
-        vec![Object::from("named")]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "choke_group.insert",
-        vec![Object::from("123")]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "choke_group.index_of",
-        vec![Object::from("missing")]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "choke_group.up.max",
-        vec![Object::from("missing")]
-    )
-    .is_err());
-    assert!(call(
-        &map,
-        "choke_group.up.max",
-        vec![Object::from(99i64)]
-    )
-    .is_err());
+    assert!(call(&map, "choke_group.insert", vec![Object::from("named")]).is_err());
+    assert!(call(&map, "choke_group.insert", vec![Object::from("123")]).is_err());
+    assert!(call(&map, "choke_group.index_of", vec![Object::from("missing")]).is_err());
+    assert!(call(&map, "choke_group.up.max", vec![Object::from("missing")]).is_err());
+    assert!(call(&map, "choke_group.up.max", vec![Object::from(99i64)]).is_err());
 
     assert!(call(
         &map,

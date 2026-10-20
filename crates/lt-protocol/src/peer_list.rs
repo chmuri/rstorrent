@@ -88,11 +88,7 @@ impl ConnectionList {
             ));
         }
         // Match libtorrent: zero means "no explicit limit".
-        self.max_size = if v == 0 {
-            Self::MAX_ALLOWED_PEERS
-        } else {
-            v
-        };
+        self.max_size = if v == 0 { Self::MAX_ALLOWED_PEERS } else { v };
         self.max_size_explicit = true;
         Ok(())
     }
@@ -110,11 +106,7 @@ impl ConnectionList {
                 "Max peer connections must be between 0 and 2^16.",
             ));
         }
-        self.max_size = if v == 0 {
-            Self::MAX_ALLOWED_PEERS
-        } else {
-            v
-        };
+        self.max_size = if v == 0 { Self::MAX_ALLOWED_PEERS } else { v };
         Ok(())
     }
 
@@ -271,11 +263,14 @@ impl ConnectionList {
     }
 
     pub fn find_by_address_mut(&mut self, sa: &SocketAddress) -> Option<&mut PeerConnection> {
-        self.connections.iter_mut().find(|c| c.socket_address == *sa)
+        self.connections
+            .iter_mut()
+            .find(|c| c.socket_address == *sa)
     }
 
     pub fn set_difference(&mut self, address_list: &mut AddressList) {
-        self.connections.sort_by(|a, b| a.socket_address.cmp(&b.socket_address));
+        self.connections
+            .sort_by(|a, b| a.socket_address.cmp(&b.socket_address));
         self.change_counter = self.change_counter.wrapping_add(1);
 
         address_list.0.retain(|sa| {

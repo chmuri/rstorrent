@@ -94,16 +94,13 @@ pub fn register_convert_commands(map: &mut CommandMap) -> Result<(), RpcError> {
         ("convert.gm_date", |v| format_time(v, false, true)),
         ("convert.time", |v| format_time(v, true, false)),
         ("convert.date", |v| format_time(v, true, true)),
-        (
-            "convert.elapsed_time",
-            |v| {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|duration| duration.as_secs() as i64)
-                    .unwrap_or(0);
-                format_elapsed(v, now)
-            },
-        ),
+        ("convert.elapsed_time", |v| {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_secs() as i64)
+                .unwrap_or(0);
+            format_elapsed(v, now)
+        }),
         ("convert.kb", format_kb),
         ("convert.mb", format_mb),
         ("convert.xb", format_xb),
@@ -112,16 +109,13 @@ pub fn register_convert_commands(map: &mut CommandMap) -> Result<(), RpcError> {
         ("to_gm_date", |v| format_time(v, false, true)),
         ("to_time", |v| format_time(v, true, false)),
         ("to_date", |v| format_time(v, true, true)),
-        (
-            "to_elapsed_time",
-            |v| {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|duration| duration.as_secs() as i64)
-                    .unwrap_or(0);
-                format_elapsed(v, now)
-            },
-        ),
+        ("to_elapsed_time", |v| {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_secs() as i64)
+                .unwrap_or(0);
+            format_elapsed(v, now)
+        }),
         ("to_kb", format_kb),
         ("to_mb", format_mb),
         ("to_xb", format_xb),

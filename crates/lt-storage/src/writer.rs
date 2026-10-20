@@ -96,7 +96,10 @@ mod tests {
 
     #[test]
     fn test_write_piece_single_file() {
-        let temp_dir = std::env::temp_dir().join(format!("rtorrent_test_writer_single_{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "rtorrent_test_writer_single_{}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
@@ -127,7 +130,8 @@ mod tests {
 
     #[test]
     fn test_write_piece_spanning_multiple_files() {
-        let temp_dir = std::env::temp_dir().join(format!("rtorrent_test_writer_multi_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("rtorrent_test_writer_multi_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
@@ -163,22 +167,46 @@ mod tests {
     #[test]
     fn test_piece_segments_boundaries() {
         let files = vec![
-            TargetFileInfo { path: PathBuf::from("a"), length: 10, offset: 0 },
-            TargetFileInfo { path: PathBuf::from("b"), length: 10, offset: 10 },
-            TargetFileInfo { path: PathBuf::from("c"), length: 10, offset: 20 },
+            TargetFileInfo {
+                path: PathBuf::from("a"),
+                length: 10,
+                offset: 0,
+            },
+            TargetFileInfo {
+                path: PathBuf::from("b"),
+                length: 10,
+                offset: 10,
+            },
+            TargetFileInfo {
+                path: PathBuf::from("c"),
+                length: 10,
+                offset: 20,
+            },
         ];
 
         // A full 16-byte piece crosses a -> b.
         let segs = piece_segments(&files, 16, 0, 16);
         assert_eq!(segs.len(), 2);
-        assert_eq!((segs[0].data_start, segs[0].data_end, segs[0].file_offset), (0, 10, 0));
-        assert_eq!((segs[1].data_start, segs[1].data_end, segs[1].file_offset), (10, 16, 0));
+        assert_eq!(
+            (segs[0].data_start, segs[0].data_end, segs[0].file_offset),
+            (0, 10, 0)
+        );
+        assert_eq!(
+            (segs[1].data_start, segs[1].data_end, segs[1].file_offset),
+            (10, 16, 0)
+        );
 
         // The last short piece of a 30-byte torrent at piece length 16: offset 16, 8 bytes
         // crosses b -> c.
         let segs = piece_segments(&files, 16, 1, 8);
         assert_eq!(segs.len(), 2);
-        assert_eq!((segs[0].data_start, segs[0].data_end, segs[0].file_offset), (0, 4, 6));
-        assert_eq!((segs[1].data_start, segs[1].data_end, segs[1].file_offset), (4, 8, 0));
+        assert_eq!(
+            (segs[0].data_start, segs[0].data_end, segs[0].file_offset),
+            (0, 4, 6)
+        );
+        assert_eq!(
+            (segs[1].data_start, segs[1].data_end, segs[1].file_offset),
+            (4, 8, 0)
+        );
     }
 }

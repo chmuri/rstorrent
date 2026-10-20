@@ -91,12 +91,11 @@ impl Target {
             });
         }
         let hash_part = &s[..40];
-        let hash = HashString::from_hex(hash_part).ok_or_else(|| {
-            crate::error::RpcError::Custom {
+        let hash =
+            HashString::from_hex(hash_part).ok_or_else(|| crate::error::RpcError::Custom {
                 code: -500,
                 message: "invalid parameters: invalid target hash".to_string(),
-            }
-        })?;
+            })?;
 
         if s.len() == 40 {
             return Ok(Target::Download(hash));
@@ -114,12 +113,12 @@ impl Target {
                 });
             }
             let index_str = &s[42..];
-            let index = index_str.parse::<u32>().map_err(|_| {
-                crate::error::RpcError::Custom {
+            let index = index_str
+                .parse::<u32>()
+                .map_err(|_| crate::error::RpcError::Custom {
                     code: -500,
                     message: "invalid parameters: invalid index".to_string(),
-                }
-            })?;
+                })?;
             match target_type {
                 'f' => Ok(Target::File(hash, index)),
                 't' => Ok(Target::Tracker(hash, index)),

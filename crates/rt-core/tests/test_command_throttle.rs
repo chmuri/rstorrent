@@ -1,7 +1,7 @@
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_core::commands::throttle::{register_throttle_commands, ThrottleManager};
 use rt_rpc::{CommandMap, Target};
+use std::sync::{Arc, RwLock};
 
 fn setup_throttle() -> (CommandMap, Arc<RwLock<ThrottleManager>>) {
     let mut map = CommandMap::new();
@@ -15,7 +15,12 @@ fn call_set(map: &CommandMap, key: &str, value: &str) -> Result<(), rt_rpc::RpcE
     Ok(())
 }
 
-fn call_named(map: &CommandMap, key: &str, name: &str, value: &str) -> Result<(), rt_rpc::RpcError> {
+fn call_named(
+    map: &CommandMap,
+    key: &str,
+    name: &str,
+    value: &str,
+) -> Result<(), rt_rpc::RpcError> {
     let args = Object::create_list_with(vec![
         Object::from(name.to_string()),
         Object::from(value.to_string()),

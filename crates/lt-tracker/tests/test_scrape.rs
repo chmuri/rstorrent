@@ -31,7 +31,10 @@ async fn http_scrape_parses_files_map() {
         let mut request = [0u8; 4096];
         let read = socket.read(&mut request).await.unwrap();
         let request_text = String::from_utf8_lossy(&request[..read]);
-        assert!(request_text.contains("/scrape"), "unexpected request: {request_text}");
+        assert!(
+            request_text.contains("/scrape"),
+            "unexpected request: {request_text}"
+        );
 
         let mut entry = Object::create_map();
         entry.insert_key("complete", Object::from(5i64)).unwrap();
@@ -53,12 +56,9 @@ async fn http_scrape_parses_files_map() {
         socket.write_all(&body).await.unwrap();
     });
 
-    let stats = scrape_http(
-        &format!("http://127.0.0.1:{port}/announce"),
-        info_hash,
-    )
-    .await
-    .unwrap();
+    let stats = scrape_http(&format!("http://127.0.0.1:{port}/announce"), info_hash)
+        .await
+        .unwrap();
 
     assert_eq!(
         stats,
@@ -475,7 +475,12 @@ fn controller_schedules_scrape_from_intervals() {
 
     assert!(!controller.is_scrape_in_flight());
     assert!(controller.is_scrape_queued());
-    let normal = controller.tracker_list.at(0).unwrap().state().normal_interval as u32;
+    let normal = controller
+        .tracker_list
+        .at(0)
+        .unwrap()
+        .state()
+        .normal_interval as u32;
     assert_eq!(controller.seconds_to_next_scrape(), normal);
 }
 

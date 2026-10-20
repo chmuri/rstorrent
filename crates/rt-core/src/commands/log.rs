@@ -12,7 +12,9 @@ use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError};
 
 fn args(obj: &Object) -> Result<Vec<Object>, RpcError> {
-    obj.as_list().map(|values| values.to_vec()).map_err(|err| RpcError::InputError(err.to_string()))
+    obj.as_list()
+        .map(|values| values.to_vec())
+        .map_err(|err| RpcError::InputError(err.to_string()))
 }
 
 fn log_group(obj: &Object) -> Result<usize, RpcError> {
@@ -31,7 +33,13 @@ fn log_group(obj: &Object) -> Result<usize, RpcError> {
     Ok(group as usize)
 }
 
-fn open_output(obj: &Object, gzip: bool, append: bool, flush: bool, pid: bool) -> Result<(), RpcError> {
+fn open_output(
+    obj: &Object,
+    gzip: bool,
+    append: bool,
+    flush: bool,
+    pid: bool,
+) -> Result<(), RpcError> {
     let args = args(obj)?;
     if args.len() < 2 {
         return Err(RpcError::InputError(
@@ -52,9 +60,7 @@ fn open_output(obj: &Object, gzip: bool, append: bool, flush: bool, pid: bool) -
         }
     }));
 
-    result.map_err(|_| {
-        RpcError::InputError(format!("Could not open log file '{filename}'"))
-    })
+    result.map_err(|_| RpcError::InputError(format!("Could not open log file '{filename}'")))
 }
 
 pub fn register_log_commands(map: &mut CommandMap) -> Result<(), RpcError> {

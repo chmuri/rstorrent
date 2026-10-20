@@ -34,7 +34,12 @@ fn metadata(name: &str) -> lt_engine::constructor::TorrentMetadata {
     }
 }
 
-fn call(map: &CommandMap, name: &str, target: &Target, args: Vec<Object>) -> Result<Object, rt_rpc::RpcError> {
+fn call(
+    map: &CommandMap,
+    name: &str,
+    target: &Target,
+    args: Vec<Object>,
+) -> Result<Object, rt_rpc::RpcError> {
     map.call_command(name, &Object::create_list_with(args), target, true)
 }
 
@@ -95,16 +100,16 @@ fn view_commands_add_filter_and_toggle_visibility() {
     .unwrap();
 
     let snapshot = Arc::new(RwLock::new(map.clone()));
-    register_view_commands(
-        &mut map,
-        Arc::clone(&manager),
-        Arc::clone(&list),
-        snapshot,
-    )
-    .unwrap();
+    register_view_commands(&mut map, Arc::clone(&manager), Arc::clone(&list), snapshot).unwrap();
 
     let target = Target::Download(*download.read().unwrap().info_hash());
-    assert!(call(&map, "view.add", &Target::None, vec![Object::from("custom")]).is_ok());
+    assert!(call(
+        &map,
+        "view.add",
+        &Target::None,
+        vec![Object::from("custom")]
+    )
+    .is_ok());
     let names = call(&map, "view.list", &Target::None, vec![]).unwrap();
     assert!(names
         .as_list()
@@ -127,7 +132,13 @@ fn view_commands_add_filter_and_toggle_visibility() {
         vec![Object::from("test"), Object::from("d.name.equals=alpha")]
     )
     .is_ok());
-    assert!(call(&map, "view.filter_all", &Target::None, vec![Object::from("test")]).is_ok());
+    assert!(call(
+        &map,
+        "view.filter_all",
+        &Target::None,
+        vec![Object::from("test")]
+    )
+    .is_ok());
     assert_eq!(
         call(&map, "view.size", &Target::None, vec![Object::from("test")])
             .unwrap()
@@ -144,7 +155,13 @@ fn view_commands_add_filter_and_toggle_visibility() {
         vec![Object::from("test"), Object::from("d.name.equals=beta")]
     )
     .is_ok());
-    assert!(call(&map, "view.filter_all", &Target::None, vec![Object::from("test")]).is_ok());
+    assert!(call(
+        &map,
+        "view.filter_all",
+        &Target::None,
+        vec![Object::from("test")]
+    )
+    .is_ok());
     assert_eq!(
         call(&map, "view.size", &Target::None, vec![Object::from("test")])
             .unwrap()
@@ -256,12 +273,7 @@ fn scheduler_commands_are_idempotent_and_removable() {
     )
     .is_ok());
     assert_eq!(
-        scheduler
-            .lock()
-            .unwrap()
-            .find("job")
-            .unwrap()
-            .interval(),
+        scheduler.lock().unwrap().find("job").unwrap().interval(),
         std::time::Duration::from_secs(2)
     );
 
@@ -279,15 +291,16 @@ fn scheduler_commands_are_idempotent_and_removable() {
     )
     .is_ok());
     assert_eq!(
-        scheduler
-            .lock()
-            .unwrap()
-            .find("job")
-            .unwrap()
-            .interval(),
+        scheduler.lock().unwrap().find("job").unwrap().interval(),
         std::time::Duration::from_secs(3)
     );
 
-    assert!(call(&map, "schedule.remove", &Target::None, vec![Object::from("job")]).is_ok());
+    assert!(call(
+        &map,
+        "schedule.remove",
+        &Target::None,
+        vec![Object::from("job")]
+    )
+    .is_ok());
     assert!(scheduler.lock().unwrap().find("job").is_none());
 }

@@ -223,35 +223,107 @@ const LIST_TRACKER_EVENT: &[&str] = &["updated", "completed", "started", "stoppe
 
 pub fn option_find_string(opt_enum: OptionEnum, name: &str) -> Option<u32> {
     match opt_enum {
-        OptionEnum::ConnectionType => LIST_CONNECTION_TYPE.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::ChokeHeuristics => LIST_CHOKE_HEURISTICS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::ChokeHeuristicsDownload => LIST_CHOKE_HEURISTICS_DOWNLOAD.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::ChokeHeuristicsUpload => LIST_CHOKE_HEURISTICS_UPLOAD.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::EncryptionMode => LIST_ENCRYPTION_MODE.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::EncryptionHandshake => LIST_ENCRYPTION_HANDSHAKE.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::EncryptionStream => LIST_ENCRYPTION_STREAM.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::IpFilter => LIST_IP_FILTER.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::IpTos => LIST_IP_TOS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::TrackerMode => LIST_TRACKER_MODE.iter().find(|(n, _)| *n == name).map(|(_, v)| *v),
-        OptionEnum::HandshakeConnection => LIST_HANDSHAKE_CONNECTION.iter().position(|&n| n == name).map(|p| p as u32),
-        OptionEnum::LogGroup => LIST_LOG_GROUP.iter().position(|&n| n == name).map(|p| p as u32),
-        OptionEnum::SocketCategory => LIST_SOCKET_CATEGORY.iter().position(|&n| n == name).map(|p| p as u32),
-        OptionEnum::TrackerEvent => LIST_TRACKER_EVENT.iter().position(|&n| n == name).map(|p| p as u32),
+        OptionEnum::ConnectionType => LIST_CONNECTION_TYPE
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::ChokeHeuristics => LIST_CHOKE_HEURISTICS
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::ChokeHeuristicsDownload => LIST_CHOKE_HEURISTICS_DOWNLOAD
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::ChokeHeuristicsUpload => LIST_CHOKE_HEURISTICS_UPLOAD
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::EncryptionMode => LIST_ENCRYPTION_MODE
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::EncryptionHandshake => LIST_ENCRYPTION_HANDSHAKE
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::EncryptionStream => LIST_ENCRYPTION_STREAM
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::IpFilter => LIST_IP_FILTER
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::IpTos => LIST_IP_TOS
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::TrackerMode => LIST_TRACKER_MODE
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| *v),
+        OptionEnum::HandshakeConnection => LIST_HANDSHAKE_CONNECTION
+            .iter()
+            .position(|&n| n == name)
+            .map(|p| p as u32),
+        OptionEnum::LogGroup => LIST_LOG_GROUP
+            .iter()
+            .position(|&n| n == name)
+            .map(|p| p as u32),
+        OptionEnum::SocketCategory => LIST_SOCKET_CATEGORY
+            .iter()
+            .position(|&n| n == name)
+            .map(|p| p as u32),
+        OptionEnum::TrackerEvent => LIST_TRACKER_EVENT
+            .iter()
+            .position(|&n| n == name)
+            .map(|p| p as u32),
     }
 }
 
 pub fn option_to_c_str(opt_enum: OptionEnum, value: u32) -> Option<&'static str> {
     match opt_enum {
-        OptionEnum::ConnectionType => LIST_CONNECTION_TYPE.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::ChokeHeuristics => LIST_CHOKE_HEURISTICS.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::ChokeHeuristicsDownload => LIST_CHOKE_HEURISTICS_DOWNLOAD.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::ChokeHeuristicsUpload => LIST_CHOKE_HEURISTICS_UPLOAD.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::EncryptionMode => LIST_ENCRYPTION_MODE.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::EncryptionHandshake => LIST_ENCRYPTION_HANDSHAKE.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::EncryptionStream => LIST_ENCRYPTION_STREAM.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::IpFilter => LIST_IP_FILTER.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::IpTos => LIST_IP_TOS.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
-        OptionEnum::TrackerMode => LIST_TRACKER_MODE.iter().find(|(_, v)| *v == value).map(|(n, _)| *n),
+        OptionEnum::ConnectionType => LIST_CONNECTION_TYPE
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::ChokeHeuristics => LIST_CHOKE_HEURISTICS
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::ChokeHeuristicsDownload => LIST_CHOKE_HEURISTICS_DOWNLOAD
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::ChokeHeuristicsUpload => LIST_CHOKE_HEURISTICS_UPLOAD
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::EncryptionMode => LIST_ENCRYPTION_MODE
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::EncryptionHandshake => LIST_ENCRYPTION_HANDSHAKE
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::EncryptionStream => LIST_ENCRYPTION_STREAM
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::IpFilter => LIST_IP_FILTER
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::IpTos => LIST_IP_TOS
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
+        OptionEnum::TrackerMode => LIST_TRACKER_MODE
+            .iter()
+            .find(|(_, v)| *v == value)
+            .map(|(n, _)| *n),
         OptionEnum::HandshakeConnection => LIST_HANDSHAKE_CONNECTION.get(value as usize).copied(),
         OptionEnum::LogGroup => LIST_LOG_GROUP.get(value as usize).copied(),
         OptionEnum::SocketCategory => LIST_SOCKET_CATEGORY.get(value as usize).copied(),
@@ -259,7 +331,10 @@ pub fn option_to_c_str(opt_enum: OptionEnum, value: u32) -> Option<&'static str>
     }
 }
 
-pub fn option_to_c_str_or_throw(opt_enum: OptionEnum, value: u32) -> Result<&'static str, &'static str> {
+pub fn option_to_c_str_or_throw(
+    opt_enum: OptionEnum,
+    value: u32,
+) -> Result<&'static str, &'static str> {
     option_to_c_str(opt_enum, value).ok_or("Invalid option value")
 }
 
@@ -356,20 +431,60 @@ mod tests {
     fn test_entries() {
         test_entry!(OptionEnum::ConnectionType, "leech", connection_type::LEECH);
         test_entry!(OptionEnum::ConnectionType, "seed", connection_type::SEED);
-        test_entry!(OptionEnum::ConnectionType, "initial_seed", connection_type::INITIAL_SEED);
-        test_entry!(OptionEnum::ConnectionType, "metadata", connection_type::METADATA);
+        test_entry!(
+            OptionEnum::ConnectionType,
+            "initial_seed",
+            connection_type::INITIAL_SEED
+        );
+        test_entry!(
+            OptionEnum::ConnectionType,
+            "metadata",
+            connection_type::METADATA
+        );
 
-        test_entry!(OptionEnum::EncryptionStream, "stream_deny", encryption_mode::DENY);
-        test_entry!(OptionEnum::EncryptionStream, "stream_allow", encryption_mode::ALLOW);
-        test_entry!(OptionEnum::EncryptionStream, "stream_prefer", encryption_mode::PREFER);
-        test_entry!(OptionEnum::EncryptionStream, "stream_require", encryption_mode::REQUIRE);
+        test_entry!(
+            OptionEnum::EncryptionStream,
+            "stream_deny",
+            encryption_mode::DENY
+        );
+        test_entry!(
+            OptionEnum::EncryptionStream,
+            "stream_allow",
+            encryption_mode::ALLOW
+        );
+        test_entry!(
+            OptionEnum::EncryptionStream,
+            "stream_prefer",
+            encryption_mode::PREFER
+        );
+        test_entry!(
+            OptionEnum::EncryptionStream,
+            "stream_require",
+            encryption_mode::REQUIRE
+        );
 
         test_entry!(OptionEnum::LogGroup, "errors", log_group::ERRORS);
         test_entry!(OptionEnum::LogGroup, "events", log_group::EVENTS);
         test_entry!(OptionEnum::LogGroup, "debug_trace", log_group::DEBUG_TRACE);
-        test_entry!(OptionEnum::LogGroup, "storage_debug", log_group::STORAGE_DEBUG);
-        test_entry!(OptionEnum::LogGroup, "storage_events", log_group::STORAGE_EVENTS);
-        test_entry!(OptionEnum::LogGroup, "storage_errors", log_group::STORAGE_ERRORS);
-        test_entry!(OptionEnum::LogGroup, "torrent_debug", log_group::TORRENT_DEBUG);
+        test_entry!(
+            OptionEnum::LogGroup,
+            "storage_debug",
+            log_group::STORAGE_DEBUG
+        );
+        test_entry!(
+            OptionEnum::LogGroup,
+            "storage_events",
+            log_group::STORAGE_EVENTS
+        );
+        test_entry!(
+            OptionEnum::LogGroup,
+            "storage_errors",
+            log_group::STORAGE_ERRORS
+        );
+        test_entry!(
+            OptionEnum::LogGroup,
+            "torrent_debug",
+            log_group::TORRENT_DEBUG
+        );
     }
 }

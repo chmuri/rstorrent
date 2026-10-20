@@ -6,12 +6,12 @@ use tokio::sync::{broadcast, watch};
 use tonic::transport::Server;
 use tracing::info;
 
+use crate::command_service::CommandServiceImpl;
 use crate::conversion::download_to_summary;
 use crate::proto::command_service_server::CommandServiceServer;
 use crate::proto::system_service_server::SystemServiceServer;
 use crate::proto::torrent_service_server::TorrentServiceServer;
 use crate::proto::TorrentEvent;
-use crate::command_service::CommandServiceImpl;
 use crate::system_service::SystemServiceImpl;
 use crate::torrent_service::TorrentServiceImpl;
 

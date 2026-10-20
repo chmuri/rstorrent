@@ -73,9 +73,7 @@ fn multi_file_writes_and_reads_preserve_order() {
     assert_eq!(read, b"defgh");
 
     // Async read replies carry the same bytes and the request correlation id.
-    let handle = thread
-        .submit_read(&root, files, 8, 1, 1, 4)
-        .unwrap();
+    let handle = thread.submit_read(&root, files, 8, 1, 1, 4).unwrap();
     assert!(handle.id() > 0);
     assert_eq!(handle.wait().unwrap(), b"jklm");
 
@@ -232,14 +230,7 @@ fn bounded_queue_reports_full_and_recovers() {
     let mut accepted = 0;
     let mut rejected = 0;
     for _ in 0..512 {
-        match thread.submit_write_block(
-            &root,
-            Arc::clone(&files),
-            65536,
-            0,
-            0,
-            vec![0x42; 65536],
-        ) {
+        match thread.submit_write_block(&root, Arc::clone(&files), 65536, 0, 0, vec![0x42; 65536]) {
             Ok(_handle) => {
                 // Do not wait: dropping the handle keeps the queue full while
                 // the worker is still writing earlier commands.

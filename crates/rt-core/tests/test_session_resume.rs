@@ -5,9 +5,12 @@ use rt_core::session::load_resume_file;
 
 fn torrent_object() -> Object {
     let mut info = Object::create_map();
-    info.insert_key("name", Object::from("resume-test")).unwrap();
-    info.insert_key("piece length", Object::from(16384i64)).unwrap();
-    info.insert_key("pieces", Object::create_string(vec![0u8; 20])).unwrap();
+    info.insert_key("name", Object::from("resume-test"))
+        .unwrap();
+    info.insert_key("piece length", Object::from(16384i64))
+        .unwrap();
+    info.insert_key("pieces", Object::create_string(vec![0u8; 20]))
+        .unwrap();
     info.insert_key("length", Object::from(16384i64)).unwrap();
 
     let mut root = Object::create_map();
@@ -19,19 +22,15 @@ fn torrent_object() -> Object {
 
 #[test]
 fn session_save_writes_full_resume_data() {
-    let directory = std::env::temp_dir().join(format!(
-        "rtorrent_resume_session_{}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("rtorrent_resume_session_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
 
     let manager = Manager::new();
     {
         let mut session = manager.session_manager().write().unwrap();
-        session
-            .set_path(&directory.to_string_lossy())
-            .unwrap();
+        session.set_path(&directory.to_string_lossy()).unwrap();
         session.start().unwrap();
     }
 
@@ -51,14 +50,7 @@ fn session_save_writes_full_resume_data() {
     manager.session_save().expect("session save should succeed");
 
     let hash_hex = download.read().unwrap().info_hash_hex();
-    let session_path = {
-        manager
-            .session_manager()
-            .read()
-            .unwrap()
-            .path()
-            .to_string()
-    };
+    let session_path = { manager.session_manager().read().unwrap().path().to_string() };
     let resume_path = format!(
         "{}{}.torrent.libtorrent_resume",
         session_path,

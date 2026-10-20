@@ -1,7 +1,7 @@
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_core::commands::dynamic::register_dynamic_commands;
 use rt_rpc::{CommandMap, ObjectStorage, Target};
+use std::sync::{Arc, RwLock};
 
 fn setup_dynamic() -> (CommandMap, Arc<RwLock<ObjectStorage>>) {
     let mut map = CommandMap::new();
@@ -22,7 +22,12 @@ fn test_basics() {
     .unwrap();
 
     let val = map
-        .call_command("method.get", &Object::from("test_basics.1"), &Target::None, true)
+        .call_command(
+            "method.get",
+            &Object::from("test_basics.1"),
+            &Target::None,
+            true,
+        )
         .unwrap();
     assert_eq!(1, val.as_value().unwrap());
 }
@@ -40,10 +45,15 @@ fn test_get_set() {
 
     assert_eq!(
         "cat=1",
-        map.call_command("method.get", &Object::from("test_get_set.1"), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "method.get",
+            &Object::from("test_get_set.1"),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 
     map.call_command(
@@ -56,10 +66,15 @@ fn test_get_set() {
 
     assert_eq!(
         "cat=2",
-        map.call_command("method.get", &Object::from("test_get_set.1"), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "method.get",
+            &Object::from("test_get_set.1"),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 }
 
@@ -80,10 +95,15 @@ fn test_old_style() {
     .unwrap();
     assert_eq!(
         1,
-        map.call_command("method.get", &Object::from("test_old_style.1"), &Target::None, true)
-            .unwrap()
-            .as_value()
-            .unwrap()
+        map.call_command(
+            "method.get",
+            &Object::from("test_old_style.1"),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_value()
+        .unwrap()
     );
 
     map.call_command(
@@ -99,10 +119,15 @@ fn test_old_style() {
     .unwrap();
     assert_eq!(
         1,
-        map.call_command("method.get", &Object::from("test_old_style.2"), &Target::None, true)
-            .unwrap()
-            .as_value()
-            .unwrap()
+        map.call_command(
+            "method.get",
+            &Object::from("test_old_style.2"),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_value()
+        .unwrap()
     );
 
     map.call_command(
@@ -118,10 +143,15 @@ fn test_old_style() {
     .unwrap();
     assert_eq!(
         "test.2",
-        map.call_command("method.get", &Object::from("test_old_style.3"), &Target::None, true)
-            .unwrap()
-            .as_str()
-            .unwrap()
+        map.call_command(
+            "method.get",
+            &Object::from("test_old_style.3"),
+            &Target::None,
+            true
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
     );
 }
 
@@ -138,7 +168,12 @@ fn test_insert_list() {
     .unwrap();
 
     let res1 = map
-        .call_command("method.get", &Object::from("test_insert_list.1"), &Target::None, true)
+        .call_command(
+            "method.get",
+            &Object::from("test_insert_list.1"),
+            &Target::None,
+            true,
+        )
         .unwrap();
     assert!(res1.is_list());
     assert!(res1.as_list().unwrap().is_empty());
@@ -155,7 +190,12 @@ fn test_insert_list() {
     .unwrap();
 
     let res2 = map
-        .call_command("method.get", &Object::from("test_insert_list.2"), &Target::None, true)
+        .call_command(
+            "method.get",
+            &Object::from("test_insert_list.2"),
+            &Target::None,
+            true,
+        )
         .unwrap();
     assert!(res2.is_list());
     assert_eq!(2, res2.as_list().unwrap().len());
@@ -193,7 +233,11 @@ fn test_math_and_logic() {
     let sum = map
         .call_command(
             "math.add",
-            &Object::create_list_with(vec![Object::from(10i64), Object::from(20i64), Object::from(12i64)]),
+            &Object::create_list_with(vec![
+                Object::from(10i64),
+                Object::from(20i64),
+                Object::from(12i64),
+            ]),
             &Target::None,
             true,
         )
@@ -277,7 +321,12 @@ fn test_catch() {
 
     // Catch suppressing invalid command
     let res = map
-        .call_command("catch", &Object::from("non_existent_command=foo"), &Target::None, true)
+        .call_command(
+            "catch",
+            &Object::from("non_existent_command=foo"),
+            &Target::None,
+            true,
+        )
         .unwrap();
     assert!(res.is_empty());
 }

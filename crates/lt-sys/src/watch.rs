@@ -178,7 +178,12 @@ impl WatchReadyQueue {
         self.entries.clear();
     }
 
-    pub fn push(&mut self, command: impl Into<String>, path: impl Into<String>, current_time: Duration) {
+    pub fn push(
+        &mut self,
+        command: impl Into<String>,
+        path: impl Into<String>,
+        current_time: Duration,
+    ) {
         if !self.active {
             return;
         }
@@ -187,7 +192,11 @@ impl WatchReadyQueue {
         let cmd = command.into();
 
         let mut fs = FileStat::new();
-        let regular = if fs.update(&p) { fs.is_regular() } else { false };
+        let regular = if fs.update(&p) {
+            fs.is_regular()
+        } else {
+            false
+        };
         let size = if regular { fs.size() } else { -1 };
         let mtime = if regular { fs.modified_time() } else { 0 };
 
@@ -201,7 +210,13 @@ impl WatchReadyQueue {
             } else {
                 entry.last_changed = current_time;
             }
-            Self::update_next_time(entry, current_time, self.quiet_time, self.retry_time, self.stale_time);
+            Self::update_next_time(
+                entry,
+                current_time,
+                self.quiet_time,
+                self.retry_time,
+                self.stale_time,
+            );
         } else {
             let mut entry = ReadyEntry {
                 command: cmd,
@@ -213,7 +228,13 @@ impl WatchReadyQueue {
                 last_changed: current_time,
                 next_time: current_time,
             };
-            Self::update_next_time(&mut entry, current_time, self.quiet_time, self.retry_time, self.stale_time);
+            Self::update_next_time(
+                &mut entry,
+                current_time,
+                self.quiet_time,
+                self.retry_time,
+                self.stale_time,
+            );
             self.entries.insert(p, entry);
         }
     }
@@ -242,7 +263,11 @@ impl WatchReadyQueue {
             }
 
             let mut fs = FileStat::new();
-            let regular = if fs.update(&entry.path) { fs.is_regular() } else { false };
+            let regular = if fs.update(&entry.path) {
+                fs.is_regular()
+            } else {
+                false
+            };
             let size = if regular { fs.size() } else { -1 };
             let mtime = if regular { fs.modified_time() } else { 0 };
 
@@ -263,7 +288,13 @@ impl WatchReadyQueue {
             } else if !nonempty_regular && stale {
                 to_remove.push(path.clone());
             } else {
-                Self::update_next_time(entry, current_time, self.quiet_time, self.retry_time, self.stale_time);
+                Self::update_next_time(
+                    entry,
+                    current_time,
+                    self.quiet_time,
+                    self.retry_time,
+                    self.stale_time,
+                );
             }
         }
 

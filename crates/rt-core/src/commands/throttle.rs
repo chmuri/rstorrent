@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, CommandMap, RpcError};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 pub const MAX_RATE_KB: i64 = 4194303;
 pub const MAX_RATE_BYTES: i64 = 4294967295;
@@ -173,7 +173,9 @@ pub fn register_throttle_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("throttle.down: missing arguments".into()));
+                return Err(RpcError::InputError(
+                    "throttle.down: missing arguments".into(),
+                ));
             }
             let name = to_str(&list[0])?;
             let val_str = to_str(&list[1])?;
@@ -206,7 +208,9 @@ pub fn register_throttle_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("throttle.up: missing arguments".into()));
+                return Err(RpcError::InputError(
+                    "throttle.up: missing arguments".into(),
+                ));
             }
             let name = to_str(&list[0])?;
             let val_str = to_str(&list[1])?;

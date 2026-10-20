@@ -375,9 +375,7 @@ impl FileManager {
                     self.evict_least_active(evict);
                 }
                 Err(_) => {
-                    self.counters
-                        .files_failed
-                        .fetch_add(1, Ordering::Relaxed);
+                    self.counters.files_failed.fetch_add(1, Ordering::Relaxed);
                     return false;
                 }
             }
@@ -569,8 +567,7 @@ fn allocate_for_file(fd: RawFd, size: u64) {
 
             // Explicit fallback for filesystems without Linux fallocate.
             let posix_ret = unsafe { libc::posix_fallocate(fd, 0, size as libc::off_t) };
-            if posix_ret != 0 && !FALLOCATE_FALLBACK_FAILED_LOGGED.swap(true, Ordering::Relaxed)
-            {
+            if posix_ret != 0 && !FALLOCATE_FALLBACK_FAILED_LOGGED.swap(true, Ordering::Relaxed) {
                 tracing::warn!(
                     errno = posix_ret,
                     "posix_fallocate fallback also failed; continuing without preallocation"
@@ -912,12 +909,7 @@ mod tests {
         let missing = temp_path("stats_missing").join("no_such_dir").join("f");
         let mut missing_file = File::new();
         missing_file.set_path(&missing);
-        assert!(!manager.open(
-            &mut missing_file,
-            false,
-            Prot::READ,
-            OpenFlags::empty(),
-        ));
+        assert!(!manager.open(&mut missing_file, false, Prot::READ, OpenFlags::empty(),));
         assert_eq!(handle.files_failed_counter(), 1);
         assert_eq!(handle.stats().open_files, 0);
 

@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
-use std::path::PathBuf;
 use lt_common::Object;
 use rt_grpc::{GrpcContext, GrpcServer};
 use rt_rpc::command::flags::{FLAG_IS_REDIRECT, FLAG_PUBLIC_RPC, FLAG_UNTRUSTED_SAFE};
 use rt_rpc::{CommandMap, RpcError};
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::sync::watch;
 use tracing::{error, info};
 
@@ -43,9 +43,9 @@ pub fn register_grpc_commands(
                 addr_input
             };
 
-            let addr: SocketAddr = addr_str
-                .parse()
-                .map_err(|e| RpcError::InputError(format!("Invalid socket address {}: {}", addr_str, e)))?;
+            let addr: SocketAddr = addr_str.parse().map_err(|e| {
+                RpcError::InputError(format!("Invalid socket address {}: {}", addr_str, e))
+            })?;
 
             let server = GrpcServer::new(ctx_tcp.clone());
             let rx = rx_tcp.clone();

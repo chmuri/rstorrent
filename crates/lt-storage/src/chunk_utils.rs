@@ -14,9 +14,7 @@ pub fn chunk_size(piece_length: u32, total_size: u64, index: u32) -> u32 {
         return 0;
     }
 
-    total_size
-        .saturating_sub(start)
-        .min(piece_length as u64) as u32
+    total_size.saturating_sub(start).min(piece_length as u64) as u32
 }
 
 /// Number of chunks for a torrent.
@@ -44,7 +42,11 @@ pub fn chunk_to_piece(chunk_index: u32, piece_length: u32, chunk_size: u32) -> O
 }
 
 /// First and last (inclusive) chunk indices for a piece.
-pub fn piece_chunk_range(piece_index: u32, piece_length: u32, chunk_size: u32) -> Option<(u32, u32)> {
+pub fn piece_chunk_range(
+    piece_index: u32,
+    piece_length: u32,
+    chunk_size: u32,
+) -> Option<(u32, u32)> {
     if chunk_size == 0 {
         return None;
     }

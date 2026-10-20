@@ -95,14 +95,7 @@ fn write_all(root: &std::path::Path, metadata: &TorrentMetadata) {
     let (payload, _) = payload_and_hashes();
     let files = target_files(metadata);
     for (index, chunk) in payload.chunks(8).enumerate() {
-        lt_storage::write_piece_to_disk(
-            root,
-            &files,
-            8,
-            index as u32,
-            chunk,
-        )
-        .unwrap();
+        lt_storage::write_piece_to_disk(root, &files, 8, index as u32, chunk).unwrap();
     }
 }
 
@@ -129,10 +122,7 @@ fn mtime_mismatch_rechecks_only_the_affected_file() {
     let resume = ResumeData {
         bitfield: Some(completed_all()),
         file_priorities: Vec::new(),
-        file_mtimes: vec![
-            mtime_seconds(&a_path),
-            mtime_seconds(&b_path) - 100,
-        ],
+        file_mtimes: vec![mtime_seconds(&a_path), mtime_seconds(&b_path) - 100],
         completed_bytes: 24,
     };
 
@@ -176,10 +166,7 @@ fn changed_file_drops_bad_chunks_and_sets_hash_failed() {
     let resume = ResumeData {
         bitfield: Some(completed_all()),
         file_priorities: Vec::new(),
-        file_mtimes: vec![
-            mtime_seconds(&a_path),
-            mtime_seconds(&b_path) - 100,
-        ],
+        file_mtimes: vec![mtime_seconds(&a_path), mtime_seconds(&b_path) - 100],
         completed_bytes: 24,
     };
 

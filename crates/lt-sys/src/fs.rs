@@ -48,23 +48,33 @@ impl FileStat {
     }
 
     pub fn is_link(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.file_type().is_symlink())
+        self.meta
+            .as_ref()
+            .map_or(false, |m| m.file_type().is_symlink())
     }
 
     pub fn is_fifo(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.file_type().is_fifo())
+        self.meta
+            .as_ref()
+            .map_or(false, |m| m.file_type().is_fifo())
     }
 
     pub fn is_socket(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.file_type().is_socket())
+        self.meta
+            .as_ref()
+            .map_or(false, |m| m.file_type().is_socket())
     }
 
     pub fn is_block(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.file_type().is_block_device())
+        self.meta
+            .as_ref()
+            .map_or(false, |m| m.file_type().is_block_device())
     }
 
     pub fn is_character(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.file_type().is_char_device())
+        self.meta
+            .as_ref()
+            .map_or(false, |m| m.file_type().is_char_device())
     }
 
     pub fn size(&self) -> i64 {

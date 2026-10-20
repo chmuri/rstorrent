@@ -13,7 +13,12 @@ fn create_dht_cache(node_count: usize) -> Object {
     self_id.clear_byte(0x55);
 
     let mut cache = Object::create_map();
-    cache.insert_key("self_id", Object::create_string(self_id.as_slice().to_vec())).unwrap();
+    cache
+        .insert_key(
+            "self_id",
+            Object::create_string(self_id.as_slice().to_vec()),
+        )
+        .unwrap();
 
     let mut nodes = Object::create_map();
 
@@ -22,8 +27,10 @@ fn create_dht_cache(node_count: usize) -> Object {
         node_id.as_mut_slice()[i / 8] ^= 0x80 >> (i % 8);
 
         let mut node = Object::create_map();
-        node.insert_key("i", Object::create_value(0x7f000001)).unwrap();
-        node.insert_key("p", Object::create_value((10000 + i) as i64)).unwrap();
+        node.insert_key("i", Object::create_value(0x7f000001))
+            .unwrap();
+        node.insert_key("p", Object::create_value((10000 + i) as i64))
+            .unwrap();
         node.insert_key("t", Object::create_value(0)).unwrap();
 
         nodes.insert_key(node_id.as_slice(), node).unwrap();

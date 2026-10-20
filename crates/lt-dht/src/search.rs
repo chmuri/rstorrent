@@ -144,10 +144,7 @@ async fn lookup(
                     nodes: new_nodes,
                     ..
                 }) => {
-                    router
-                        .lock()
-                        .await
-                        .mark_replied(&node.id, now_seconds());
+                    router.lock().await.mark_replied(&node.id, now_seconds());
 
                     for compact in values {
                         if let Some(peer) = decode_peer(&compact) {
@@ -173,16 +170,13 @@ async fn lookup(
             }
         }
 
-        candidates.sort_by(|a, b| {
-            xor_distance(&a.id, &target).cmp(&xor_distance(&b.id, &target))
-        });
+        candidates.sort_by(|a, b| xor_distance(&a.id, &target).cmp(&xor_distance(&b.id, &target)));
         candidates.truncate(MAX_CANDIDATES);
     }
 
     let mut token_list: Vec<(DhtNode, Vec<u8>)> = tokens.into_values().collect();
-    token_list.sort_by(|(a, _), (b, _)| {
-        xor_distance(&a.id, &target).cmp(&xor_distance(&b.id, &target))
-    });
+    token_list
+        .sort_by(|(a, _), (b, _)| xor_distance(&a.id, &target).cmp(&xor_distance(&b.id, &target)));
 
     LookupOutcome {
         peers: peers.into_iter().collect(),

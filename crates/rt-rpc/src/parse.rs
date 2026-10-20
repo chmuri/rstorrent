@@ -1,6 +1,6 @@
+use crate::error::RpcError;
 use lt_common::object::flags as obj_flags;
 use lt_common::Object;
-use crate::error::RpcError;
 
 pub const MAX_PARSE_DEPTH: u32 = 1024;
 
@@ -75,7 +75,9 @@ where
         }
 
         if escaped {
-            return Err(RpcError::InputError("Escape character at end of input.".to_string()));
+            return Err(RpcError::InputError(
+                "Escape character at end of input.".to_string(),
+            ));
         }
 
         if let Some(pos) = end_pos {
@@ -104,7 +106,9 @@ where
         }
 
         if escaped {
-            return Err(RpcError::InputError("Escape character at end of input.".to_string()));
+            return Err(RpcError::InputError(
+                "Escape character at end of input.".to_string(),
+            ));
         }
 
         Ok((dest, &s[end_pos..]))
@@ -167,13 +171,20 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
         return Err(());
     }
 
-    if base == 10 && src_bytes[idx] == b'0' && idx + 1 < src_bytes.len() && src_bytes[idx + 1].is_ascii_digit() {
+    if base == 10
+        && src_bytes[idx] == b'0'
+        && idx + 1 < src_bytes.len()
+        && src_bytes[idx + 1].is_ascii_digit()
+    {
         return Err(());
     }
 
     // Determine actual radix
     let (radix, digits_start) = if base == 16 {
-        if idx + 1 < src_bytes.len() && src_bytes[idx] == b'0' && (src_bytes[idx + 1] == b'x' || src_bytes[idx + 1] == b'X') {
+        if idx + 1 < src_bytes.len()
+            && src_bytes[idx] == b'0'
+            && (src_bytes[idx + 1] == b'x' || src_bytes[idx + 1] == b'X')
+        {
             (16, idx + 2)
         } else {
             (16, idx)
@@ -185,7 +196,9 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
     } else {
         // base == 0
         if src_bytes[idx] == b'0' {
-            if idx + 1 < src_bytes.len() && (src_bytes[idx + 1] == b'x' || src_bytes[idx + 1] == b'X') {
+            if idx + 1 < src_bytes.len()
+                && (src_bytes[idx + 1] == b'x' || src_bytes[idx + 1] == b'X')
+            {
                 // Check if there are hex digits after 0x
                 if idx + 2 < src_bytes.len() && (src_bytes[idx + 2] as char).is_ascii_hexdigit() {
                     (16, idx + 2)
@@ -318,11 +331,7 @@ pub fn parse_whole_value(src: &str, base: i32, unit: i64) -> Result<i64, RpcErro
         .map_err(|_| RpcError::InputError("Could not convert string to value.".to_string()))
 }
 
-pub fn parse_object<F>(
-    s: &str,
-    delim: F,
-    depth: u32,
-) -> Result<(Object, &str), RpcError>
+pub fn parse_object<F>(s: &str, delim: F, depth: u32) -> Result<(Object, &str), RpcError>
 where
     F: Fn(char) -> bool + Copy,
 {
@@ -340,7 +349,9 @@ where
         let (list, rest) = parse_list(after_brace, parse_is_delim_block, depth + 1)?;
         let rest_trimmed = parse_skip_wspace(rest);
         if !rest_trimmed.starts_with('}') {
-            return Err(RpcError::InputError("Could not find closing '}'.".to_string()));
+            return Err(RpcError::InputError(
+                "Could not find closing '}'.".to_string(),
+            ));
         }
         Ok((Object::create_list_with(list), &rest_trimmed[1..]))
     } else if trimmed.starts_with('(') {
@@ -356,7 +367,9 @@ where
         }
 
         if parentheses > 3 {
-            return Err(RpcError::InputError("Max 3 parentheses per object allowed.".to_string()));
+            return Err(RpcError::InputError(
+                "Max 3 parentheses per object allowed.".to_string(),
+            ));
         }
 
         let after_paren = &trimmed[idx..];
@@ -396,11 +409,7 @@ where
     }
 }
 
-pub fn parse_list<F>(
-    s: &str,
-    delim: F,
-    depth: u32,
-) -> Result<(Vec<Object>, &str), RpcError>
+pub fn parse_list<F>(s: &str, delim: F, depth: u32) -> Result<(Vec<Object>, &str), RpcError>
 where
     F: Fn(char) -> bool + Copy,
 {
@@ -427,11 +436,7 @@ where
     Ok((list, current))
 }
 
-pub fn parse_whole_list<F>(
-    s: &str,
-    delim: F,
-    depth: u32,
-) -> Result<(Object, &str), RpcError>
+pub fn parse_whole_list<F>(s: &str, delim: F, depth: u32) -> Result<(Object, &str), RpcError>
 where
     F: Fn(char) -> bool + Copy,
 {
@@ -501,4 +506,3 @@ pub fn convert_to_string(src: &Object) -> Result<String, RpcError> {
 
     Err(RpcError::InputError("Not a string.".to_string()))
 }
-

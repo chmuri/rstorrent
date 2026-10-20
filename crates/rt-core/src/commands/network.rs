@@ -101,9 +101,7 @@ where
     let get_config = config.clone();
     map.insert_func(
         name,
-        move |_target, _obj| {
-            Ok(Object::from(if get(&get_config) { 1i64 } else { 0 }))
-        },
+        move |_target, _obj| Ok(Object::from(if get(&get_config) { 1i64 } else { 0 })),
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
         name,
@@ -482,11 +480,13 @@ fn register_listen_port_commands(
     map.insert_func(
         "network.port_random",
         move |_target, _obj| {
-            Ok(Object::from(if get_alias.read().unwrap().listen_port_random {
-                1i64
-            } else {
-                0
-            }))
+            Ok(Object::from(
+                if get_alias.read().unwrap().listen_port_random {
+                    1i64
+                } else {
+                    0
+                },
+            ))
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
@@ -662,8 +662,7 @@ fn register_proxy_http_commands(
             // The C++ CurlStack rejects values above 1024.
             if !(0..=1024).contains(&value) {
                 return Err(
-                    "network.http.max_cache_connections: value must be between 0 and 1024."
-                        .into(),
+                    "network.http.max_cache_connections: value must be between 0 and 1024.".into(),
                 );
             }
             s.http_max_cache_connections = value;
@@ -679,8 +678,7 @@ fn register_proxy_http_commands(
             // The C++ CurlStack rejects values above 1024.
             if !(0..=1024).contains(&value) {
                 return Err(
-                    "network.http.max_host_connections: value must be between 0 and 1024."
-                        .into(),
+                    "network.http.max_host_connections: value must be between 0 and 1024.".into(),
                 );
             }
             s.http_max_host_connections = value;
@@ -721,7 +719,11 @@ fn register_proxy_http_commands(
 
     map.insert_func(
         "network.http.current_open",
-        |_target, _obj| Ok(Object::from(socket_manager().category_managed_size(SocketCategory::Http) as i64)),
+        |_target, _obj| {
+            Ok(Object::from(
+                socket_manager().category_managed_size(SocketCategory::Http) as i64,
+            ))
+        },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
         "Current number of open HTTP connections.",
@@ -929,13 +931,55 @@ pub fn register_network_commands(
 ) -> Result<(), RpcError> {
     let state = Arc::new(RwLock::new(NetworkExtConfig::default()));
 
-    add_bool(map, &config, "network.block.ipv4", |c| c.is_block_ipv4(), |c, v| c.set_block_ipv4(v))?;
-    add_bool(map, &config, "network.block.ipv6", |c| c.is_block_ipv6(), |c, v| c.set_block_ipv6(v))?;
-    add_bool(map, &config, "network.block.ipv4in6", |c| c.is_block_ipv4in6(), |c, v| c.set_block_ipv4in6(v))?;
-    add_bool(map, &config, "network.block.outgoing", |c| c.is_block_outgoing(), |c, v| c.set_block_outgoing(v))?;
-    add_bool(map, &config, "network.block.udp", |c| c.is_block_udp(), |c, v| c.set_block_udp(v))?;
-    add_bool(map, &config, "network.block.incoming", |c| c.is_block_incoming(), |c, v| c.set_block_incoming(v))?;
-    add_bool(map, &config, "network.prefer.ipv6", |c| c.is_prefer_ipv6(), |c, v| c.set_prefer_ipv6(v))?;
+    add_bool(
+        map,
+        &config,
+        "network.block.ipv4",
+        |c| c.is_block_ipv4(),
+        |c, v| c.set_block_ipv4(v),
+    )?;
+    add_bool(
+        map,
+        &config,
+        "network.block.ipv6",
+        |c| c.is_block_ipv6(),
+        |c, v| c.set_block_ipv6(v),
+    )?;
+    add_bool(
+        map,
+        &config,
+        "network.block.ipv4in6",
+        |c| c.is_block_ipv4in6(),
+        |c, v| c.set_block_ipv4in6(v),
+    )?;
+    add_bool(
+        map,
+        &config,
+        "network.block.outgoing",
+        |c| c.is_block_outgoing(),
+        |c, v| c.set_block_outgoing(v),
+    )?;
+    add_bool(
+        map,
+        &config,
+        "network.block.udp",
+        |c| c.is_block_udp(),
+        |c, v| c.set_block_udp(v),
+    )?;
+    add_bool(
+        map,
+        &config,
+        "network.block.incoming",
+        |c| c.is_block_incoming(),
+        |c, v| c.set_block_incoming(v),
+    )?;
+    add_bool(
+        map,
+        &config,
+        "network.prefer.ipv6",
+        |c| c.is_prefer_ipv6(),
+        |c, v| c.set_prefer_ipv6(v),
+    )?;
 
     add_address(
         map,
@@ -1049,8 +1093,7 @@ pub fn register_network_commands(
             if v < 1 || v > 65536 {
                 return Err("Listen backlog must be between 1 and 65536.".to_string());
             }
-            c.set_listen_backlog(v as i32)
-                .map_err(|e| e.to_string())
+            c.set_listen_backlog(v as i32).map_err(|e| e.to_string())
         },
     )?;
     add_byte_size(
@@ -1154,12 +1197,9 @@ pub fn register_network_commands(
                     // C++ parses the numeric form with base 16 (`strtoll`),
                     // which accepts both `10` and `0x10`. Keep that behaviour
                     // instead of interpreting `10` as decimal.
-                    let digits = lowered
-                        .strip_prefix("0x")
-                        .unwrap_or(lowered.as_str());
-                    i64::from_str_radix(digits, 16).map_err(|_| {
-                        RpcError::InputError("Invalid TOS value.".into())
-                    })?
+                    let digits = lowered.strip_prefix("0x").unwrap_or(lowered.as_str());
+                    i64::from_str_radix(digits, 16)
+                        .map_err(|_| RpcError::InputError("Invalid TOS value.".into()))?
                 }
             };
             if !(0..=255).contains(&value) {

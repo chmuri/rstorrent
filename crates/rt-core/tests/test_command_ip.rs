@@ -1,7 +1,7 @@
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_core::commands::ip::{ipv4_range_parse, register_ip_commands, IpTableManager};
 use rt_rpc::{CommandMap, Target};
+use std::sync::{Arc, RwLock};
 
 fn ipv4(a: u32, b: u32, c: u32, d: u32) -> u32 {
     (a << 24) | (b << 16) | (c << 8) | d
@@ -111,10 +111,7 @@ fn test_ip_tables_commands() {
     let val = map
         .call_command(
             "ip_tables.get",
-            &Object::create_list_with(vec![
-                Object::from("filter"),
-                Object::from("192.168.1.50"),
-            ]),
+            &Object::create_list_with(vec![Object::from("filter"), Object::from("192.168.1.50")]),
             &Target::None,
             true,
         )
@@ -127,10 +124,7 @@ fn test_ip_tables_commands() {
     assert!(map
         .call_command(
             "ip_tables.get",
-            &Object::create_list_with(vec![
-                Object::from("filter"),
-                Object::from("10.0.0.1"),
-            ]),
+            &Object::create_list_with(vec![Object::from("filter"), Object::from("10.0.0.1"),]),
             &Target::None,
             true,
         )

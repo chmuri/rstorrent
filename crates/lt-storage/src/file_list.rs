@@ -121,13 +121,13 @@ impl FileList {
             });
         }
 
-        let sum = torrent_size
-            .checked_add((chunk_size - 1) as u64)
-            .ok_or(StorageError::InvalidRange {
+        let sum = torrent_size.checked_add((chunk_size - 1) as u64).ok_or(
+            StorageError::InvalidRange {
                 offset: torrent_size,
                 length: chunk_size as u64,
                 size: torrent_size,
-            })?;
+            },
+        )?;
 
         let chunks = if torrent_size == 0 {
             0
@@ -185,7 +185,8 @@ impl FileList {
         }
 
         let chunk_start = (index as u64) * (self.chunk_size as u64);
-        let chunk_len = (self.chunk_size as u64).min(self.torrent_size.saturating_sub(chunk_start)) as u32;
+        let chunk_len =
+            (self.chunk_size as u64).min(self.torrent_size.saturating_sub(chunk_start)) as u32;
 
         let mut chunk = Chunk::new();
 
@@ -208,7 +209,12 @@ impl FileList {
                     SocketFile::create_padding_chunk(overlap_len, prot, MapFlags::SHARED)?
                 } else if file.is_open() {
                     let socket_file = SocketFile::from_fd(file.file_descriptor());
-                    let mc = socket_file.create_chunk(file_offset, overlap_len, prot, MapFlags::SHARED)?;
+                    let mc = socket_file.create_chunk(
+                        file_offset,
+                        overlap_len,
+                        prot,
+                        MapFlags::SHARED,
+                    )?;
                     std::mem::forget(socket_file); // Don't close file fd here
                     mc
                 } else {

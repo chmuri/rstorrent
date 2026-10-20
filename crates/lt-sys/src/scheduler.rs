@@ -154,7 +154,11 @@ impl Scheduler {
         }
     }
 
-    pub fn wait_until(&mut self, entry: &mut SchedulerEntry, time: Duration) -> Result<(), &'static str> {
+    pub fn wait_until(
+        &mut self,
+        entry: &mut SchedulerEntry,
+        time: Duration,
+    ) -> Result<(), &'static str> {
         if entry.is_scheduled() {
             return Err("Scheduler::wait_until called on already scheduled entry.");
         }
@@ -177,11 +181,19 @@ impl Scheduler {
         Ok(())
     }
 
-    pub fn wait_for(&mut self, entry: &mut SchedulerEntry, delay: Duration) -> Result<(), &'static str> {
+    pub fn wait_for(
+        &mut self,
+        entry: &mut SchedulerEntry,
+        delay: Duration,
+    ) -> Result<(), &'static str> {
         self.wait_until(entry, self.cached_time + delay)
     }
 
-    pub fn update_wait_until(&mut self, entry: &mut SchedulerEntry, time: Duration) -> Result<(), &'static str> {
+    pub fn update_wait_until(
+        &mut self,
+        entry: &mut SchedulerEntry,
+        time: Duration,
+    ) -> Result<(), &'static str> {
         if !entry.is_valid() && !entry.is_scheduled() {
             return Err("Scheduler::update_wait_until called on invalid entry.");
         }
@@ -191,7 +203,8 @@ impl Scheduler {
 
         if entry.is_scheduled() {
             if let Some((slot, _, _)) = self.entries.get_mut(&entry.id) {
-                *self.entries.get_mut(&entry.id).unwrap() = (std::mem::replace(slot, Box::new(|| {})), time, gen);
+                *self.entries.get_mut(&entry.id).unwrap() =
+                    (std::mem::replace(slot, Box::new(|| {})), time, gen);
             }
         } else {
             let slot = entry.slot.take().unwrap();
@@ -208,7 +221,11 @@ impl Scheduler {
         Ok(())
     }
 
-    pub fn update_wait_for(&mut self, entry: &mut SchedulerEntry, delay: Duration) -> Result<(), &'static str> {
+    pub fn update_wait_for(
+        &mut self,
+        entry: &mut SchedulerEntry,
+        delay: Duration,
+    ) -> Result<(), &'static str> {
         self.update_wait_until(entry, self.cached_time + delay)
     }
 

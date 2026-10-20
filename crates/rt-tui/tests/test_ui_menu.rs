@@ -71,7 +71,10 @@ fn test_navigation_wraps_and_pages() {
     assert!(!menu.select_index(5));
 
     // Raw keys take the same path as the explicit navigation methods.
-    assert_eq!(menu.handle_key(KEY_UP, &CommandMap::new()), Some(MenuOutcome::Navigated));
+    assert_eq!(
+        menu.handle_key(KEY_UP, &CommandMap::new()),
+        Some(MenuOutcome::Navigated)
+    );
     assert_eq!(menu.selected_index(), 2);
     assert_eq!(
         menu.handle_key(KEY_PAGE_UP, &CommandMap::new()),
@@ -116,19 +119,31 @@ fn test_nested_submenus_and_back_closes_one_level() {
     assert_eq!(menu.title_line(10), "[Main > Priority]");
 
     // Escape pops exactly one level and preserves the parent's selection.
-    assert_eq!(menu.handle_key(KEY_ESCAPE, &map), Some(MenuOutcome::LevelClosed));
+    assert_eq!(
+        menu.handle_key(KEY_ESCAPE, &map),
+        Some(MenuOutcome::LevelClosed)
+    );
     assert_eq!(menu.depth(), 0);
     assert_eq!(menu.selected_index(), 1);
     assert_eq!(menu.title(), "Main");
 
     // Right arrow opens, left arrow closes one level.
-    assert_eq!(menu.handle_key(KEY_RIGHT, &map), Some(MenuOutcome::SubmenuOpened));
+    assert_eq!(
+        menu.handle_key(KEY_RIGHT, &map),
+        Some(MenuOutcome::SubmenuOpened)
+    );
     assert_eq!(menu.depth(), 1);
-    assert_eq!(menu.handle_key(KEY_LEFT, &map), Some(MenuOutcome::LevelClosed));
+    assert_eq!(
+        menu.handle_key(KEY_LEFT, &map),
+        Some(MenuOutcome::LevelClosed)
+    );
     assert_eq!(menu.depth(), 0);
 
     // At the root the caller is asked to close the overlay.
-    assert_eq!(menu.handle_key(KEY_ESCAPE, &map), Some(MenuOutcome::CloseRequested));
+    assert_eq!(
+        menu.handle_key(KEY_ESCAPE, &map),
+        Some(MenuOutcome::CloseRequested)
+    );
     assert_eq!(menu.depth(), 0, "the root level is never popped");
 }
 
@@ -150,7 +165,11 @@ fn test_disabled_entries_are_visible_but_not_executable() {
             label: "Disabled".to_string()
         }
     );
-    assert_eq!(hits.load(Ordering::SeqCst), 0, "disabled entry must not run");
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        0,
+        "disabled entry must not run"
+    );
     assert!(menu.last_error().is_none());
 
     let mut canvas = Canvas::new(0, 0, 32, 4);
@@ -164,7 +183,10 @@ fn test_disabled_entries_are_visible_but_not_executable() {
     assert_ne!(canvas.get_cell(0, 2).unwrap().style, Style::default());
 
     assert!(menu.select_index(0));
-    assert_eq!(menu.activate(&map), MenuOutcome::Executed("test.hit=".to_string()));
+    assert_eq!(
+        menu.activate(&map),
+        MenuOutcome::Executed("test.hit=".to_string())
+    );
     assert_eq!(hits.load(Ordering::SeqCst), 1);
 }
 
@@ -188,10 +210,7 @@ fn test_command_errors_are_propagated_and_logged() {
     )
     .unwrap();
 
-    let mut menu = Menu::from_entries(
-        "Main",
-        vec![MenuEntry::command("Fail", "test.fail=")],
-    );
+    let mut menu = Menu::from_entries("Main", vec![MenuEntry::command("Fail", "test.fail=")]);
 
     let outcome = menu.activate(&map);
     match &outcome {
@@ -216,7 +235,10 @@ fn test_command_errors_are_propagated_and_logged() {
 
     // A successful command clears the previous error.
     menu.set_entries(vec![MenuEntry::command("Ok", "test.ok=")]);
-    assert_eq!(menu.activate(&map), MenuOutcome::Executed("test.ok=".to_string()));
+    assert_eq!(
+        menu.activate(&map),
+        MenuOutcome::Executed("test.ok=".to_string())
+    );
     assert!(menu.last_error().is_none());
     assert!(menu.drain_messages()[0].contains("Executed"));
 }
@@ -274,10 +296,7 @@ fn test_command_arguments_are_parsed() {
     )
     .unwrap();
 
-    let mut menu = Menu::from_entries(
-        "Args",
-        vec![MenuEntry::command("Echo", "test.echo=42")],
-    );
+    let mut menu = Menu::from_entries("Args", vec![MenuEntry::command("Echo", "test.echo=42")]);
     assert_eq!(
         menu.activate(&map),
         MenuOutcome::Executed("test.echo=42".to_string())

@@ -414,10 +414,7 @@ impl RootUI {
     pub fn set_torrent_list_layout(&mut self, layout: impl Into<String>) {
         let layout = layout.into();
         self.torrent_list_layout = layout.clone();
-        self.window_download_list
-            .lock()
-            .unwrap()
-            .set_layout(layout);
+        self.window_download_list.lock().unwrap().set_layout(layout);
     }
 
     /// Removes focus from a download as `ui.unfocus_download` does.
@@ -1350,10 +1347,7 @@ impl RootUI {
             } else if y + 1 == height {
                 (ColorKind::Footer, None)
             } else {
-                (
-                    row_color_kind(&line),
-                    Some(y % 2 != 0),
-                )
+                (row_color_kind(&line), Some(y % 2 != 0))
             };
 
             let parity_active = parity

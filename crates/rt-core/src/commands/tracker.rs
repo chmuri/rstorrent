@@ -1,9 +1,9 @@
-use std::sync::{Arc, RwLock};
+use crate::download_list::DownloadList;
 use lt_common::{HashString, Object};
 use rt_rpc::command_flags::*;
 use rt_rpc::parse_commands::parse_command;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError, Target};
-use crate::download_list::DownloadList;
+use std::sync::{Arc, RwLock};
 
 pub fn checked_port_value(val: i64, context: &str) -> Result<u16, RpcError> {
     if !(0..=65535).contains(&val) {
@@ -59,9 +59,7 @@ fn multicall_commands(list: &[Object]) -> &[Object] {
 
     if let Some(first) = list.first() {
         if let Ok(first) = to_str(first) {
-            if first.is_empty()
-                || (first.len() == 40 && HashString::from_hex(&first).is_some())
-            {
+            if first.is_empty() || (first.len() == 40 && HashString::from_hex(&first).is_some()) {
                 start = 1;
             }
         }
@@ -181,14 +179,15 @@ pub fn register_tracker_commands(
         "t.url",
         move |target, _obj| {
             let (hash, index) = tracker_target(target)?;
-            let download = dl_t_url
-                .read()
-                .unwrap()
-                .find(&hash)
-                .ok_or_else(|| RpcError::Custom {
-                    code: -500,
-                    message: "Download not found".into(),
-                })?;
+            let download =
+                dl_t_url
+                    .read()
+                    .unwrap()
+                    .find(&hash)
+                    .ok_or_else(|| RpcError::Custom {
+                        code: -500,
+                        message: "Download not found".into(),
+                    })?;
             let guard = download.read().unwrap();
             let engine = guard.download();
             let tracker = engine
@@ -208,14 +207,15 @@ pub fn register_tracker_commands(
         "t.type",
         move |target, _obj| {
             let (hash, index) = tracker_target(target)?;
-            let download = dl_t_type
-                .read()
-                .unwrap()
-                .find(&hash)
-                .ok_or_else(|| RpcError::Custom {
-                    code: -500,
-                    message: "Download not found".into(),
-                })?;
+            let download =
+                dl_t_type
+                    .read()
+                    .unwrap()
+                    .find(&hash)
+                    .ok_or_else(|| RpcError::Custom {
+                        code: -500,
+                        message: "Download not found".into(),
+                    })?;
             let guard = download.read().unwrap();
             let engine = guard.download();
             let tracker = engine
@@ -265,12 +265,14 @@ pub fn register_tracker_commands(
 
             let commands = multicall_commands(list);
 
-            let dl = dl_t_mc.read().unwrap().find(&hash).ok_or_else(|| {
-                RpcError::Custom {
+            let dl = dl_t_mc
+                .read()
+                .unwrap()
+                .find(&hash)
+                .ok_or_else(|| RpcError::Custom {
                     code: -500,
                     message: "Download not found".into(),
-                }
-            })?;
+                })?;
 
             let num_trackers = {
                 let guard = dl.read().unwrap();
@@ -312,7 +314,6 @@ pub fn register_tracker_commands(
     Ok(())
 }
 
-
 fn add_tracker_getter<F>(
     map: &mut CommandMap,
     download_list: &Arc<RwLock<DownloadList>>,
@@ -328,10 +329,14 @@ where
         move |target, _obj| {
             let (hash, index) = tracker_target(target)?;
 
-            let download = list.read().unwrap().find(&hash).ok_or_else(|| RpcError::Custom {
-                code: -500,
-                message: "Download not found".into(),
-            })?;
+            let download = list
+                .read()
+                .unwrap()
+                .find(&hash)
+                .ok_or_else(|| RpcError::Custom {
+                    code: -500,
+                    message: "Download not found".into(),
+                })?;
             let guard = download.read().unwrap();
             if guard.is_hash_checking() {
                 return Ok(Object::create_empty());
@@ -365,10 +370,14 @@ where
         move |target, _obj| {
             let (hash, index) = tracker_target(target)?;
 
-            let download = list.read().unwrap().find(&hash).ok_or_else(|| RpcError::Custom {
-                code: -500,
-                message: "Download not found".into(),
-            })?;
+            let download = list
+                .read()
+                .unwrap()
+                .find(&hash)
+                .ok_or_else(|| RpcError::Custom {
+                    code: -500,
+                    message: "Download not found".into(),
+                })?;
             let mut guard = download.write().unwrap();
             let mut engine = guard.download_mut();
             let tracker = engine
@@ -401,10 +410,14 @@ where
             let (hash, index) = tracker_target(target)?;
             let value = convert_to_value(obj, 10, 1)?;
 
-            let download = list.read().unwrap().find(&hash).ok_or_else(|| RpcError::Custom {
-                code: -500,
-                message: "Download not found".into(),
-            })?;
+            let download = list
+                .read()
+                .unwrap()
+                .find(&hash)
+                .ok_or_else(|| RpcError::Custom {
+                    code: -500,
+                    message: "Download not found".into(),
+                })?;
             let mut guard = download.write().unwrap();
             let mut engine = guard.download_mut();
             let tracker = engine
@@ -428,14 +441,20 @@ fn register_tracker_extended_commands(
     // Tracker-provided ids are not persisted by the lt-tracker model yet, so
     // newly created and updated trackers both report the empty id. This is the
     // correct value until the first announce response contains a tracker id.
-    add_tracker_getter(map, download_list, "t.id", |_tracker| {
-        Object::from("")
-    })?;
+    add_tracker_getter(map, download_list, "t.id", |_tracker| Object::from(""))?;
     add_tracker_getter(map, download_list, "t.is_enabled", |tracker| {
-        Object::from(if tracker.state().is_enabled() { 1i64 } else { 0 })
+        Object::from(if tracker.state().is_enabled() {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_tracker_getter(map, download_list, "t.is_deleted", |tracker| {
-        Object::from(if tracker.state().is_deleted() { 1i64 } else { 0 })
+        Object::from(if tracker.state().is_deleted() {
+            1i64
+        } else {
+            0
+        })
     })?;
     // The C++ surface maps t.is_open to `is_requesting` (including the
     // starting-request flag), not to `is_in_use`.
@@ -452,7 +471,11 @@ fn register_tracker_extended_commands(
         Object::from(if tracker.is_in_use() { 1i64 } else { 0 })
     })?;
     add_tracker_getter(map, download_list, "t.is_disownable", |tracker| {
-        Object::from(if tracker.state().is_disownable() { 1i64 } else { 0 })
+        Object::from(if tracker.state().is_disownable() {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_tracker_getter(map, download_list, "t.can_scrape", |tracker| {
         Object::from(if tracker.is_scrapable() { 1i64 } else { 0 })
@@ -461,7 +484,11 @@ fn register_tracker_extended_commands(
         Object::from(if tracker.is_scrapable() { 1i64 } else { 0 })
     })?;
     add_tracker_getter(map, download_list, "t.is_extra_tracker", |tracker| {
-        Object::from(if tracker.state().is_extra_tracker() { 1i64 } else { 0 })
+        Object::from(if tracker.state().is_extra_tracker() {
+            1i64
+        } else {
+            0
+        })
     })?;
     add_tracker_getter(map, download_list, "t.group", |tracker| {
         Object::from(tracker.group() as i64)
@@ -523,9 +550,12 @@ fn register_tracker_extended_commands(
     add_tracker_getter(map, download_list, "t.scrape_time_next", |tracker| {
         Object::from(tracker.state().scrape_time_next() as i64)
     })?;
-    add_tracker_getter(map, download_list, "t.scrape_time_next_minimum", |tracker| {
-        Object::from(tracker.state().scrape_time_next_minimum() as i64)
-    })?;
+    add_tracker_getter(
+        map,
+        download_list,
+        "t.scrape_time_next_minimum",
+        |tracker| Object::from(tracker.state().scrape_time_next_minimum() as i64),
+    )?;
     add_tracker_getter(map, download_list, "t.scrape_failed_time_last", |tracker| {
         Object::from(tracker.state().counters.scrape_failed_time_last as i64)
     })?;
@@ -542,9 +572,14 @@ fn register_tracker_extended_commands(
             tracker.disable();
         }
     })?;
-    add_tracker_value_setter(map, download_list, "t.min_interval.set", |tracker, value| {
-        tracker.state_mut().set_min_interval(value.max(0) as u64);
-    })?;
+    add_tracker_value_setter(
+        map,
+        download_list,
+        "t.min_interval.set",
+        |tracker, value| {
+            tracker.state_mut().set_min_interval(value.max(0) as u64);
+        },
+    )?;
     add_tracker_value_setter(
         map,
         download_list,

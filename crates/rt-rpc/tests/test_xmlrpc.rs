@@ -70,7 +70,8 @@ fn test_xmlrpc_basic_calls() {
     assert_eq!(rpc.process(req1, &map, true), expected1);
 
     // 2. Basic call without params
-    let req2 = r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName></methodCall>"#;
+    let req2 =
+        r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName></methodCall>"#;
     assert_eq!(rpc.process(req2, &map, true), expected1);
 
     // 3. UTF-8 string
@@ -105,15 +106,21 @@ fn test_xmlrpc_errors() {
 
     // Target not string
     let req2 = r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName><params><param><value><i8>41</i8></value></param></params></methodCall>"#;
-    assert!(rpc.process(req2, &map, true).contains("target must be a string"));
+    assert!(rpc
+        .process(req2, &map, true)
+        .contains("target must be a string"));
 
     // Empty integer
     let req3 = r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName><params><param><value><string></string></value></param><param><value><i8/></value></param></params></methodCall>"#;
-    assert!(rpc.process(req3, &map, true).contains("unable to parse empty integer"));
+    assert!(rpc
+        .process(req3, &map, true)
+        .contains("unable to parse empty integer"));
 
     // Non-integer
     let req4 = r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName><params><param><value><string></string></value></param><param><value><i8>string value</i8></value></param></params></methodCall>"#;
-    assert!(rpc.process(req4, &map, true).contains("unable to parse integer value"));
+    assert!(rpc
+        .process(req4, &map, true)
+        .contains("unable to parse integer value"));
 }
 
 #[test]
@@ -156,9 +163,7 @@ fn test_xmlrpc_double_datetime_and_dialects() {
 
     let date_req = r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName><params><param><value><string></string></value></param><param><value><dateTime.iso8601>20240102T03:04:05</dateTime.iso8601></value></param></params></methodCall>"#;
     let date_resp = rpc.process(date_req, &map, true);
-    assert!(date_resp.contains(
-        "<dateTime.iso8601>2024-01-02T03:04:05Z</dateTime.iso8601>"
-    ));
+    assert!(date_resp.contains("<dateTime.iso8601>2024-01-02T03:04:05Z</dateTime.iso8601>"));
 
     let nan_req = r#"<?xml version="1.0"?><methodCall><methodName>xmlrpc_reflect</methodName><params><param><value><string></string></value></param><param><value><double>NaN</double></value></param></params></methodCall>"#;
     assert!(rpc.process(nan_req, &map, true).contains("must be finite"));

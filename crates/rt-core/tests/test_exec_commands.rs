@@ -119,10 +119,7 @@ fn throw_and_nothrow_semantics() {
     let f = bin_prog("false");
 
     assert_eq!(
-        call(&map, "execute", vec![&t])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(&map, "execute", vec![&t]).unwrap().as_value().unwrap(),
         0
     );
     assert!(call(&map, "execute", vec![&f]).is_err());

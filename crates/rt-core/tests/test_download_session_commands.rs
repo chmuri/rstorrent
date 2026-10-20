@@ -5,9 +5,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use lt_common::Object;
 use lt_storage::file::Priority;
-use rt_core::commands::download::{
-    register_download_commands, register_download_session_commands,
-};
+use rt_core::commands::download::{register_download_commands, register_download_session_commands};
 use rt_core::manager::Manager;
 use rt_core::session::{load_resume_file, SessionManager};
 use rt_core::view_manager::ViewManager;
@@ -69,12 +67,8 @@ impl Fixture {
 
         let mut map = CommandMap::new();
         let view_manager = Arc::new(RwLock::new(ViewManager::new()));
-        register_download_commands(
-            &mut map,
-            Arc::clone(manager.download_list()),
-            view_manager,
-        )
-        .unwrap();
+        register_download_commands(&mut map, Arc::clone(manager.download_list()), view_manager)
+            .unwrap();
         register_download_session_commands(
             &mut map,
             Arc::clone(manager.download_list()),
@@ -148,8 +142,10 @@ fn set_mtime(path: &std::path::Path, secs: i64) {
 
 fn torrent_object() -> Object {
     let mut info = Object::create_map();
-    info.insert_key("name", Object::from("cmd-session")).unwrap();
-    info.insert_key("piece length", Object::from(16384i64)).unwrap();
+    info.insert_key("name", Object::from("cmd-session"))
+        .unwrap();
+    info.insert_key("piece length", Object::from(16384i64))
+        .unwrap();
     // Two 16384-byte pieces.
     info.insert_key("pieces", Object::create_string(vec![0u8; 40]))
         .unwrap();
@@ -239,11 +235,7 @@ fn save_resume_updates_commit_without_rewriting_torrent_and_restores() {
     {
         let download = fixture.download();
         let mut guard = download.write().unwrap();
-        guard
-            .download_mut()
-            .file_list_mut()
-            .files_mut()[0]
-            .set_priority(Priority::Normal);
+        guard.download_mut().file_list_mut().files_mut()[0].set_priority(Priority::Normal);
     }
 
     fixture
@@ -276,9 +268,7 @@ fn save_resume_updates_commit_without_rewriting_torrent_and_restores() {
     let restored_manager = Manager::new();
     {
         let mut session = restored_manager.session_manager().write().unwrap();
-        session
-            .set_path(fixture.session.to_str().unwrap())
-            .unwrap();
+        session.set_path(fixture.session.to_str().unwrap()).unwrap();
         session.start().unwrap();
     }
     assert_eq!(restored_manager.restore_session().unwrap(), 1);

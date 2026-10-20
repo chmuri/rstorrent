@@ -1,7 +1,7 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use crate::command_map::CommandMap;
 use crate::error::RpcError;
 use crate::object_storage::ObjectStorage;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 pub const MIN_SIZE_LIMIT: u64 = 1024;
 pub const MAX_CONTENT_SIZE: u64 = 1 << 26; // 64 MiB

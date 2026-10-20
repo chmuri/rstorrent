@@ -90,14 +90,17 @@ impl MemoryManager {
     }
 
     pub fn account_sync_queue(&self, bytes: u64) {
-        self.sync_queue_memory_usage.fetch_add(bytes, Ordering::AcqRel);
+        self.sync_queue_memory_usage
+            .fetch_add(bytes, Ordering::AcqRel);
         self.sync_queue_block_count.fetch_add(1, Ordering::AcqRel);
     }
 
     pub fn release_sync_queue(&self, count: u32, chunk_size: u32) {
         let total = (count as u64) * (chunk_size as u64);
-        self.sync_queue_memory_usage.fetch_sub(total, Ordering::AcqRel);
-        self.sync_queue_block_count.fetch_sub(count, Ordering::AcqRel);
+        self.sync_queue_memory_usage
+            .fetch_sub(total, Ordering::AcqRel);
+        self.sync_queue_block_count
+            .fetch_sub(count, Ordering::AcqRel);
     }
 
     pub fn sync_safe_free_diskspace(&self) -> u64 {

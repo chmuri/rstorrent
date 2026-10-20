@@ -74,8 +74,10 @@ fn set_mtime(path: &std::path::Path, secs: i64) {
 
 fn torrent_object() -> Object {
     let mut info = Object::create_map();
-    info.insert_key("name", Object::from("resume-roundtrip")).unwrap();
-    info.insert_key("piece length", Object::from(16384i64)).unwrap();
+    info.insert_key("name", Object::from("resume-roundtrip"))
+        .unwrap();
+    info.insert_key("piece length", Object::from(16384i64))
+        .unwrap();
     // Two 16384-byte pieces.
     info.insert_key("pieces", Object::create_string(vec![0u8; 40]))
         .unwrap();
@@ -102,9 +104,7 @@ fn start_manager(fixture: &Fixture) -> Manager {
     let manager = Manager::new();
     {
         let mut session = manager.session_manager().write().unwrap();
-        session
-            .set_path(fixture.session.to_str().unwrap())
-            .unwrap();
+        session.set_path(fixture.session.to_str().unwrap()).unwrap();
         session.start().unwrap();
     }
     manager
@@ -133,9 +133,10 @@ fn create_and_save(fixture: &Fixture) -> Manager {
 }
 
 fn resume_path(fixture: &Fixture, hash_hex: &str) -> std::path::PathBuf {
-    fixture
-        .session
-        .join(format!("{}.torrent.libtorrent_resume", hash_hex.to_uppercase()))
+    fixture.session.join(format!(
+        "{}.torrent.libtorrent_resume",
+        hash_hex.to_uppercase()
+    ))
 }
 
 #[test]
@@ -148,14 +149,10 @@ fn save_restart_load_round_trips_bitfield_priorities_and_mtimes() {
         .unwrap()
         .info_hash_hex();
 
-    let resume = rt_core::session::load_resume_file(
-        resume_path(&fixture, &hash_hex).to_str().unwrap(),
-    )
-    .expect("saved resume should load");
-    assert_eq!(
-        resume.file_priorities,
-        vec![Priority::High, Priority::Off]
-    );
+    let resume =
+        rt_core::session::load_resume_file(resume_path(&fixture, &hash_hex).to_str().unwrap())
+            .expect("saved resume should load");
+    assert_eq!(resume.file_priorities, vec![Priority::High, Priority::Off]);
     assert_eq!(resume.file_mtimes, vec![MTIME_A, MTIME_B]);
     assert_eq!(resume.completed_bytes, 32768);
 
@@ -179,10 +176,7 @@ fn save_restart_load_round_trips_bitfield_priorities_and_mtimes() {
     assert!(engine.chunk_selector().completed().get(1));
     assert_eq!(engine.resume_mtimes(), &[MTIME_A, MTIME_B]);
     assert_eq!(engine.resume_completed_bytes(), 32768);
-    assert_eq!(
-        engine.file_list().files()[0].priority(),
-        Priority::High
-    );
+    assert_eq!(engine.file_list().files()[0].priority(), Priority::High);
     assert_eq!(engine.file_list().files()[1].priority(), Priority::Off);
     drop(engine);
     drop(guard);
@@ -215,10 +209,7 @@ fn changed_file_only_clears_its_own_pieces() {
         &[MTIME_A, lt_storage::resume::MTIME_RECHECK]
     );
     // Priorities survive even when progress is invalidated.
-    assert_eq!(
-        engine.file_list().files()[0].priority(),
-        Priority::High
-    );
+    assert_eq!(engine.file_list().files()[0].priority(), Priority::High);
     assert_eq!(engine.file_list().files()[1].priority(), Priority::Off);
     drop(engine);
     drop(guard);
@@ -298,10 +289,7 @@ fn oversized_file_only_clears_its_own_pieces() {
         engine.resume_mtimes(),
         &[MTIME_A, lt_storage::resume::MTIME_RECHECK]
     );
-    assert_eq!(
-        engine.file_list().files()[0].priority(),
-        Priority::High
-    );
+    assert_eq!(engine.file_list().files()[0].priority(), Priority::High);
     assert_eq!(engine.file_list().files()[1].priority(), Priority::Off);
     drop(engine);
     drop(guard);
@@ -362,13 +350,12 @@ fn create_active_and_save(fixture: &Fixture) -> Manager {
     {
         let mut download = download.write().unwrap();
         download.set_directory(fixture.data.to_str().unwrap());
-        download.download_mut().chunk_selector_mut().mark_completed(0);
+        download
+            .download_mut()
+            .chunk_selector_mut()
+            .mark_completed(0);
     }
-    manager
-        .download_list()
-        .read()
-        .unwrap()
-        .start(&download);
+    manager.download_list().read().unwrap().start(&download);
     manager.commit().expect("session save should succeed");
     manager
 }
@@ -398,7 +385,9 @@ fn resumed_event_is_emitted_after_accepted_resume_data() {
 
     let events = events.lock().unwrap();
     assert!(
-        events.iter().any(|event| event.as_str() == "event.download.resumed"),
+        events
+            .iter()
+            .any(|event| event.as_str() == "event.download.resumed"),
         "expected resumed event, got {:?}",
         *events
     );
@@ -426,7 +415,9 @@ fn rejected_resume_data_does_not_emit_resumed_event() {
 
     let events = events.lock().unwrap();
     assert!(
-        !events.iter().any(|event| event.as_str() == "event.download.resumed"),
+        !events
+            .iter()
+            .any(|event| event.as_str() == "event.download.resumed"),
         "resumed must not be emitted for rejected resume data: {:?}",
         *events
     );

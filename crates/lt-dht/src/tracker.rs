@@ -60,7 +60,8 @@ impl DhtTracker {
     }
 
     pub fn prune(&mut self, max_age: u32, now: u32) {
-        self.peers.retain(|(_, seen)| now.saturating_sub(*seen) <= max_age);
+        self.peers
+            .retain(|(_, seen)| now.saturating_sub(*seen) <= max_age);
     }
 
     pub fn last_seen(&self) -> u32 {

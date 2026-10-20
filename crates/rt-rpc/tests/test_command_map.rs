@@ -35,15 +35,18 @@ fn test_basics() {
 
     let target = Target::None;
     assert_eq!(
-        map.call_command("test_a", &Object::from(1i64), &target, true).unwrap(),
+        map.call_command("test_a", &Object::from(1i64), &target, true)
+            .unwrap(),
         Object::from(1i64)
     );
     assert_eq!(
-        map.call_command("test_b", &Object::from(1i64), &target, true).unwrap(),
+        map.call_command("test_b", &Object::from(1i64), &target, true)
+            .unwrap(),
         Object::from(2i64)
     );
     assert_eq!(
-        map.call_command("any_string", &Object::from(""), &target, true).unwrap(),
+        map.call_command("any_string", &Object::from(""), &target, true)
+            .unwrap(),
         Object::from(3i64)
     );
 }
@@ -67,7 +70,8 @@ fn test_redirect_and_erase() {
     // Alias works
     let target = Target::None;
     assert_eq!(
-        map.call_command("alias_cmd", &Object::from(42i64), &target, true).unwrap(),
+        map.call_command("alias_cmd", &Object::from(42i64), &target, true)
+            .unwrap(),
         Object::from(42i64)
     );
 
@@ -106,17 +110,20 @@ fn test_untrusted() {
     let target = Target::None;
     // Trusted connection can call both
     assert_eq!(
-        map.call_command("safe_cmd", &Object::create_empty(), &target, true).unwrap(),
+        map.call_command("safe_cmd", &Object::create_empty(), &target, true)
+            .unwrap(),
         Object::from(10i64)
     );
     assert_eq!(
-        map.call_command("unsafe_cmd", &Object::create_empty(), &target, true).unwrap(),
+        map.call_command("unsafe_cmd", &Object::create_empty(), &target, true)
+            .unwrap(),
         Object::from(20i64)
     );
 
     // Untrusted connection can only call safe_cmd
     assert_eq!(
-        map.call_command("safe_cmd", &Object::create_empty(), &target, false).unwrap(),
+        map.call_command("safe_cmd", &Object::create_empty(), &target, false)
+            .unwrap(),
         Object::from(10i64)
     );
     assert!(matches!(

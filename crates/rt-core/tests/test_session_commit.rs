@@ -1,6 +1,6 @@
+use rt_core::session::{DownloadStorer, SessionManager};
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
-use rt_core::session::{DownloadStorer, SessionManager};
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -13,7 +13,11 @@ struct TempCommitFixture {
 impl TempCommitFixture {
     fn new() -> Self {
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let session_dir = std::env::temp_dir().join(format!("rtorrent_test_commit_{}_{}", std::process::id(), id));
+        let session_dir = std::env::temp_dir().join(format!(
+            "rtorrent_test_commit_{}_{}",
+            std::process::id(),
+            id
+        ));
         let _ = fs::remove_dir_all(&session_dir);
         fs::create_dir_all(&session_dir).unwrap();
 
@@ -48,11 +52,19 @@ fn commit_and_verify(use_fsyncdisk: bool) {
     );
     assert_eq!(
         "libtorrent-data",
-        fs::read_to_string(fixture.session_dir.join(format!("{}.libtorrent_resume", ENTRY_NAME))).unwrap()
+        fs::read_to_string(
+            fixture
+                .session_dir
+                .join(format!("{}.libtorrent_resume", ENTRY_NAME))
+        )
+        .unwrap()
     );
 
     // .new temporary file must no longer exist
-    assert!(!fixture.session_dir.join(format!("{}.new", ENTRY_NAME)).exists());
+    assert!(!fixture
+        .session_dir
+        .join(format!("{}.new", ENTRY_NAME))
+        .exists());
 }
 
 #[test]
@@ -71,7 +83,9 @@ fn test_session_manager_lifecycle_and_lock() {
     let mut manager = SessionManager::new();
 
     assert!(!manager.is_used());
-    manager.set_path(fixture.session_dir.to_str().unwrap()).unwrap();
+    manager
+        .set_path(fixture.session_dir.to_str().unwrap())
+        .unwrap();
     assert!(manager.is_used());
     assert!(manager.path().ends_with('/'));
 
@@ -84,7 +98,9 @@ fn test_session_manager_lifecycle_and_lock() {
 
     // Trying to start a second manager on same path should fail with lock conflict
     let mut second_manager = SessionManager::new();
-    second_manager.set_path(fixture.session_dir.to_str().unwrap()).unwrap();
+    second_manager
+        .set_path(fixture.session_dir.to_str().unwrap())
+        .unwrap();
     assert!(second_manager.start().is_err());
 
     // Save streams through manager

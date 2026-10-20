@@ -88,7 +88,12 @@ fn setup_with(metadata: TorrentMetadata) -> Fixture {
     }
 }
 
-fn call(map: &CommandMap, name: &str, target: &Target, args: Vec<Object>) -> Result<Object, rt_rpc::RpcError> {
+fn call(
+    map: &CommandMap,
+    name: &str,
+    target: &Target,
+    args: Vec<Object>,
+) -> Result<Object, rt_rpc::RpcError> {
     map.call_command(name, &Object::create_list_with(args), target, true)
 }
 
@@ -119,7 +124,13 @@ fn file_commands_use_the_storage_layer() {
         1
     );
 
-    assert!(call(&fixture.map, "f.priority.set", &target, vec![Object::from(2i64)]).is_ok());
+    assert!(call(
+        &fixture.map,
+        "f.priority.set",
+        &target,
+        vec![Object::from(2i64)]
+    )
+    .is_ok());
     assert_eq!(
         call(&fixture.map, "f.priority", &target, vec![])
             .unwrap()
@@ -146,8 +157,13 @@ fn peer_commands_inspect_and_disconnect() {
     let peer_id = HashString::from_hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
 
     {
-        let mut peer =
-            PeerConnection::new_with_direction(peer_id, address.clone(), 2, PeerDirection::Incoming, true);
+        let mut peer = PeerConnection::new_with_direction(
+            peer_id,
+            address.clone(),
+            2,
+            PeerDirection::Incoming,
+            true,
+        );
         peer.bitfield.set(0);
         peer.bitfield.set(1);
         peer.add_downloaded(1234);
@@ -197,7 +213,13 @@ fn peer_commands_inspect_and_disconnect() {
         1
     );
 
-    assert!(call(&fixture.map, "p.snubbed.set", &target, vec![Object::from(1i64)]).is_ok());
+    assert!(call(
+        &fixture.map,
+        "p.snubbed.set",
+        &target,
+        vec![Object::from(1i64)]
+    )
+    .is_ok());
     assert_eq!(
         call(&fixture.map, "p.is_snubbed", &target, vec![])
             .unwrap()
@@ -330,10 +352,15 @@ fn file_command_inventory_and_invalid_targets() {
         "YS5iaW4="
     );
     assert_eq!(
-        call(&fixture.map, "f.offset", &Target::File(fixture.hash, 1), vec![])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(
+            &fixture.map,
+            "f.offset",
+            &Target::File(fixture.hash, 1),
+            vec![]
+        )
+        .unwrap()
+        .as_value()
+        .unwrap(),
         16384
     );
     assert_eq!(
@@ -371,8 +398,13 @@ fn file_command_inventory_and_invalid_targets() {
             .unwrap(),
         "2f6469722f612e62696e"
     );
-    let base64_binary = call(&fixture.map, "f.frozen_path.base64_as_binary", &target, vec![])
-        .unwrap();
+    let base64_binary = call(
+        &fixture.map,
+        "f.frozen_path.base64_as_binary",
+        &target,
+        vec![],
+    )
+    .unwrap();
     assert_eq!(base64_binary.as_str().unwrap(), "L2Rpci9hLmJpbg==");
     assert_ne!(base64_binary.flags & FLAG_BASE64, 0);
     assert_ne!(base64_binary.flags & FLAG_AS_BINARY, 0);
@@ -380,10 +412,8 @@ fn file_command_inventory_and_invalid_targets() {
     // `f.is_created` follows libtorrent: padding files count as created,
     // regular files must exist, and directories are not created files.
     {
-        let created_path = std::env::temp_dir().join(format!(
-            "rtorrent-rpc04-created-{}",
-            fixture.hash.to_hex()
-        ));
+        let created_path =
+            std::env::temp_dir().join(format!("rtorrent-rpc04-created-{}", fixture.hash.to_hex()));
         let _ = std::fs::remove_file(&created_path);
         let _ = std::fs::remove_dir_all(&created_path);
         fixture
@@ -447,10 +477,8 @@ fn file_command_inventory_and_invalid_targets() {
             .unset_flags(FileFlags::ATTR_PADDING);
     }
     {
-        let missing = std::env::temp_dir().join(format!(
-            "rtorrent-rpc04-missing-{}",
-            fixture.hash.to_hex()
-        ));
+        let missing =
+            std::env::temp_dir().join(format!("rtorrent-rpc04-missing-{}", fixture.hash.to_hex()));
         assert!(!missing.exists());
         fixture
             .download
@@ -462,16 +490,33 @@ fn file_command_inventory_and_invalid_targets() {
             .set_frozen_path(missing.to_string_lossy().into_owned());
     }
     assert_eq!(
-        call(&fixture.map, "f.frozen_path.realpath.or_empty", &target, vec![])
-            .unwrap()
-            .as_str()
-            .unwrap(),
+        call(
+            &fixture.map,
+            "f.frozen_path.realpath.or_empty",
+            &target,
+            vec![]
+        )
+        .unwrap()
+        .as_str()
+        .unwrap(),
         ""
     );
-    assert!(call(&fixture.map, "f.frozen_path.realpath.or_throw", &target, vec![]).is_err());
+    assert!(call(
+        &fixture.map,
+        "f.frozen_path.realpath.or_throw",
+        &target,
+        vec![]
+    )
+    .is_err());
 
     // Prioritize flags are independent from the numeric priority.
-    call(&fixture.map, "f.priority.set", &target, vec![Object::from(2i64)]).unwrap();
+    call(
+        &fixture.map,
+        "f.priority.set",
+        &target,
+        vec![Object::from(2i64)],
+    )
+    .unwrap();
     call(&fixture.map, "f.prioritize_first.enable", &target, vec![]).unwrap();
     assert_eq!(
         call(&fixture.map, "f.prioritize_first", &target, vec![])
@@ -513,15 +558,63 @@ fn file_command_inventory_and_invalid_targets() {
         0
     );
 
-    assert!(call(&fixture.map, "f.priority.set", &target, vec![Object::from(9i64)]).is_err());
+    assert!(call(
+        &fixture.map,
+        "f.priority.set",
+        &target,
+        vec![Object::from(9i64)]
+    )
+    .is_err());
     assert!(call(&fixture.map, "f.priority.set", &target, vec![]).is_err());
-    assert!(call(&fixture.map, "f.priority.set", &target, vec![Object::from("high")]).is_err());
-    assert!(call(&fixture.map, "f.priority.set", &target, vec![Object::from(-1i64)]).is_err());
-    assert!(call(&fixture.map, "f.set_create_queued", &target, vec![Object::from("x")]).is_err());
-    assert!(call(&fixture.map, "f.set_resize_queued", &target, vec![Object::from("x")]).is_err());
-    assert!(call(&fixture.map, "f.offset", &Target::File(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "f.path", &Target::File(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "f.is_created", &Target::File(fixture.hash, 99), vec![]).is_err());
+    assert!(call(
+        &fixture.map,
+        "f.priority.set",
+        &target,
+        vec![Object::from("high")]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.priority.set",
+        &target,
+        vec![Object::from(-1i64)]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.set_create_queued",
+        &target,
+        vec![Object::from("x")]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.set_resize_queued",
+        &target,
+        vec![Object::from("x")]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.offset",
+        &Target::File(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.path",
+        &Target::File(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.is_created",
+        &Target::File(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
     assert!(call(
         &fixture.map,
         "f.offset",
@@ -531,8 +624,20 @@ fn file_command_inventory_and_invalid_targets() {
     .is_err());
     // File commands are strictly file-targeted; a download target must not
     // silently select file zero.
-    assert!(call(&fixture.map, "f.offset", &Target::Download(fixture.hash), vec![]).is_err());
-    assert!(call(&fixture.map, "f.path", &Target::Download(fixture.hash), vec![]).is_err());
+    assert!(call(
+        &fixture.map,
+        "f.offset",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "f.path",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
 
     // The multicall map must be cloned after the extended surface is added.
     let mc = call(
@@ -676,7 +781,10 @@ fn peer_command_inventory_and_invalid_targets() {
         ],
     );
 
-    assert_eq!(parm_for(&fixture.map, "p.call_target"), "<hash>, <peer_id>, <command>, [args...]");
+    assert_eq!(
+        parm_for(&fixture.map, "p.call_target"),
+        "<hash>, <peer_id>, <command>, [args...]"
+    );
     assert_eq!(parm_for(&fixture.map, "p.disconnect"), "");
     assert_eq!(parm_for(&fixture.map, "p.snubbed.set"), "<value>");
 
@@ -783,11 +891,13 @@ fn peer_command_inventory_and_invalid_targets() {
             .unwrap(),
         1234
     );
-    assert!(call(&fixture.map, "p.peer_rate", &target, vec![])
-        .unwrap()
-        .as_value()
-        .unwrap()
-        >= 0);
+    assert!(
+        call(&fixture.map, "p.peer_rate", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap()
+            >= 0
+    );
     assert_eq!(
         call(&fixture.map, "p.snubbed", &target, vec![])
             .unwrap()
@@ -810,7 +920,13 @@ fn peer_command_inventory_and_invalid_targets() {
         0
     );
 
-    call(&fixture.map, "p.preferred.set", &target, vec![Object::from(1i64)]).unwrap();
+    call(
+        &fixture.map,
+        "p.preferred.set",
+        &target,
+        vec![Object::from(1i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&fixture.map, "p.is_preferred", &target, vec![])
             .unwrap()
@@ -819,7 +935,13 @@ fn peer_command_inventory_and_invalid_targets() {
         1
     );
     // is_unwanted and is_banned are independent PeerInfo flags.
-    call(&fixture.map, "p.unwanted.set", &target, vec![Object::from(1i64)]).unwrap();
+    call(
+        &fixture.map,
+        "p.unwanted.set",
+        &target,
+        vec![Object::from(1i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&fixture.map, "p.is_unwanted", &target, vec![])
             .unwrap()
@@ -834,7 +956,13 @@ fn peer_command_inventory_and_invalid_targets() {
             .unwrap(),
         0
     );
-    call(&fixture.map, "p.banned.set", &target, vec![Object::from(1i64)]).unwrap();
+    call(
+        &fixture.map,
+        "p.banned.set",
+        &target,
+        vec![Object::from(1i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&fixture.map, "p.banned", &target, vec![])
             .unwrap()
@@ -849,7 +977,13 @@ fn peer_command_inventory_and_invalid_targets() {
             .unwrap(),
         1
     );
-    call(&fixture.map, "p.banned.set", &target, vec![Object::from(0i64)]).unwrap();
+    call(
+        &fixture.map,
+        "p.banned.set",
+        &target,
+        vec![Object::from(0i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&fixture.map, "p.is_unwanted", &target, vec![])
             .unwrap()
@@ -857,7 +991,13 @@ fn peer_command_inventory_and_invalid_targets() {
             .unwrap(),
         1
     );
-    call(&fixture.map, "p.unwanted.set", &target, vec![Object::from(0i64)]).unwrap();
+    call(
+        &fixture.map,
+        "p.unwanted.set",
+        &target,
+        vec![Object::from(0i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&fixture.map, "p.is_unwanted", &target, vec![])
             .unwrap()
@@ -877,9 +1017,27 @@ fn peer_command_inventory_and_invalid_targets() {
     assert!(call(&fixture.map, "p.preferred.set", &target, vec![]).is_err());
     assert!(call(&fixture.map, "p.banned.set", &target, vec![]).is_err());
     assert!(call(&fixture.map, "p.unwanted.set", &target, vec![]).is_err());
-    assert!(call(&fixture.map, "p.id", &Target::Download(fixture.hash), vec![]).is_err());
-    assert!(call(&fixture.map, "p.queue_depth", &Target::Download(fixture.hash), vec![]).is_err());
-    assert!(call(&fixture.map, "p.address", &Target::Download(fixture.hash), vec![]).is_err());
+    assert!(call(
+        &fixture.map,
+        "p.id",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "p.queue_depth",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "p.address",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
 
     let unknown = SocketAddress::from(SocketAddr::from((Ipv4Addr::LOCALHOST, 12345)));
     let unknown_target = Target::Peer(fixture.hash, unknown);
@@ -931,7 +1089,10 @@ fn peer_command_inventory_and_invalid_targets() {
         &fixture.map,
         "p.call_target",
         &Target::None,
-        vec![Object::from(hash_hex.clone()), Object::from(peer_id_hex.clone())],
+        vec![
+            Object::from(hash_hex.clone()),
+            Object::from(peer_id_hex.clone())
+        ],
     )
     .is_err());
     assert!(call(
@@ -1060,7 +1221,11 @@ fn namespace_commands_reject_wrong_targets_and_missing_values() {
             "{name} accepted a missing value without a connected peer"
         );
     }
-    for name in ["t.is_enabled.set", "t.min_interval.set", "t.normal_interval.set"] {
+    for name in [
+        "t.is_enabled.set",
+        "t.min_interval.set",
+        "t.normal_interval.set",
+    ] {
         assert!(
             call(&fixture.map, name, &tracker_target, vec![]).is_err(),
             "{name} accepted a missing value"
@@ -1111,10 +1276,7 @@ fn tracker_commands_read_and_toggle_state() {
             .tracker_list
             .at_mut(0)
             .unwrap();
-        tracker
-            .state_mut()
-            .flags
-            .insert(TrackerFlags::REQUESTING);
+        tracker.state_mut().flags.insert(TrackerFlags::REQUESTING);
         tracker.state_mut().latest_event = TrackerEvent::Started;
     }
     assert_eq!(
@@ -1434,17 +1596,27 @@ fn tracker_command_inventory_and_invalid_targets() {
         1
     );
     assert_eq!(
-        call(&fixture.map, "t.url", &Target::Tracker(fixture.hash, 1), vec![])
-            .unwrap()
-            .as_str()
-            .unwrap(),
+        call(
+            &fixture.map,
+            "t.url",
+            &Target::Tracker(fixture.hash, 1),
+            vec![]
+        )
+        .unwrap()
+        .as_str()
+        .unwrap(),
         "udp://tracker-b:6969/announce"
     );
     assert_eq!(
-        call(&fixture.map, "t.type", &Target::Tracker(fixture.hash, 1), vec![])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(
+            &fixture.map,
+            "t.type",
+            &Target::Tracker(fixture.hash, 1),
+            vec![]
+        )
+        .unwrap()
+        .as_value()
+        .unwrap(),
         2
     );
     assert_eq!(
@@ -1478,11 +1650,13 @@ fn tracker_command_inventory_and_invalid_targets() {
             .unwrap(),
         0
     );
-    assert!(call(&fixture.map, "t.failed_time_next", &target, vec![])
-        .unwrap()
-        .as_value()
-        .unwrap()
-        >= 0);
+    assert!(
+        call(&fixture.map, "t.failed_time_next", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap()
+            >= 0
+    );
 
     call(
         &fixture.map,
@@ -1542,19 +1716,79 @@ fn tracker_command_inventory_and_invalid_targets() {
         1
     );
 
-    assert!(call(&fixture.map, "t.url", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.type", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.id", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.group", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.can_scrape", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.is_in_use", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.scrape_time_next", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.disable", &Target::Tracker(fixture.hash, 99), vec![]).is_err());
-    assert!(call(&fixture.map, "t.url", &Target::Download(fixture.hash), vec![]).is_err());
+    assert!(call(
+        &fixture.map,
+        "t.url",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.type",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.id",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.group",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.can_scrape",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.is_in_use",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.scrape_time_next",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.disable",
+        &Target::Tracker(fixture.hash, 99),
+        vec![]
+    )
+    .is_err());
+    assert!(call(
+        &fixture.map,
+        "t.url",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
     assert!(call(&fixture.map, "t.is_enabled.set", &target, vec![]).is_err());
     assert!(call(&fixture.map, "t.min_interval.set", &target, vec![]).is_err());
     assert!(call(&fixture.map, "t.normal_interval.set", &target, vec![]).is_err());
-    assert!(call(&fixture.map, "t.multicall", &Target::Download(fixture.hash), vec![]).is_err());
+    assert!(call(
+        &fixture.map,
+        "t.multicall",
+        &Target::Download(fixture.hash),
+        vec![]
+    )
+    .is_err());
 
     let mc = call(
         &fixture.map,
@@ -1578,10 +1812,7 @@ fn tracker_command_inventory_and_invalid_targets() {
         &fixture.map,
         "t.multicall",
         &Target::Download(fixture.hash),
-        vec![
-            Object::from(fixture.hash.to_hex()),
-            Object::from("t.url"),
-        ],
+        vec![Object::from(fixture.hash.to_hex()), Object::from("t.url")],
     )
     .unwrap();
     let rows = mc.as_list().unwrap();

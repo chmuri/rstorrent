@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use crate::memory_manager::{memory_manager, MemoryManager};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const ALLOCATE_REVERT_LOG: i32 = 1 << 0;
 pub const ALLOCATE_DONT_LOG: i32 = 1 << 1;

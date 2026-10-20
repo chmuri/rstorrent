@@ -1,17 +1,16 @@
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 use rt_core::session::SessionManager;
 use rt_core::{DownloadList, ViewManager};
 use rt_grpc::command_service_client::CommandServiceClient;
 use rt_grpc::system_service_client::SystemServiceClient;
 use rt_grpc::torrent_service_client::TorrentServiceClient;
 use rt_grpc::{
-    CommandRequest, Empty, GrpcContext, GrpcServer, ListTorrentsRequest, ObjectValue,
-    object_value,
+    object_value, CommandRequest, Empty, GrpcContext, GrpcServer, ListTorrentsRequest, ObjectValue,
 };
 use rt_rpc::command::flags::{FLAG_PUBLIC_RPC, FLAG_UNTRUSTED_SAFE};
 use rt_rpc::CommandMap;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 use tokio::sync::watch;
 
 #[tokio::test]

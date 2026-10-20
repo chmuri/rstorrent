@@ -1,15 +1,15 @@
+use crate::conversion::{download_state_to_proto, download_to_details, download_to_summary};
+use crate::proto::torrent_service_server::TorrentService;
+use crate::proto::*;
+use crate::server::GrpcContext;
+use futures_util::Stream;
+use lt_common::HashString;
+use rt_core::DownloadFactory;
 use std::pin::Pin;
 use std::sync::Arc;
-use futures_util::Stream;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
-use crate::proto::torrent_service_server::TorrentService;
-use crate::proto::*;
-use crate::conversion::{download_to_details, download_to_summary, download_state_to_proto};
-use crate::server::GrpcContext;
-use rt_core::DownloadFactory;
-use lt_common::HashString;
 
 pub struct TorrentServiceImpl {
     ctx: GrpcContext,
@@ -68,9 +68,9 @@ impl TorrentService for TorrentServiceImpl {
     ) -> Result<Response<TorrentDetails>, Status> {
         let req = request.into_inner();
         let dl_list = self.ctx.download_list.read().unwrap();
-        let dl = dl_list
-            .find_hex(&req.hash)
-            .ok_or_else(|| Status::not_found(format!("Torrent with hash {} not found", req.hash)))?;
+        let dl = dl_list.find_hex(&req.hash).ok_or_else(|| {
+            Status::not_found(format!("Torrent with hash {} not found", req.hash))
+        })?;
 
         let guard = dl.read().unwrap();
         Ok(Response::new(download_to_details(&guard)))
@@ -85,12 +85,8 @@ impl TorrentService for TorrentServiceImpl {
         factory.set_start(req.start_now);
 
         let load_res = match req.source {
-            Some(add_torrent_request::Source::TorrentFile(bytes)) => {
-                factory.load_raw_data(&bytes)
-            }
-            Some(add_torrent_request::Source::FilePath(path)) => {
-                factory.load_file(&path)
-            }
+            Some(add_torrent_request::Source::TorrentFile(bytes)) => factory.load_raw_data(&bytes),
+            Some(add_torrent_request::Source::FilePath(path)) => factory.load_file(&path),
             Some(add_torrent_request::Source::Url(url)) => {
                 // If URL is provided, try fetching or fail if not supported inline
                 return Ok(Response::new(AddTorrentResponse {
@@ -105,7 +101,10 @@ impl TorrentService for TorrentServiceImpl {
                     hash: String::new(),
                     name: String::new(),
                     success: false,
-                    error_message: format!("Direct magnet link '{}' parsing without metadata requires dht/pex lookup", uri),
+                    error_message: format!(
+                        "Direct magnet link '{}' parsing without metadata requires dht/pex lookup",
+                        uri
+                    ),
                 }));
             }
             None => {
@@ -138,7 +137,10 @@ impl TorrentService for TorrentServiceImpl {
         };
 
         if !req.destination_directory.is_empty() {
-            dl_arc.write().unwrap().set_directory(req.destination_directory);
+            dl_arc
+                .write()
+                .unwrap()
+                .set_directory(req.destination_directory);
         }
 
         {
@@ -262,7 +264,12 @@ impl TorrentService for TorrentServiceImpl {
         };
 
         if erased.is_some() {
-            let _ = self.ctx.session_manager.lock().unwrap().erase_entry(&req.hash);
+            let _ = self
+                .ctx
+                .session_manager
+                .lock()
+                .unwrap()
+                .erase_entry(&req.hash);
             Ok(Response::new(RemoveTorrentResponse {
                 success: true,
                 hash: req.hash,
@@ -301,16 +308,16 @@ impl TorrentService for TorrentServiceImpl {
         }
     }
 
-    type StreamEventsStream = Pin<
-        Box<dyn Stream<Item = Result<TorrentEvent, Status>> + Send + 'static>,
-    >;
+    type StreamEventsStream =
+        Pin<Box<dyn Stream<Item = Result<TorrentEvent, Status>> + Send + 'static>>;
 
     async fn stream_events(
         &self,
         request: Request<StreamEventsRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
         let req = request.into_inner();
-        let filter_set: Option<std::collections::HashSet<String>> = if !req.event_filter.is_empty() {
+        let filter_set: Option<std::collections::HashSet<String>> = if !req.event_filter.is_empty()
+        {
             Some(req.event_filter.into_iter().collect())
         } else {
             None

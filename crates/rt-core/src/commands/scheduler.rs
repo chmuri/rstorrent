@@ -8,7 +8,9 @@ use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, CommandScheduler, RpcError};
 
 fn args(obj: &Object) -> Result<Vec<Object>, RpcError> {
-    obj.as_list().map(|values| values.to_vec()).map_err(|err| RpcError::InputError(err.to_string()))
+    obj.as_list()
+        .map(|values| values.to_vec())
+        .map_err(|err| RpcError::InputError(err.to_string()))
 }
 
 pub fn register_scheduler_commands(
@@ -52,10 +54,12 @@ pub fn register_scheduler_commands(
             let key = convert_to_string(&args[0])?;
             let absolute = convert_to_string(&args[1])?;
             let interval = convert_to_string(&args[2])?;
-            sched_absent
-                .lock()
-                .unwrap()
-                .schedule_if_absent(&key, &absolute, &interval, args[3].clone())?;
+            sched_absent.lock().unwrap().schedule_if_absent(
+                &key,
+                &absolute,
+                &interval,
+                args[3].clone(),
+            )?;
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,

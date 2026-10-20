@@ -183,7 +183,9 @@ impl SocketManager {
 
     pub fn category_min_allocation(&self, category: SocketCategory) -> Result<u32, NetError> {
         if category == SocketCategory::Generic {
-            return Err(NetError::Internal("SocketManager::category_min_allocation(): generic has no min alloc".into()));
+            return Err(NetError::Internal(
+                "SocketManager::category_min_allocation(): generic has no min alloc".into(),
+            ));
         }
         let inner = self.inner.lock().unwrap();
         Ok(inner.category_min_alloc[category as usize])
@@ -191,24 +193,38 @@ impl SocketManager {
 
     pub fn category_max_allocation(&self, category: SocketCategory) -> Result<u32, NetError> {
         if category == SocketCategory::Generic {
-            return Err(NetError::Internal("SocketManager::category_max_allocation(): generic has no max alloc".into()));
+            return Err(NetError::Internal(
+                "SocketManager::category_max_allocation(): generic has no max alloc".into(),
+            ));
         }
         let inner = self.inner.lock().unwrap();
         Ok(inner.category_max_alloc[category as usize])
     }
 
-    pub fn set_category_min_allocation(&self, category: SocketCategory, min_alloc: u32) -> Result<(), NetError> {
+    pub fn set_category_min_allocation(
+        &self,
+        category: SocketCategory,
+        min_alloc: u32,
+    ) -> Result<(), NetError> {
         if category == SocketCategory::Generic {
-            return Err(NetError::Internal("SocketManager::set_category_min_allocation(): generic invalid".into()));
+            return Err(NetError::Internal(
+                "SocketManager::set_category_min_allocation(): generic invalid".into(),
+            ));
         }
         let mut inner = self.inner.lock().unwrap();
         inner.category_min_alloc[category as usize] = min_alloc;
         Ok(())
     }
 
-    pub fn set_category_max_allocation(&self, category: SocketCategory, max_alloc: u32) -> Result<(), NetError> {
+    pub fn set_category_max_allocation(
+        &self,
+        category: SocketCategory,
+        max_alloc: u32,
+    ) -> Result<(), NetError> {
         if category == SocketCategory::Generic {
-            return Err(NetError::Internal("SocketManager::set_category_max_allocation(): generic invalid".into()));
+            return Err(NetError::Internal(
+                "SocketManager::set_category_max_allocation(): generic invalid".into(),
+            ));
         }
         let mut inner = self.inner.lock().unwrap();
         inner.category_max_alloc[category as usize] = max_alloc;
@@ -217,7 +233,9 @@ impl SocketManager {
 
     pub fn set_max_size_and_adjust(&self, max_open: u32) -> Result<(), NetError> {
         if max_open < 512 {
-            return Err(NetError::Input("set_max_size_and_adjust: max_open too low, minimum is 512".into()));
+            return Err(NetError::Input(
+                "set_max_size_and_adjust: max_open too low, minimum is 512".into(),
+            ));
         }
         let mut inner = self.inner.lock().unwrap();
         Self::adjust_allocation_inner(&mut inner, max_open)
@@ -299,7 +317,8 @@ impl SocketManager {
     pub fn available_allocation(&self) -> u32 {
         let inner = self.inner.lock().unwrap();
         let max_open = inner.max_size;
-        let allocated = calculate_min_generic(max_open) + calculate_reserved(max_open) + ALLOCATION_HEADROOM;
+        let allocated =
+            calculate_min_generic(max_open) + calculate_reserved(max_open) + ALLOCATION_HEADROOM;
         if allocated >= max_open {
             0
         } else {
@@ -329,7 +348,9 @@ impl SocketManager {
     pub fn remove_unmanaged_socket(&self) -> Result<(), NetError> {
         let mut inner = self.inner.lock().unwrap();
         if inner.unmanaged_size == 0 {
-            return Err(NetError::Internal("remove_unmanaged_socket(): no unmanaged sockets to remove".into()));
+            return Err(NetError::Internal(
+                "remove_unmanaged_socket(): no unmanaged sockets to remove".into(),
+            ));
         }
         inner.unmanaged_size -= 1;
         Ok(())
@@ -338,7 +359,10 @@ impl SocketManager {
     pub fn record_open_socket(&self, fd: RawFd, category: SocketCategory) -> Result<(), NetError> {
         let mut inner = self.inner.lock().unwrap();
         if inner.sockets.contains_key(&fd) {
-            return Err(NetError::Internal(format!("record_open_socket(): fd {} already open", fd)));
+            return Err(NetError::Internal(format!(
+                "record_open_socket(): fd {} already open",
+                fd
+            )));
         }
         inner.sockets.insert(fd, SocketInfo { fd, category });
         inner.managed_size += 1;
@@ -349,14 +373,21 @@ impl SocketManager {
     pub fn record_close_socket(&self, fd: RawFd) -> Result<(), NetError> {
         let mut inner = self.inner.lock().unwrap();
         let info = inner.sockets.remove(&fd).ok_or_else(|| {
-            NetError::Internal(format!("record_close_socket(): fd {} not found in socket map", fd))
+            NetError::Internal(format!(
+                "record_close_socket(): fd {} not found in socket map",
+                fd
+            ))
         })?;
         if inner.managed_size == 0 {
-            return Err(NetError::Internal("record_close_socket(): managed_size underflow".into()));
+            return Err(NetError::Internal(
+                "record_close_socket(): managed_size underflow".into(),
+            ));
         }
         let cat_idx = info.category as usize;
         if inner.category_managed_size[cat_idx] == 0 {
-            return Err(NetError::Internal("record_close_socket(): category_managed_size underflow".into()));
+            return Err(NetError::Internal(
+                "record_close_socket(): category_managed_size underflow".into(),
+            ));
         }
         inner.managed_size -= 1;
         inner.category_managed_size[cat_idx] -= 1;

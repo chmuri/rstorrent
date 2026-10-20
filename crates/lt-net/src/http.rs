@@ -54,8 +54,9 @@ impl HttpClient {
             .timeout(config.timeout);
 
         if let Some(ref proxy_url) = config.proxy {
-            let proxy = Proxy::all(proxy_url)
-                .map_err(|e| NetError::Input(format!("Invalid proxy configuration: {}: {}", proxy_url, e)))?;
+            let proxy = Proxy::all(proxy_url).map_err(|e| {
+                NetError::Input(format!("Invalid proxy configuration: {}: {}", proxy_url, e))
+            })?;
             builder = builder.proxy(proxy);
         }
 
@@ -171,11 +172,12 @@ impl HttpGet {
         let mut buffer = BytesMut::new();
         self.size_done.store(0, Ordering::Relaxed);
 
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| NetError::Input(format!("Failed reading response chunk from {}: {}", self.url, e)))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|e| {
+            NetError::Input(format!(
+                "Failed reading response chunk from {}: {}",
+                self.url, e
+            ))
+        })? {
             if self.is_cancelled.load(Ordering::Relaxed) {
                 return Err(NetError::Input("HTTP download cancelled".into()));
             }

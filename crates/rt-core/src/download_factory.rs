@@ -1,10 +1,10 @@
+use crate::download::Download;
+use crate::download_list::DownloadList;
+use lt_common::Object;
+use lt_engine::constructor::DownloadConstructor;
 use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::sync::{Arc, RwLock};
-use lt_common::Object;
-use lt_engine::constructor::DownloadConstructor;
-use crate::download::Download;
-use crate::download_list::DownloadList;
 
 pub struct DownloadFactory {
     object: Option<Object>,
@@ -107,9 +107,10 @@ impl DownloadFactory {
             return Ok(Download::from_metadata(metadata));
         }
 
-        let object = self.object.as_ref().ok_or_else(|| {
-            Error::new(ErrorKind::NotFound, "DownloadFactory: no torrent loaded")
-        })?;
+        let object = self
+            .object
+            .as_ref()
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "DownloadFactory: no torrent loaded"))?;
 
         let metadata = DownloadConstructor::from_object(object)
             .map_err(|e| Error::new(ErrorKind::InvalidData, format!("metadata error: {}", e)))?;

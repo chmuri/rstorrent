@@ -206,10 +206,7 @@ fn inventory_contains_new_download_commands_and_arities() {
 
     assert_eq!(parm_for(&map, "d.max_file_size.set"), "<value>");
     assert_eq!(parm_for(&map, "d.tracker_numwant.set"), "<value>");
-    assert_eq!(
-        parm_for(&map, "d.tracker.insert"),
-        "<group>, <url>"
-    );
+    assert_eq!(parm_for(&map, "d.tracker.insert"), "<group>, <url>");
     assert_eq!(
         parm_for(&map, "d.create_link"),
         "<type>, <prefix>, <postfix>"
@@ -370,7 +367,13 @@ fn realpath_variants_distinguish_or_empty_and_or_throw() {
     std::fs::create_dir_all(&temp).unwrap();
     let temp_str = temp.to_str().unwrap().to_string();
 
-    call(&map, "d.directory.set", &target, vec![Object::from(temp_str.clone())]).unwrap();
+    call(
+        &map,
+        "d.directory.set",
+        &target,
+        vec![Object::from(temp_str.clone())],
+    )
+    .unwrap();
     let resolved_dir = call(&map, "d.directory.realpath.or_throw", &target, vec![]).unwrap();
     assert_eq!(
         resolved_dir.as_str().unwrap(),
@@ -386,8 +389,7 @@ fn realpath_variants_distinguish_or_empty_and_or_throw() {
         vec![Object::from(tied.to_str().unwrap())],
     )
     .unwrap();
-    let tied_resolved = call(&map, "d.tied_to_file.realpath.or_throw", &target, vec![])
-        .unwrap();
+    let tied_resolved = call(&map, "d.tied_to_file.realpath.or_throw", &target, vec![]).unwrap();
     assert_eq!(
         tied_resolved.as_str().unwrap(),
         std::fs::canonicalize(&tied).unwrap().to_str().unwrap()
@@ -456,13 +458,21 @@ fn new_getters_and_setters_round_trip() {
             .unwrap(),
         0
     );
-    assert!(call(&map, "d.free_diskspace", &target, vec![])
-        .unwrap()
-        .as_value()
-        .unwrap()
-        >= 0);
+    assert!(
+        call(&map, "d.free_diskspace", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap()
+            >= 0
+    );
 
-    assert!(call(&map, "d.max_file_size.set", &target, vec![Object::from(2048i64)]).is_ok());
+    assert!(call(
+        &map,
+        "d.max_file_size.set",
+        &target,
+        vec![Object::from(2048i64)]
+    )
+    .is_ok());
     assert_eq!(
         call(&map, "d.max_file_size", &target, vec![])
             .unwrap()
@@ -470,7 +480,13 @@ fn new_getters_and_setters_round_trip() {
             .unwrap(),
         2048
     );
-    assert!(call(&map, "d.max_file_size.set", &target, vec![Object::from(-1i64)]).is_err());
+    assert!(call(
+        &map,
+        "d.max_file_size.set",
+        &target,
+        vec![Object::from(-1i64)]
+    )
+    .is_err());
 
     assert_eq!(
         call(&map, "d.peer_exchange", &target, vec![])
@@ -479,7 +495,13 @@ fn new_getters_and_setters_round_trip() {
             .unwrap(),
         1
     );
-    call(&map, "d.peer_exchange.set", &target, vec![Object::from(0i64)]).unwrap();
+    call(
+        &map,
+        "d.peer_exchange.set",
+        &target,
+        vec![Object::from(0i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&map, "d.peer_exchange", &target, vec![])
             .unwrap()
@@ -495,7 +517,13 @@ fn new_getters_and_setters_round_trip() {
             .unwrap(),
         8
     );
-    call(&map, "d.max_size_pex.set", &target, vec![Object::from(64i64)]).unwrap();
+    call(
+        &map,
+        "d.max_size_pex.set",
+        &target,
+        vec![Object::from(64i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&map, "d.max_size_pex", &target, vec![])
             .unwrap()
@@ -519,7 +547,13 @@ fn new_getters_and_setters_round_trip() {
         0
     );
 
-    call(&map, "d.hashing_failed.set", &target, vec![Object::from(1i64)]).unwrap();
+    call(
+        &map,
+        "d.hashing_failed.set",
+        &target,
+        vec![Object::from(1i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&map, "d.hashing_failed", &target, vec![])
             .unwrap()
@@ -535,7 +569,13 @@ fn new_getters_and_setters_round_trip() {
         0
     );
 
-    call(&map, "d.uploads_max.set", &target, vec![Object::from(25i64)]).unwrap();
+    call(
+        &map,
+        "d.uploads_max.set",
+        &target,
+        vec![Object::from(25i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&map, "d.uploads_max", &target, vec![])
             .unwrap()
@@ -543,7 +583,13 @@ fn new_getters_and_setters_round_trip() {
             .unwrap(),
         25
     );
-    call(&map, "d.downloads_max.set", &target, vec![Object::from(30i64)]).unwrap();
+    call(
+        &map,
+        "d.downloads_max.set",
+        &target,
+        vec![Object::from(30i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&map, "d.downloads_max", &target, vec![])
             .unwrap()
@@ -559,7 +605,13 @@ fn new_getters_and_setters_round_trip() {
             .unwrap(),
         3
     );
-    call(&map, "d.downloads_min.set", &target, vec![Object::from(4i64)]).unwrap();
+    call(
+        &map,
+        "d.downloads_min.set",
+        &target,
+        vec![Object::from(4i64)],
+    )
+    .unwrap();
     assert_eq!(
         call(&map, "d.downloads_min", &target, vec![])
             .unwrap()
@@ -698,7 +750,13 @@ fn tracker_commands_round_trip() {
     assert!(call(&map, "d.tracker.has_active", &target, vec![]).is_ok());
     assert!(call(&map, "d.tracker.has_active_not_scrape", &target, vec![]).is_ok());
     assert!(call(&map, "d.tracker.has_usable", &target, vec![]).is_ok());
-    assert!(call(&map, "d.tracker.send_scrape", &target, vec![Object::from(1i64)]).is_ok());
+    assert!(call(
+        &map,
+        "d.tracker.send_scrape",
+        &target,
+        vec![Object::from(1i64)]
+    )
+    .is_ok());
     assert!(call(&map, "d.tracker_announce", &target, vec![]).is_ok());
     assert!(call(&map, "d.tracker_announce.force", &target, vec![]).is_ok());
 }
@@ -751,17 +809,12 @@ fn multicall_covers_new_getters() {
     assert_eq!(rows[0].as_list().unwrap()[0].as_str().unwrap(), "extended");
 
     // Unknown views throw; an empty name resolves to the default view.
-    let unknown = Object::create_list_with(vec![
-        Object::from("missing-view"),
-        Object::from("d.name"),
-    ]);
+    let unknown =
+        Object::create_list_with(vec![Object::from("missing-view"), Object::from("d.name")]);
     assert!(map
         .call_command("d.multicall2", &unknown, &Target::None, true)
         .is_err());
-    let default_view = Object::create_list_with(vec![
-        Object::from(""),
-        Object::from("d.name"),
-    ]);
+    let default_view = Object::create_list_with(vec![Object::from(""), Object::from("d.name")]);
     let rows = map
         .call_command("d.multicall2", &default_view, &Target::None, true)
         .unwrap();
@@ -885,7 +938,13 @@ fn custom_fields_support_legacy_variants() {
     assert!(call(&map, "d.custom1", &Target::None, vec![]).is_err());
     assert!(call(&map, "d.custom.keys", &Target::None, vec![]).is_err());
     // Malformed setters are rejected rather than silently ignored.
-    assert!(call(&map, "d.custom.set", &target, vec![Object::from("only-key")]).is_err());
+    assert!(call(
+        &map,
+        "d.custom.set",
+        &target,
+        vec![Object::from("only-key")]
+    )
+    .is_err());
     assert!(call(
         &map,
         "d.custom.if_z",
@@ -1330,24 +1389,39 @@ fn indexed_tracker_getters_use_the_live_tracker_list() {
         0
     );
     assert_eq!(
-        call(&map, "d.tracker_is_enabled", &target, vec![Object::from(0i64)])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(
+            &map,
+            "d.tracker_is_enabled",
+            &target,
+            vec![Object::from(0i64)]
+        )
+        .unwrap()
+        .as_value()
+        .unwrap(),
         1
     );
     assert_eq!(
-        call(&map, "d.tracker_is_usable", &target, vec![Object::from(0i64)])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(
+            &map,
+            "d.tracker_is_usable",
+            &target,
+            vec![Object::from(0i64)]
+        )
+        .unwrap()
+        .as_value()
+        .unwrap(),
         1
     );
     assert_eq!(
-        call(&map, "d.tracker_is_extra", &target, vec![Object::from(0i64)])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(
+            &map,
+            "d.tracker_is_extra",
+            &target,
+            vec![Object::from(0i64)]
+        )
+        .unwrap()
+        .as_value()
+        .unwrap(),
         0
     );
 
@@ -1355,10 +1429,7 @@ fn indexed_tracker_getters_use_the_live_tracker_list() {
         &map,
         "d.tracker.insert",
         &target,
-        vec![
-            Object::from(0i64),
-            Object::from("udp://extra.invalid:6881"),
-        ],
+        vec![Object::from(0i64), Object::from("udp://extra.invalid:6881")],
     )
     .unwrap();
     assert_eq!(
@@ -1376,10 +1447,15 @@ fn indexed_tracker_getters_use_the_live_tracker_list() {
         2
     );
     assert_eq!(
-        call(&map, "d.tracker_is_extra", &target, vec![Object::from(1i64)])
-            .unwrap()
-            .as_value()
-            .unwrap(),
+        call(
+            &map,
+            "d.tracker_is_extra",
+            &target,
+            vec![Object::from(1i64)]
+        )
+        .unwrap()
+        .as_value()
+        .unwrap(),
         1
     );
 
@@ -1388,7 +1464,13 @@ fn indexed_tracker_getters_use_the_live_tracker_list() {
     assert!(call(&map, "d.tracker_url", &target, vec![]).is_err());
     assert!(call(&map, "d.tracker_url", &target, vec![Object::from(-1i64)]).is_err());
     assert!(call(&map, "d.tracker_url", &target, vec![Object::from(99i64)]).is_err());
-    assert!(call(&map, "d.tracker_url", &Target::None, vec![Object::from(0i64)]).is_err());
+    assert!(call(
+        &map,
+        "d.tracker_url",
+        &Target::None,
+        vec![Object::from(0i64)]
+    )
+    .is_err());
 }
 
 #[test]
@@ -1440,15 +1522,23 @@ fn test_load_raw_start_and_data_uri() {
     let download_list = Arc::new(RwLock::new(DownloadList::new()));
     let view_manager = Arc::new(RwLock::new(ViewManager::new()));
 
-    register_download_commands(&mut map, Arc::clone(&download_list), Arc::clone(&view_manager)).unwrap();
+    register_download_commands(
+        &mut map,
+        Arc::clone(&download_list),
+        Arc::clone(&view_manager),
+    )
+    .unwrap();
 
     let bencoded_torrent = {
         let mut info = Object::create_map();
-        info.insert_key("name", Object::from("test_load_torrent")).unwrap();
+        info.insert_key("name", Object::from("test_load_torrent"))
+            .unwrap();
         info.insert_key("length", Object::from(1024i64)).unwrap();
-        info.insert_key("piece length", Object::from(262144i64)).unwrap();
+        info.insert_key("piece length", Object::from(262144i64))
+            .unwrap();
         // 20 bytes of non-UTF8 binary data (like SHA1 pieces)
-        info.insert_key("pieces", Object::from(vec![0xFFu8; 20])).unwrap();
+        info.insert_key("pieces", Object::from(vec![0xFFu8; 20]))
+            .unwrap();
 
         let mut object = Object::create_map();
         object.insert_key("info", info).unwrap();
@@ -1463,7 +1553,9 @@ fn test_load_raw_start_and_data_uri() {
         Object::from("d.custom1.set=\"my_tag\""),
     ]);
 
-    let res = map.call_command("load.raw_start", &args, &Target::None, true).unwrap();
+    let res = map
+        .call_command("load.raw_start", &args, &Target::None, true)
+        .unwrap();
     assert_eq!(res.as_value().unwrap(), 0);
 
     // Verify torrent was added, directory was set, and custom1 was set
@@ -1475,7 +1567,9 @@ fn test_load_raw_start_and_data_uri() {
         assert!(dl.read().unwrap().is_open());
 
         let target = Target::Download(*dl.read().unwrap().info_hash());
-        let custom1 = map.call_command("d.custom1", &Object::create_empty(), &target, true).unwrap();
+        let custom1 = map
+            .call_command("d.custom1", &Object::create_empty(), &target, true)
+            .unwrap();
         assert_eq!(custom1.as_str().unwrap(), "my_tag");
     }
 
@@ -1484,10 +1578,16 @@ fn test_load_raw_start_and_data_uri() {
 
     // Using a different torrent name so info_hash differs
     let mut info2 = Object::create_map();
-    info2.insert_key("name", Object::from("test_load_torrent_2")).unwrap();
+    info2
+        .insert_key("name", Object::from("test_load_torrent_2"))
+        .unwrap();
     info2.insert_key("length", Object::from(2048i64)).unwrap();
-    info2.insert_key("piece length", Object::from(262144i64)).unwrap();
-    info2.insert_key("pieces", Object::from(vec![0xFEu8; 20])).unwrap();
+    info2
+        .insert_key("piece length", Object::from(262144i64))
+        .unwrap();
+    info2
+        .insert_key("pieces", Object::from(vec![0xFEu8; 20]))
+        .unwrap();
     let mut object2 = Object::create_map();
     object2.insert_key("info", info2).unwrap();
     let b64_2 = BASE64_STANDARD.encode(&lt_common::object::bencode::encode(&object2).unwrap());
@@ -1499,9 +1599,9 @@ fn test_load_raw_start_and_data_uri() {
         Object::from("d.directory.set=\"/custom/dir2\""),
     ]);
 
-    let res2 = map.call_command("load.start_throw", &args2, &Target::None, true).unwrap();
+    let res2 = map
+        .call_command("load.start_throw", &args2, &Target::None, true)
+        .unwrap();
     assert_eq!(res2.as_value().unwrap(), 0);
     assert_eq!(download_list.read().unwrap().all().len(), 2);
 }
-
-

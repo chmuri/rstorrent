@@ -1,6 +1,6 @@
+use lt_net::addr::SocketAddress;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use lt_net::addr::SocketAddress;
 
 /// A random engine that satisfies the requirement that its internal state
 /// size in bits is at least 256 (32 bytes), matching `test_random_engine_state`.

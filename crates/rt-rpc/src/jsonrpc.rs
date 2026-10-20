@@ -1,8 +1,8 @@
-use serde_json::{json, Value};
-use lt_common::object::ObjectVal;
-use lt_common::Object;
 use crate::command_map::CommandMap;
 use crate::target::Target;
+use lt_common::object::ObjectVal;
+use lt_common::Object;
+use serde_json::{json, Value};
 
 pub const MAX_RESPONSE_SIZE: usize = 100 << 20; // 100 MiB
 
@@ -75,11 +75,12 @@ impl JsonRpc {
                     out
                 }
             }
-            Value::Object(_) => {
-                self.process_single(&parsed, map, trusted).unwrap_or_default()
-            }
+            Value::Object(_) => self
+                .process_single(&parsed, map, trusted)
+                .unwrap_or_default(),
             _ => {
-                r#"{"error":{"code":-32600,"message":"Invalid Request"},"id":null,"jsonrpc":"2.0"}"#.to_string()
+                r#"{"error":{"code":-32600,"message":"Invalid Request"},"id":null,"jsonrpc":"2.0"}"#
+                    .to_string()
             }
         }
     }

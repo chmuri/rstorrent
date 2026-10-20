@@ -1,7 +1,7 @@
-use std::fs::OpenOptions;
-use std::io::{Read, Write};
 use nix::sys::signal::kill;
 use nix::unistd::Pid;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
 
 #[derive(Debug, Clone, Default)]
 pub struct Lockfile {
@@ -144,7 +144,9 @@ fn parse_lockfile_content(content: &str) -> Option<(String, i32)> {
     let hostname = &content[..colon_pos];
 
     let rest = &content[colon_pos + 2..];
-    let end_pid = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end_pid = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     let pid_str = &rest[..end_pid];
 
     let pid: i32 = pid_str.parse().ok()?;

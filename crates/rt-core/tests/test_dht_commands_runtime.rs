@@ -42,7 +42,10 @@ async fn runtime_publishes_dht_controller_to_commands() {
 
     let deadline = Instant::now() + Duration::from_secs(4);
     while dht_controller().is_none() {
-        assert!(Instant::now() < deadline, "DHT controller was not published");
+        assert!(
+            Instant::now() < deadline,
+            "DHT controller was not published"
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
@@ -75,12 +78,7 @@ async fn runtime_publishes_dht_controller_to_commands() {
             .unwrap(),
         1
     );
-    assert!(call(
-        &map,
-        "dht.add_node",
-        vec![Object::from("127.0.0.1:6881")]
-    )
-    .is_ok());
+    assert!(call(&map, "dht.add_node", vec![Object::from("127.0.0.1:6881")]).is_ok());
     assert!(call(&map, "dht.refresh", Vec::new()).is_ok());
 
     let _ = shutdown_tx.send(true);

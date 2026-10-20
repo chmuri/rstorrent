@@ -113,7 +113,9 @@ fn cancellation_preserves_existing_target_bits() {
 
     // hash_all starts from an empty target, but a selected pass on the old
     // bitfield must keep the trusted bit when cancelled.
-    hasher.cancel_handle().store(true, std::sync::atomic::Ordering::SeqCst);
+    hasher
+        .cancel_handle()
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     let result = hasher.hash_selected(&initial, &[1]).unwrap();
     assert!(result.cancelled);
     assert!(result.bitfield.get(0));

@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::error::RpcError;
 use lt_common::object::ObjectVal;
 use lt_common::Object;
-use crate::error::RpcError;
+use std::collections::HashMap;
 
 pub mod flags {
     pub const FLAG_GENERIC_TYPE: u32 = 0x1;
@@ -38,18 +38,26 @@ fn convert_to_value(obj: &Object) -> Result<i64, RpcError> {
     match &obj.val {
         ObjectVal::Value(v) => Ok(*v),
         ObjectVal::String(s) => {
-            let s_str = std::str::from_utf8(s)
-                .map_err(|_| RpcError::InputError("Not a valid UTF-8 string for value conversion".into()))?;
-            s_str.trim().parse::<i64>()
+            let s_str = std::str::from_utf8(s).map_err(|_| {
+                RpcError::InputError("Not a valid UTF-8 string for value conversion".into())
+            })?;
+            s_str
+                .trim()
+                .parse::<i64>()
                 .map_err(|_| RpcError::InputError("Not a value.".into()))
         }
         ObjectVal::RawString(raw) => {
-            let s_str = std::str::from_utf8(raw)
-                .map_err(|_| RpcError::InputError("Not a valid string for value conversion".into()))?;
-            s_str.trim().parse::<i64>()
+            let s_str = std::str::from_utf8(raw).map_err(|_| {
+                RpcError::InputError("Not a valid string for value conversion".into())
+            })?;
+            s_str
+                .trim()
+                .parse::<i64>()
                 .map_err(|_| RpcError::InputError("Not a value.".into()))
         }
-        _ => Err(RpcError::InputError("Cannot convert object to value.".into())),
+        _ => Err(RpcError::InputError(
+            "Cannot convert object to value.".into(),
+        )),
     }
 }
 
@@ -85,7 +93,9 @@ impl ObjectStorage {
 
     fn validate_key(&self, key: &[u8]) -> Result<String, RpcError> {
         if key.contains(&b'\0') {
-            return Err(RpcError::InputError("Found nul-char in string.".to_string()));
+            return Err(RpcError::InputError(
+                "Found nul-char in string.".to_string(),
+            ));
         }
         if key.len() >= KEY_SIZE {
             return Err(RpcError::InputError("Key is too long.".to_string()));
@@ -140,18 +150,15 @@ impl ObjectStorage {
                 let bytes = convert_to_string(&raw_object)?;
                 Object::create_string(bytes)
             }
-            flags::FLAG_LIST_TYPE | flags::FLAG_FUNCTION_TYPE | flags::FLAG_GENERIC_TYPE => raw_object,
+            flags::FLAG_LIST_TYPE | flags::FLAG_FUNCTION_TYPE | flags::FLAG_GENERIC_TYPE => {
+                raw_object
+            }
             flags::FLAG_MULTI_TYPE => Object::create_map(),
             _ => raw_object,
         };
 
-        self.storage.insert(
-            key.clone(),
-            ObjectStorageNode {
-                object,
-                flags,
-            },
-        );
+        self.storage
+            .insert(key.clone(), ObjectStorageNode { object, flags });
 
         Ok(self.storage.get_mut(&key).unwrap())
     }
@@ -188,12 +195,19 @@ impl ObjectStorage {
         self.storage.get(key)
     }
 
-    pub fn find_raw_string_const(&self, key_bytes: &[u8], required_type: u32) -> Result<&ObjectStorageNode, RpcError> {
-        let node = self.find_raw_string(key_bytes)
+    pub fn find_raw_string_const(
+        &self,
+        key_bytes: &[u8],
+        required_type: u32,
+    ) -> Result<&ObjectStorageNode, RpcError> {
+        let node = self
+            .find_raw_string(key_bytes)
             .ok_or_else(|| RpcError::InputError("Key not found.".to_string()))?;
 
         if required_type != 0 && (node.flags & flags::MASK_TYPE) != required_type {
-            return Err(RpcError::WrongType("Object is wrong type or const.".to_string()));
+            return Err(RpcError::WrongType(
+                "Object is wrong type or const.".to_string(),
+            ));
         }
 
         Ok(node)
@@ -210,13 +224,17 @@ impl ObjectStorage {
         let key = std::str::from_utf8(key_bytes)
             .map_err(|_| RpcError::InputError("Key not found.".to_string()))?;
 
-        let node = self.storage.get_mut(key)
+        let node = self
+            .storage
+            .get_mut(key)
             .ok_or_else(|| RpcError::InputError("Key not found.".to_string()))?;
 
         if (required_type != 0 && (node.flags & flags::MASK_TYPE) != required_type)
             || (node.flags & flags::FLAG_CONSTANT != 0)
         {
-            return Err(RpcError::WrongType("Object is wrong type or const.".to_string()));
+            return Err(RpcError::WrongType(
+                "Object is wrong type or const.".to_string(),
+            ));
         }
 
         Ok(node)
@@ -313,7 +331,10 @@ impl ObjectStorage {
             let node = self.find_raw_string_mutable(key_bytes, flags::FLAG_MULTI_TYPE)?;
             let flags = node.flags;
             if let ObjectVal::Map(ref mut map) = node.object.val {
-                (flags & flags::FLAG_RLOOKUP != 0, map.remove(cmd_key.as_bytes()).is_some())
+                (
+                    flags & flags::FLAG_RLOOKUP != 0,
+                    map.remove(cmd_key.as_bytes()).is_some(),
+                )
             } else {
                 return Err(RpcError::WrongType("Not a multi-key map.".to_string()));
             }
@@ -402,7 +423,12 @@ impl ObjectStorage {
         self.erase_multi_key(key.as_bytes(), cmd_key)
     }
 
-    pub fn set_str_multi_key_obj(&mut self, key: &str, cmd_key: &str, object: Object) -> Result<(), RpcError> {
+    pub fn set_str_multi_key_obj(
+        &mut self,
+        key: &str,
+        cmd_key: &str,
+        object: Object,
+    ) -> Result<(), RpcError> {
         self.set_multi_key_obj(key.as_bytes(), cmd_key, object)
     }
 }

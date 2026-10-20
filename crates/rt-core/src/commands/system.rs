@@ -1,7 +1,3 @@
-use std::path::Path;
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 use lt_common::Object;
 use lt_net::socket_manager::{
     calculate_alloc_limit, calculate_alloc_minimum, SocketCategory, SocketManager,
@@ -11,6 +7,10 @@ use lt_storage::file_manager::FileManagerStats;
 use lt_storage::FileStatusCache;
 use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError};
+use std::path::Path;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::pieces::parse_byte_size;
 
@@ -97,17 +97,15 @@ pub fn resolve_path_or_throw(input: &str) -> Result<String, RpcError> {
 
     let expanded = expand_tilde(input)?;
     let path = Path::new(&expanded);
-    let canon = std::fs::canonicalize(path).map_err(|e| {
-        RpcError::InputError(format!("Could not resolve path '{}': {}", input, e))
-    })?;
+    let canon = std::fs::canonicalize(path)
+        .map_err(|e| RpcError::InputError(format!("Could not resolve path '{}': {}", input, e)))?;
     Ok(canon.to_string_lossy().to_string())
 }
 
 fn expand_tilde(path: &str) -> Result<String, RpcError> {
     if path == "~" || path.starts_with("~/") {
-        let home = std::env::var("HOME").map_err(|_| {
-            RpcError::InputError("HOME environment variable not set".to_string())
-        })?;
+        let home = std::env::var("HOME")
+            .map_err(|_| RpcError::InputError("HOME environment variable not set".to_string()))?;
         if path == "~" {
             Ok(home)
         } else {
@@ -326,7 +324,6 @@ pub fn register_system_commands(map: &mut CommandMap) -> Result<(), RpcError> {
     Ok(())
 }
 
-
 #[derive(Debug, Clone)]
 struct SystemSettings {
     file_allocate: i64,
@@ -538,7 +535,12 @@ fn add_string_list(
     )
 }
 
-fn add_socket_counter<G>(map: &mut CommandMap, name: &str, get: G, doc: &str) -> Result<(), RpcError>
+fn add_socket_counter<G>(
+    map: &mut CommandMap,
+    name: &str,
+    get: G,
+    doc: &str,
+) -> Result<(), RpcError>
 where
     G: Fn() -> u32 + Send + Sync + 'static,
 {
@@ -629,7 +631,9 @@ fn register_socket_commands(map: &mut CommandMap) -> Result<(), RpcError> {
             let value = convert_to_value(obj, 0, 1)
                 .map_err(|_| RpcError::InputError("Not a value.".into()))?;
             if value < 0 || value > u32::MAX as i64 {
-                return Err(RpcError::InputError("Invalid socket max size value.".into()));
+                return Err(RpcError::InputError(
+                    "Invalid socket max size value.".into(),
+                ));
             }
             socket_manager()
                 .set_max_size_and_adjust(value as u32)
@@ -712,7 +716,11 @@ fn register_socket_commands(map: &mut CommandMap) -> Result<(), RpcError> {
         add_socket_counter(
             map,
             &min_name,
-            move || socket_manager().category_min_allocation(category).unwrap_or(0),
+            move || {
+                socket_manager()
+                    .category_min_allocation(category)
+                    .unwrap_or(0)
+            },
             "Minimum socket allocation for this category.",
         )?;
 
@@ -720,7 +728,11 @@ fn register_socket_commands(map: &mut CommandMap) -> Result<(), RpcError> {
         add_socket_counter(
             map,
             &max_name,
-            move || socket_manager().category_max_allocation(category).unwrap_or(0),
+            move || {
+                socket_manager()
+                    .category_max_allocation(category)
+                    .unwrap_or(0)
+            },
             "Maximum socket allocation for this category.",
         )?;
 
@@ -848,7 +860,11 @@ fn register_system_extended_commands(map: &mut CommandMap) -> Result<(), RpcErro
     let s_get = Arc::clone(&settings);
     map.insert_func(
         "system.file.split_suffix",
-        move |_target, _obj| Ok(Object::from(s_get.read().unwrap().file_split_suffix.clone())),
+        move |_target, _obj| {
+            Ok(Object::from(
+                s_get.read().unwrap().file_split_suffix.clone(),
+            ))
+        },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
         "Get split file suffix.",

@@ -10,23 +10,13 @@ fn setup() -> (CommandMap, Arc<RwLock<DhtConfig>>) {
     let config = Arc::new(RwLock::new(DhtConfig::new()));
     let list = Arc::new(RwLock::new(rt_core::DownloadList::new()));
     // Install the legacy tracker commands first, then replace the DHT subset.
-    register_tracker_commands(
-        &mut map,
-        Arc::clone(&config),
-        list,
-    )
-    .unwrap();
+    register_tracker_commands(&mut map, Arc::clone(&config), list).unwrap();
     register_dht_commands(&mut map, Arc::clone(&config)).unwrap();
     (map, config)
 }
 
 fn call(map: &CommandMap, name: &str, value: &str) -> Result<Object, rt_rpc::RpcError> {
-    map.call_command(
-        name,
-        &Object::from(value.to_string()),
-        &Target::None,
-        true,
-    )
+    map.call_command(name, &Object::from(value.to_string()), &Target::None, true)
 }
 
 fn value(map: &CommandMap, name: &str) -> i64 {
@@ -72,10 +62,7 @@ fn dht_statistics_and_controls_work_without_a_running_runtime() {
             true,
         )
         .unwrap();
-    assert_eq!(
-        stats.get_key("active").unwrap().as_value().unwrap(),
-        0
-    );
+    assert_eq!(stats.get_key("active").unwrap().as_value().unwrap(), 0);
     assert!(stats.get_key("nodes").is_ok());
     assert!(stats.get_key("buckets").is_ok());
     assert_eq!(value(&map, "dht.is_active"), 0);
@@ -100,6 +87,11 @@ fn dht_commands_can_be_installed_after_tracker_without_duplicates() {
         .call_command("dht.mode", &Object::create_empty(), &Target::None, true)
         .is_ok());
     assert!(map
-        .call_command("dht.statistics", &Object::create_empty(), &Target::None, true)
+        .call_command(
+            "dht.statistics",
+            &Object::create_empty(),
+            &Target::None,
+            true
+        )
         .is_ok());
 }

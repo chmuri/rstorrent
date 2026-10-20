@@ -1,8 +1,8 @@
-use std::io::{Read, Write};
 use base64::prelude::*;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use std::io::{Read, Write};
 
 use crate::object::{flags, Object};
 

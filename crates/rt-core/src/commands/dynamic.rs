@@ -1,11 +1,9 @@
-use std::sync::{Arc, RwLock};
 use lt_common::Object;
 use rt_rpc::command_flags::*;
 use rt_rpc::object_flags::*;
 use rt_rpc::parse_commands::parse_command;
-use rt_rpc::{
-    convert_to_string, convert_to_value, CommandMap, ObjectStorage, RpcError,
-};
+use rt_rpc::{convert_to_string, convert_to_value, CommandMap, ObjectStorage, RpcError};
+use std::sync::{Arc, RwLock};
 
 fn append_cat_argument(obj: &Object, result: &mut String) -> Result<(), RpcError> {
     if let Ok(list) = obj.as_list() {
@@ -127,7 +125,9 @@ pub fn register_dynamic_commands(
         move |target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("branch: missing arguments".to_string()));
+                return Err(RpcError::InputError(
+                    "branch: missing arguments".to_string(),
+                ));
             }
             let cond_val = to_val(&list[0])?;
             let map_guard = mfc_branch.read().unwrap();
@@ -275,7 +275,9 @@ pub fn register_dynamic_commands(
         |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("math.div: requires at least 2 arguments".into()));
+                return Err(RpcError::InputError(
+                    "math.div: requires at least 2 arguments".into(),
+                ));
             }
             let a = to_val(&list[0])?;
             let b = to_val(&list[1])?;
@@ -294,7 +296,9 @@ pub fn register_dynamic_commands(
         |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("math.mod: requires at least 2 arguments".into()));
+                return Err(RpcError::InputError(
+                    "math.mod: requires at least 2 arguments".into(),
+                ));
             }
             let a = to_val(&list[0])?;
             let b = to_val(&list[1])?;
@@ -315,7 +319,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.value: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.value: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -338,7 +344,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.bool: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.bool: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -362,7 +370,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.string: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.string: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -385,7 +395,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.list: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.list: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -408,7 +420,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.simple: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.simple: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -431,7 +445,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.c_simple: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.c_simple: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -454,7 +470,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.is_empty() {
-                return Err(RpcError::InputError("method.insert.s_c_simple: missing key".into()));
+                return Err(RpcError::InputError(
+                    "method.insert.s_c_simple: missing key".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let val = if list.len() > 1 {
@@ -478,7 +496,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("method.insert: requires at least key and type".into()));
+                return Err(RpcError::InputError(
+                    "method.insert: requires at least key and type".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let type_str = to_str(&list[1])?;
@@ -605,7 +625,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("method.has_key: missing arguments".into()));
+                return Err(RpcError::InputError(
+                    "method.has_key: missing arguments".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let cmd_key = to_str(&list[1])?;
@@ -624,7 +646,9 @@ pub fn register_dynamic_commands(
         move |_target, obj| {
             let list = obj.as_list()?;
             if list.len() < 2 {
-                return Err(RpcError::InputError("method.set_key: missing arguments".into()));
+                return Err(RpcError::InputError(
+                    "method.set_key: missing arguments".into(),
+                ));
             }
             let key = to_str(&list[0])?;
             let cmd_key = to_str(&list[1])?;
@@ -792,8 +816,12 @@ mod tests {
     fn true_and_false_commands() {
         let map = test_map();
 
-        let t = map.call_command("true", &Object::create_empty(), &Target::None, true).unwrap();
-        let f = map.call_command("false", &Object::create_empty(), &Target::None, true).unwrap();
+        let t = map
+            .call_command("true", &Object::create_empty(), &Target::None, true)
+            .unwrap();
+        let f = map
+            .call_command("false", &Object::create_empty(), &Target::None, true)
+            .unwrap();
 
         assert_eq!(t.as_value().unwrap(), 1);
         assert_eq!(f.as_value().unwrap(), 0);

@@ -31,19 +31,17 @@ fn get_peer_target(
 ) -> Result<(Arc<RwLock<Download>>, SocketAddress), RpcError> {
     let (hash, address) = match target {
         Target::Peer(hash, address) => (*hash, address.clone()),
-        _ => {
-            return Err(RpcError::InputError(
-                "Command requires Peer target".into(),
-            ))
-        }
+        _ => return Err(RpcError::InputError("Command requires Peer target".into())),
     };
 
-    let download = download_list.read().unwrap().find(&hash).ok_or_else(|| {
-        RpcError::Custom {
+    let download = download_list
+        .read()
+        .unwrap()
+        .find(&hash)
+        .ok_or_else(|| RpcError::Custom {
             code: -500,
             message: format!("Download '{}' not found", hash.to_hex()),
-        }
-    })?;
+        })?;
 
     Ok((download, address))
 }
@@ -147,9 +145,7 @@ fn multicall_commands(list: &[Object]) -> &[Object] {
 
     if let Some(first) = list.first() {
         if let Ok(first) = convert_to_string(first) {
-            if first.is_empty()
-                || (first.len() == 40 && HashString::from_hex(&first).is_some())
-            {
+            if first.is_empty() || (first.len() == 40 && HashString::from_hex(&first).is_some()) {
                 start = 1;
             }
         }
@@ -369,14 +365,15 @@ pub fn register_peer_commands(
             let commands = multicall_commands(list);
 
             let addresses: Vec<SocketAddress> = {
-                let download = mc_list
-                    .read()
-                    .unwrap()
-                    .find(&hash)
-                    .ok_or_else(|| RpcError::Custom {
-                        code: -500,
-                        message: "Download not found".into(),
-                    })?;
+                let download =
+                    mc_list
+                        .read()
+                        .unwrap()
+                        .find(&hash)
+                        .ok_or_else(|| RpcError::Custom {
+                            code: -500,
+                            message: "Download not found".into(),
+                        })?;
                 let guard = download.read().unwrap();
                 let found: Vec<SocketAddress> = guard
                     .download()
@@ -455,12 +452,15 @@ pub fn register_peer_commands(
             }
 
             let address = {
-                let download = call_list.read().unwrap().find(&hash).ok_or_else(|| {
-                    RpcError::Custom {
-                        code: -500,
-                        message: "Download not found".into(),
-                    }
-                })?;
+                let download =
+                    call_list
+                        .read()
+                        .unwrap()
+                        .find(&hash)
+                        .ok_or_else(|| RpcError::Custom {
+                            code: -500,
+                            message: "Download not found".into(),
+                        })?;
                 let guard = download.read().unwrap();
                 let found = guard
                     .download()
@@ -468,9 +468,8 @@ pub fn register_peer_commands(
                     .map(|peer| peer.socket_address);
                 found
             };
-            let address = address.ok_or_else(|| {
-                RpcError::InputError("p.call_target: could not find peer".into())
-            })?;
+            let address = address
+                .ok_or_else(|| RpcError::InputError("p.call_target: could not find peer".into()))?;
 
             let command_arg = match list.len() {
                 3 => Object::create_empty(),

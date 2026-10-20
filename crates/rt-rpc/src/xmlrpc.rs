@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use crate::command_map::CommandMap;
+use crate::error::RpcError;
+use crate::target::Target;
 use base64::prelude::*;
 use lt_common::object::ObjectVal;
 use lt_common::Object;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
-use crate::command_map::CommandMap;
-use crate::error::RpcError;
-use crate::target::Target;
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const XMLRPC_INTERNAL_ERROR: i32 = -500;
 pub const XMLRPC_TYPE_ERROR: i32 = -501;
@@ -123,12 +123,13 @@ impl XmlRpc {
                     _ => {}
                 },
                 Ok(Event::Text(ref e)) if in_method_name => {
-                    method_name = e.unescape().map_err(|e| {
-                        RpcError::Custom {
+                    method_name = e
+                        .unescape()
+                        .map_err(|e| RpcError::Custom {
                             code: XMLRPC_PARSE_ERROR,
                             message: format!("XML parsing error: {}", e),
-                        }
-                    })?.into_owned();
+                        })?
+                        .into_owned();
                 }
                 Ok(Event::End(ref e)) => match e.name().as_ref() {
                     b"methodName" => in_method_name = false,
@@ -241,7 +242,10 @@ impl XmlRpc {
             };
 
             // Ensure first member in struct is methodName
-            if let Some(first_member) = map_val.get(b"__first_member__".as_ref()).and_then(|o| o.as_str().ok()) {
+            if let Some(first_member) = map_val
+                .get(b"__first_member__".as_ref())
+                .and_then(|o| o.as_str().ok())
+            {
                 if first_member != "methodName" {
                     return Err(RpcError::Custom {
                         code: XMLRPC_PARSE_ERROR,
@@ -255,7 +259,10 @@ impl XmlRpc {
                 });
             }
 
-            let sub_method = match map_val.get(b"methodName".as_ref()).and_then(|o| o.as_str().ok()) {
+            let sub_method = match map_val
+                .get(b"methodName".as_ref())
+                .and_then(|o| o.as_str().ok())
+            {
                 Some(s) => s.to_string(),
                 None => {
                     return Err(RpcError::Custom {
@@ -265,7 +272,10 @@ impl XmlRpc {
                 }
             };
 
-            let sub_params = match map_val.get(b"params".as_ref()).and_then(|o| o.as_list().ok()) {
+            let sub_params = match map_val
+                .get(b"params".as_ref())
+                .and_then(|o| o.as_list().ok())
+            {
                 Some(l) => l.to_vec(),
                 None => Vec::new(),
             };
@@ -327,7 +337,10 @@ impl XmlRpc {
                         b"faultCode".to_vec(),
                         Object::from(XMLRPC_INTERNAL_ERROR as i64),
                     );
-                    fault_map.insert(b"faultString".to_vec(), Object::from(e.to_string().as_str()));
+                    fault_map.insert(
+                        b"faultString".to_vec(),
+                        Object::from(e.to_string().as_str()),
+                    );
                     results.push(Object::create_map_with(fault_map));
                 }
             }
@@ -372,10 +385,7 @@ impl XmlRpc {
         Self::parse_value_depth(reader, 0)
     }
 
-    fn parse_value_depth(
-        reader: &mut Reader<&[u8]>,
-        depth: usize,
-    ) -> Result<Object, RpcError> {
+    fn parse_value_depth(reader: &mut Reader<&[u8]>, depth: usize) -> Result<Object, RpcError> {
         if depth > MAX_NESTING_DEPTH {
             return Err(RpcError::Custom {
                 code: XMLRPC_LIMIT_EXCEEDED_ERROR,
@@ -457,14 +467,14 @@ impl XmlRpc {
                     }
                     b"base64" => {
                         let text = Self::read_text_until(reader, b"base64")?;
-                        let cleaned: String =
-                            text.chars().filter(|c| !c.is_whitespace()).collect();
-                        let decoded = BASE64_STANDARD.decode(&cleaned).map_err(|_| {
-                            RpcError::Custom {
-                                code: XMLRPC_TYPE_ERROR,
-                                message: "unable to parse base64 value".to_string(),
-                            }
-                        })?;
+                        let cleaned: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+                        let decoded =
+                            BASE64_STANDARD
+                                .decode(&cleaned)
+                                .map_err(|_| RpcError::Custom {
+                                    code: XMLRPC_TYPE_ERROR,
+                                    message: "unable to parse base64 value".to_string(),
+                                })?;
                         let mut obj = Object::create_string(decoded);
                         obj.set_flags(lt_common::object::flags::FLAG_BASE64);
                         return Ok(obj);
@@ -553,10 +563,7 @@ impl XmlRpc {
         Ok(())
     }
 
-    fn parse_array_depth(
-        reader: &mut Reader<&[u8]>,
-        depth: usize,
-    ) -> Result<Object, RpcError> {
+    fn parse_array_depth(reader: &mut Reader<&[u8]>, depth: usize) -> Result<Object, RpcError> {
         if depth > MAX_NESTING_DEPTH {
             return Err(RpcError::Custom {
                 code: XMLRPC_LIMIT_EXCEEDED_ERROR,
@@ -583,10 +590,7 @@ impl XmlRpc {
         Ok(Object::create_list_with(list))
     }
 
-    fn parse_struct_depth(
-        reader: &mut Reader<&[u8]>,
-        depth: usize,
-    ) -> Result<Object, RpcError> {
+    fn parse_struct_depth(reader: &mut Reader<&[u8]>, depth: usize) -> Result<Object, RpcError> {
         if depth > MAX_NESTING_DEPTH {
             return Err(RpcError::Custom {
                 code: XMLRPC_LIMIT_EXCEEDED_ERROR,
@@ -765,10 +769,7 @@ impl XmlRpc {
                 out.push_str("<i8>0</i8>");
             }
             ObjectVal::Value(v) => {
-                let tag = if dialect == DIALECT_I8
-                    || *v < i32::MIN as i64
-                    || *v > i32::MAX as i64
-                {
+                let tag = if dialect == DIALECT_I8 || *v < i32::MIN as i64 || *v > i32::MAX as i64 {
                     "i8"
                 } else {
                     "i4"
@@ -821,10 +822,7 @@ impl XmlRpc {
                 out.push_str("</array>");
             }
             ObjectVal::Map(map) => {
-                let filtered: Vec<_> = map
-                    .iter()
-                    .filter(|(k, _)| !k.starts_with(b"__"))
-                    .collect();
+                let filtered: Vec<_> = map.iter().filter(|(k, _)| !k.starts_with(b"__")).collect();
                 if filtered.is_empty() {
                     out.push_str("<struct/>");
                 } else {

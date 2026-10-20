@@ -229,15 +229,12 @@ pub fn dht_controller() -> Option<Arc<DhtController>> {
 /// [`initialize_builtin_commands`](crate::commands::initialize_builtin_commands).
 fn shared_dht_preferences(
 ) -> &'static Mutex<Option<Arc<RwLock<crate::commands::tracker::DhtConfig>>>> {
-    static PREFERENCES: OnceLock<
-        Mutex<Option<Arc<RwLock<crate::commands::tracker::DhtConfig>>>>,
-    > = OnceLock::new();
+    static PREFERENCES: OnceLock<Mutex<Option<Arc<RwLock<crate::commands::tracker::DhtConfig>>>>> =
+        OnceLock::new();
     PREFERENCES.get_or_init(|| Mutex::new(None))
 }
 
-pub fn set_dht_config_handle(
-    config: Option<Arc<RwLock<crate::commands::tracker::DhtConfig>>>,
-) {
+pub fn set_dht_config_handle(config: Option<Arc<RwLock<crate::commands::tracker::DhtConfig>>>) {
     *shared_dht_preferences().lock().unwrap() = config;
 }
 
@@ -611,10 +608,7 @@ fn bind_socket(
     TcpListener::from_std(std_listener)
 }
 
-async fn bind_port(
-    port: u16,
-    config: &PeerListenerConfig,
-) -> io::Result<Vec<TcpListener>> {
+async fn bind_port(port: u16, config: &PeerListenerConfig) -> io::Result<Vec<TcpListener>> {
     let addresses = &config.addresses;
     let inet = addresses
         .inet_address
@@ -625,7 +619,9 @@ async fn bind_port(
         .as_ref()
         .and_then(|address| socket_address_for(address, port));
 
-    let wildcard_v4 = inet.map(|address| address.ip().is_unspecified()).unwrap_or(false);
+    let wildcard_v4 = inet
+        .map(|address| address.ip().is_unspecified())
+        .unwrap_or(false);
     let wildcard_v6 = inet6
         .map(|address| address.ip().is_unspecified())
         .unwrap_or(false);
@@ -662,12 +658,7 @@ async fn bind_port(
 
     let v6only = must_v6only;
     if let Some(v6) = inet6 {
-        match bind_socket(
-            v6,
-            config.backlog,
-            &addresses.inet6_device,
-            v6only,
-        ) {
+        match bind_socket(v6, config.backlog, &addresses.inet6_device, v6only) {
             Ok(listener) => listeners.push(listener),
             Err(err) => {
                 debug!(error = %err, "IPv6 peer bind failed");
@@ -699,9 +690,7 @@ async fn bind_port(
     Ok(listeners)
 }
 
-async fn bind_listener_set(
-    config: &PeerListenerConfig,
-) -> io::Result<(Vec<TcpListener>, u16)> {
+async fn bind_listener_set(config: &PeerListenerConfig) -> io::Result<(Vec<TcpListener>, u16)> {
     let Some((first, last)) = config.effective_range() else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -1146,7 +1135,11 @@ impl NetworkRuntime {
 
             let mut dht_config = dht_config.clone();
             dht_config.port_override = dht_port;
-            let dht = Arc::new(DhtController::with_config(own_id, dht_port, dht_config.clone()));
+            let dht = Arc::new(DhtController::with_config(
+                own_id,
+                dht_port,
+                dht_config.clone(),
+            ));
 
             if dht_config.mode != DhtMode::Disable {
                 if let Some(path) = &dht_cache_path {
@@ -1161,7 +1154,10 @@ impl NetworkRuntime {
             if dht_config.mode.is_enabled() {
                 dht.start();
             } else {
-                info!(mode = dht_config.mode.as_str(), "DHT initialized but not started");
+                info!(
+                    mode = dht_config.mode.as_str(),
+                    "DHT initialized but not started"
+                );
             }
 
             // Publish the live controller for the `dht.*` command surface.
@@ -1199,11 +1195,11 @@ impl NetworkRuntime {
             }));
 
             if dht_config.mode != DhtMode::Disable {
-            if let Some(path) = dht_cache_path.clone() {
-                let save_dht = Arc::clone(&dht);
-                let mut save_shutdown = shutdown_rx.clone();
+                if let Some(path) = dht_cache_path.clone() {
+                    let save_dht = Arc::clone(&dht);
+                    let mut save_shutdown = shutdown_rx.clone();
 
-                dht_tasks.push(tokio::spawn(async move {
+                    dht_tasks.push(tokio::spawn(async move {
                     let mut tick = tokio::time::interval(Duration::from_secs(300));
                     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -1223,54 +1219,55 @@ impl NetworkRuntime {
                         debug!(path = %path.display(), error = %err, "Could not save DHT cache on shutdown");
                     }
                 }));
-            }
+                }
 
-            // Resolve bootstrap routers asynchronously so DNS or unreachable
-            // routers never delay session startup. The controller wakes its
-            // maintenance task as soon as the list is installed and retries
-            // with a bounded backoff afterwards.
-            if dht_config.mode != DhtMode::Disable {
-                let bootstrap_dht = Arc::clone(&dht);
-                dht_tasks.push(tokio::spawn(async move {
-                    let hosts = [
-                        "router.bittorrent.com:6881",
-                        "dht.transmissionbt.com:6881",
-                        "router.utorrent.com:6881",
-                    ];
+                // Resolve bootstrap routers asynchronously so DNS or unreachable
+                // routers never delay session startup. The controller wakes its
+                // maintenance task as soon as the list is installed and retries
+                // with a bounded backoff afterwards.
+                if dht_config.mode != DhtMode::Disable {
+                    let bootstrap_dht = Arc::clone(&dht);
+                    dht_tasks.push(tokio::spawn(async move {
+                        let hosts = [
+                            "router.bittorrent.com:6881",
+                            "dht.transmissionbt.com:6881",
+                            "router.utorrent.com:6881",
+                        ];
 
-                    let resolve = async {
-                        let mut nodes = Vec::new();
-                        for host in hosts {
-                            match tokio::net::lookup_host(host).await {
-                                Ok(addresses) => {
-                                    nodes.extend(addresses.map(SocketAddress::from));
-                                }
-                                Err(err) => {
-                                    debug!(host, error = %err, "DHT bootstrap DNS failed")
+                        let resolve = async {
+                            let mut nodes = Vec::new();
+                            for host in hosts {
+                                match tokio::net::lookup_host(host).await {
+                                    Ok(addresses) => {
+                                        nodes.extend(addresses.map(SocketAddress::from));
+                                    }
+                                    Err(err) => {
+                                        debug!(host, error = %err, "DHT bootstrap DNS failed")
+                                    }
                                 }
                             }
-                        }
-                        nodes
-                    };
+                            nodes
+                        };
 
-                    // Keep the resolver bounded so shutdown never waits on DNS.
-                    let nodes = match tokio::time::timeout(Duration::from_secs(2), resolve).await {
-                        Ok(nodes) => nodes,
-                        Err(_) => {
-                            debug!("DHT bootstrap DNS resolution timed out");
+                        // Keep the resolver bounded so shutdown never waits on DNS.
+                        let nodes =
+                            match tokio::time::timeout(Duration::from_secs(2), resolve).await {
+                                Ok(nodes) => nodes,
+                                Err(_) => {
+                                    debug!("DHT bootstrap DNS resolution timed out");
+                                    return;
+                                }
+                            };
+
+                        if nodes.is_empty() {
+                            debug!("No DHT bootstrap addresses resolved");
                             return;
                         }
-                    };
 
-                    if nodes.is_empty() {
-                        debug!("No DHT bootstrap addresses resolved");
-                        return;
-                    }
-
-                    info!(count = nodes.len(), "DHT bootstrap routers resolved");
-                    bootstrap_dht.set_bootstrap_nodes(nodes);
-                }));
-            }
+                        info!(count = nodes.len(), "DHT bootstrap routers resolved");
+                        bootstrap_dht.set_bootstrap_nodes(nodes);
+                    }));
+                }
             }
 
             Some(dht.handle())
@@ -1332,9 +1329,7 @@ impl NetworkRuntime {
                             bencode
                                 .get_key("info")
                                 .ok()
-                                .and_then(|info| {
-                                    lt_common::object::bencode::encode(info).ok()
-                                })
+                                .and_then(|info| lt_common::object::bencode::encode(info).ok())
                         });
                         (
                             *dl.info_hash(),

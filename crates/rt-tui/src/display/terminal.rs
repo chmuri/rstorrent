@@ -54,8 +54,12 @@ use crossterm::event::{
     EnableFocusChange, EnableMouseCapture, Event, KeyEvent,
 };
 use crossterm::execute;
-use crossterm::style::{Color as CrossColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::style::{
+    Color as CrossColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor,
+};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::style::Color as RataColor;
 use std::io::{self, stdout, Stdout, Write};
 
@@ -360,8 +364,16 @@ impl TerminalBackend {
 
             for x in 0..width {
                 if let Some(cell) = canvas.get_raw_cell(x, y) {
-                    let fg = cell.style.fg.map(Self::map_color).unwrap_or(CrossColor::Reset);
-                    let bg = cell.style.bg.map(Self::map_color).unwrap_or(CrossColor::Reset);
+                    let fg = cell
+                        .style
+                        .fg
+                        .map(Self::map_color)
+                        .unwrap_or(CrossColor::Reset);
+                    let bg = cell
+                        .style
+                        .bg
+                        .map(Self::map_color)
+                        .unwrap_or(CrossColor::Reset);
 
                     if fg != current_fg {
                         crossterm::queue!(self.stdout, SetForegroundColor(fg))?;

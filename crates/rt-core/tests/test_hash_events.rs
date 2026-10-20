@@ -62,23 +62,14 @@ fn write_all(root: &std::path::Path) {
         .files
         .iter()
         .map(|file| lt_storage::TargetFileInfo {
-            path: PathBuf::from(
-                file.path.as_string().trim_start_matches('/'),
-            ),
+            path: PathBuf::from(file.path.as_string().trim_start_matches('/')),
             length: file.length,
             offset: file.offset,
         })
         .collect();
 
     for (index, chunk) in BYTES.chunks(8).enumerate() {
-        lt_storage::write_piece_to_disk(
-            root,
-            &target_files,
-            8,
-            index as u32,
-            chunk,
-        )
-        .unwrap();
+        lt_storage::write_piece_to_disk(root, &target_files, 8, index as u32, chunk).unwrap();
     }
 }
 
@@ -92,9 +83,7 @@ fn make_download(root: Option<&std::path::Path>) -> Download {
     download
 }
 
-fn capture_events(
-    list: &mut DownloadList,
-) -> Arc<Mutex<Vec<String>>> {
+fn capture_events(list: &mut DownloadList) -> Arc<Mutex<Vec<String>>> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&events);
     list.add_event_listener(Arc::new(move |event, _| {

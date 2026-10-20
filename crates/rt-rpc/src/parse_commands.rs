@@ -1,14 +1,12 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use crate::command_map::CommandMap;
+use crate::error::RpcError;
+use crate::parse::{parse_is_delim_command, parse_skip_wspace, parse_whole_list};
+use crate::target::Target;
 use lt_common::object::flags as obj_flags;
 use lt_common::object::ObjectVal;
 use lt_common::Object;
-use crate::command_map::CommandMap;
-use crate::error::RpcError;
-use crate::parse::{
-    parse_is_delim_command, parse_skip_wspace, parse_whole_list,
-};
-use crate::target::Target;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 pub fn parse_command_name(s: &str) -> Result<(&str, &str), RpcError> {
     if s.is_empty() {
@@ -149,8 +147,9 @@ pub fn parse_command_file(
 
     for line_res in reader.lines() {
         line_number += 1;
-        let line = line_res
-            .map_err(|e| RpcError::InputError(format!("Read error at line {}: {}", line_number, e)))?;
+        let line = line_res.map_err(|e| {
+            RpcError::InputError(format!("Read error at line {}: {}", line_number, e))
+        })?;
 
         let trimmed_end = line.trim_end_matches(['\r', '\n']);
         if trimmed_end.ends_with('\\') {

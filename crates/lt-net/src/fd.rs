@@ -1,5 +1,5 @@
-use std::os::unix::io::RawFd;
 use bitflags::bitflags;
+use std::os::unix::io::RawFd;
 
 use crate::error::NetError;
 
@@ -134,7 +134,12 @@ pub fn set_priority(fd: RawFd, family: i32, priority: i32) -> Result<(), NetErro
         let (level, optname) = match family {
             libc::AF_INET => (libc::IPPROTO_IP, libc::IP_TOS),
             libc::AF_INET6 => (libc::IPPROTO_IPV6, libc::IPV6_TCLASS),
-            _ => return Err(NetError::Input(format!("Invalid address family: {}", family))),
+            _ => {
+                return Err(NetError::Input(format!(
+                    "Invalid address family: {}",
+                    family
+                )))
+            }
         };
         let val = priority as libc::c_int;
         if libc::setsockopt(

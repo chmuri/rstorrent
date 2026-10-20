@@ -15,7 +15,9 @@ fn string_arg(obj: &Object) -> Result<String, RpcError> {
 }
 
 fn list_args(obj: &Object) -> Result<Vec<Object>, RpcError> {
-    obj.as_list().map(|values| values.to_vec()).map_err(|err| RpcError::InputError(err.to_string()))
+    obj.as_list()
+        .map(|values| values.to_vec())
+        .map_err(|err| RpcError::InputError(err.to_string()))
 }
 
 fn get_download(
@@ -23,9 +25,11 @@ fn get_download(
     downloads: &Arc<RwLock<DownloadList>>,
 ) -> Result<Arc<RwLock<Download>>, RpcError> {
     match target {
-        Target::Download(hash) => downloads.read().unwrap().find(hash).ok_or_else(|| {
-            RpcError::InputError(format!("Download '{}' not found", hash.to_hex()))
-        }),
+        Target::Download(hash) => {
+            downloads.read().unwrap().find(hash).ok_or_else(|| {
+                RpcError::InputError(format!("Download '{}' not found", hash.to_hex()))
+            })
+        }
         _ => Err(RpcError::InputError(
             "Command requires a download target".to_string(),
         )),
@@ -72,10 +76,7 @@ pub fn register_view_commands(
         "List views.",
     )?;
 
-    for (name, not_visible) in [
-        ("view.size", false),
-        ("view.size_not_visible", true),
-    ] {
+    for (name, not_visible) in [("view.size", false), ("view.size_not_visible", true)] {
         let vm = Arc::clone(&view_manager);
         map.insert_func(
             name,
@@ -133,9 +134,7 @@ pub fn register_view_commands(
             move |_target, obj| {
                 let args = list_args(obj)?;
                 if args.len() != 2 {
-                    return Err(RpcError::InputError(
-                        "Wrong argument count.".to_string(),
-                    ));
+                    return Err(RpcError::InputError("Wrong argument count.".to_string()));
                 }
                 let view_name = string_arg(&args[0])?;
                 let mut manager = vm.write().unwrap();
@@ -161,9 +160,7 @@ pub fn register_view_commands(
         move |_target, obj| {
             let args = list_args(obj)?;
             if args.is_empty() {
-                return Err(RpcError::InputError(
-                    "Wrong argument count.".to_string(),
-                ));
+                return Err(RpcError::InputError("Wrong argument count.".to_string()));
             }
             let view_name = string_arg(&args[0])?;
             let triggers = args[1..]
@@ -208,9 +205,7 @@ pub fn register_view_commands(
         move |_target, obj| {
             let args = list_args(obj)?;
             if args.is_empty() || args.len() > 2 {
-                return Err(RpcError::InputError(
-                    "Wrong argument count.".to_string(),
-                ));
+                return Err(RpcError::InputError("Wrong argument count.".to_string()));
             }
             let view_name = string_arg(&args[0])?;
             let map = cm_sort.read().unwrap();
@@ -234,9 +229,7 @@ pub fn register_view_commands(
             move |_target, obj| {
                 let args = list_args(obj)?;
                 if args.len() != 2 {
-                    return Err(RpcError::InputError(
-                        "Wrong argument count.".to_string(),
-                    ));
+                    return Err(RpcError::InputError("Wrong argument count.".to_string()));
                 }
                 let view_name = string_arg(&args[0])?;
                 let mut manager = vm.write().unwrap();
@@ -256,19 +249,13 @@ pub fn register_view_commands(
 
     map.insert_func(
         "view.set",
-        |_target, _obj| {
-            Err(RpcError::InputError(
-                "No such target.".to_string(),
-            ))
-        },
+        |_target, _obj| Err(RpcError::InputError("No such target.".to_string())),
         FLAG_PUBLIC_RPC,
         "<name>",
         "Legacy view selection (not a command target).",
     )?;
 
-    let temp_excluded = Arc::new(RwLock::new(
-        "default,started,stopped".to_string(),
-    ));
+    let temp_excluded = Arc::new(RwLock::new("default,started,stopped".to_string()));
     let excluded_get = Arc::clone(&temp_excluded);
     map.insert_func(
         "view.filter.temp.excluded",
@@ -306,8 +293,7 @@ pub fn register_view_commands(
     map.insert_func(
         "view.filter.temp.log.set",
         move |_target, obj| {
-            *temp_log.write().unwrap() =
-                rt_rpc::convert_to_value(obj, 10, 1).unwrap_or(0) != 0;
+            *temp_log.write().unwrap() = rt_rpc::convert_to_value(obj, 10, 1).unwrap_or(0) != 0;
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,

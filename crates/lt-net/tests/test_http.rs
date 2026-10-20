@@ -13,7 +13,8 @@ async fn test_http_get_basic() {
         if let Ok((mut socket, _)) = listener.accept().await {
             let mut buf = [0u8; 1024];
             let _ = socket.read(&mut buf).await;
-            let response = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, World!";
+            let response =
+                "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, World!";
             let _ = socket.write_all(response.as_bytes()).await;
         }
     });
@@ -62,7 +63,8 @@ async fn test_http_cancellation() {
         if let Ok((mut socket, _)) = listener.accept().await {
             let mut buf = [0u8; 1024];
             let _ = socket.read(&mut buf).await;
-            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+            let header =
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
             let _ = socket.write_all(header.as_bytes()).await;
             // Write first chunk
             let chunk1 = "5\r\nhello\r\n";

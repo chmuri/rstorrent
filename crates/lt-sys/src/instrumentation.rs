@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicI64, Ordering};
 use crate::log::{groups, log_print};
+use std::sync::atomic::{AtomicI64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(usize)]

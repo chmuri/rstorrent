@@ -1,6 +1,6 @@
 use lt_common::hash_string::HashString;
-use lt_crypto::sha1::Sha1;
 use lt_crypto::sha1::Digest;
+use lt_crypto::sha1::Sha1;
 
 use crate::chunk_list::ChunkHandle;
 
@@ -37,7 +37,8 @@ impl HashChunk {
         let rem = self.remaining();
         length = length.min(rem);
         if length > 0 {
-            self.hasher.update(&self.data[self.position..self.position + length]);
+            self.hasher
+                .update(&self.data[self.position..self.position + length]);
             self.position += length;
         }
         self.remaining() == 0

@@ -193,7 +193,9 @@ impl NetworkConfig {
             ));
         }
         if sa.port() != 0 {
-            return Err(NetError::Input("Tried to set a bind address with a non-zero port".into()));
+            return Err(NetError::Input(
+                "Tried to set a bind address with a non-zero port".into(),
+            ));
         }
 
         let mut inner = self.inner.lock().unwrap();
@@ -219,10 +221,14 @@ impl NetworkConfig {
     pub fn set_bind_inet_address(&self, addr_str: &str) -> Result<(), NetError> {
         let sa = SocketAddress::lookup_address(addr_str, AddressFamily::Inet)?;
         if sa.family() != AddressFamily::Inet && sa.family() != AddressFamily::Unspec {
-            return Err(NetError::Input("Tried to set a bind inet address that is not unspec/inet".into()));
+            return Err(NetError::Input(
+                "Tried to set a bind inet address that is not unspec/inet".into(),
+            ));
         }
         if sa.port() != 0 {
-            return Err(NetError::Input("Tried to set a bind inet address with non-zero port".into()));
+            return Err(NetError::Input(
+                "Tried to set a bind inet address with non-zero port".into(),
+            ));
         }
 
         let mut inner = self.inner.lock().unwrap();
@@ -234,10 +240,14 @@ impl NetworkConfig {
     pub fn set_bind_inet6_address(&self, addr_str: &str) -> Result<(), NetError> {
         let sa = SocketAddress::lookup_address(addr_str, AddressFamily::Inet6)?;
         if sa.family() != AddressFamily::Inet6 && sa.family() != AddressFamily::Unspec {
-            return Err(NetError::Input("Tried to set a bind inet6 address that is not unspec/inet6".into()));
+            return Err(NetError::Input(
+                "Tried to set a bind inet6 address that is not unspec/inet6".into(),
+            ));
         }
         if sa.port() != 0 {
-            return Err(NetError::Input("Tried to set a bind inet6 address with non-zero port".into()));
+            return Err(NetError::Input(
+                "Tried to set a bind inet6 address with non-zero port".into(),
+            ));
         }
 
         let mut inner = self.inner.lock().unwrap();
@@ -284,10 +294,14 @@ impl NetworkConfig {
     pub fn set_local_address(&self, addr_str: &str) -> Result<(), NetError> {
         let sa = SocketAddress::lookup_address(addr_str, AddressFamily::Unspec)?;
         if sa.is_any() && !sa.is_unspec() {
-            return Err(NetError::Input("Tried to set local address to an any address".into()));
+            return Err(NetError::Input(
+                "Tried to set local address to an any address".into(),
+            ));
         }
         if sa.port() != 0 {
-            return Err(NetError::Input("Tried to set a local address with a non-zero port".into()));
+            return Err(NetError::Input(
+                "Tried to set a local address with a non-zero port".into(),
+            ));
         }
 
         let mut inner = self.inner.lock().unwrap();
@@ -312,10 +326,14 @@ impl NetworkConfig {
     pub fn set_local_inet_address(&self, addr_str: &str) -> Result<(), NetError> {
         let sa = SocketAddress::lookup_address(addr_str, AddressFamily::Inet)?;
         if sa.is_any() && !sa.is_unspec() {
-            return Err(NetError::Input("Tried to set local inet address to an any address".into()));
+            return Err(NetError::Input(
+                "Tried to set local inet address to an any address".into(),
+            ));
         }
         if sa.port() != 0 {
-            return Err(NetError::Input("Tried to set a local inet address with a non-zero port".into()));
+            return Err(NetError::Input(
+                "Tried to set a local inet address with a non-zero port".into(),
+            ));
         }
 
         let mut inner = self.inner.lock().unwrap();
@@ -326,10 +344,14 @@ impl NetworkConfig {
     pub fn set_local_inet6_address(&self, addr_str: &str) -> Result<(), NetError> {
         let sa = SocketAddress::lookup_address(addr_str, AddressFamily::Inet6)?;
         if sa.is_any() && !sa.is_unspec() {
-            return Err(NetError::Input("Tried to set local inet6 address to an any address".into()));
+            return Err(NetError::Input(
+                "Tried to set local inet6 address to an any address".into(),
+            ));
         }
         if sa.port() != 0 {
-            return Err(NetError::Input("Tried to set a local inet6 address with a non-zero port".into()));
+            return Err(NetError::Input(
+                "Tried to set a local inet6 address with a non-zero port".into(),
+            ));
         }
 
         let mut inner = self.inner.lock().unwrap();
@@ -388,10 +410,14 @@ impl NetworkConfig {
 
     pub fn set_listen_backlog(&self, backlog: i32) -> Result<(), NetError> {
         if backlog < 1 {
-            return Err(NetError::Input("Tried to set a listen backlog less than 1".into()));
+            return Err(NetError::Input(
+                "Tried to set a listen backlog less than 1".into(),
+            ));
         }
         if backlog > 65536 {
-            return Err(NetError::Input("Tried to set a listen backlog greater than 65536".into()));
+            return Err(NetError::Input(
+                "Tried to set a listen backlog greater than 65536".into(),
+            ));
         }
         let mut inner = self.inner.lock().unwrap();
         inner.listen_backlog = backlog;
@@ -425,12 +451,21 @@ impl NetworkConfig {
 
     pub fn encryption_modes(&self) -> (EncryptionMode, EncryptionMode) {
         let inner = self.inner.lock().unwrap();
-        (inner.handshake_encryption_mode, inner.stream_encryption_mode)
+        (
+            inner.handshake_encryption_mode,
+            inner.stream_encryption_mode,
+        )
     }
 
-    pub fn set_encryption_modes(&self, handshake: EncryptionMode, stream: EncryptionMode) -> Result<(), NetError> {
+    pub fn set_encryption_modes(
+        &self,
+        handshake: EncryptionMode,
+        stream: EncryptionMode,
+    ) -> Result<(), NetError> {
         if handshake == EncryptionMode::Deny && stream == EncryptionMode::Require {
-            return Err(NetError::Internal("Invalid encryption modes: handshake_deny/stream_require".into()));
+            return Err(NetError::Internal(
+                "Invalid encryption modes: handshake_deny/stream_require".into(),
+            ));
         }
         let mut inner = self.inner.lock().unwrap();
         inner.handshake_encryption_mode = handshake;
@@ -440,15 +475,27 @@ impl NetworkConfig {
 
     pub fn bind_address_best_match(&self) -> SocketAddress {
         let inner = self.inner.lock().unwrap();
-        Self::generic_address_best_match_inner(&inner, &inner.bind_inet_address, &inner.bind_inet6_address)
+        Self::generic_address_best_match_inner(
+            &inner,
+            &inner.bind_inet_address,
+            &inner.bind_inet6_address,
+        )
     }
 
     pub fn local_address_best_match(&self) -> SocketAddress {
         let inner = self.inner.lock().unwrap();
-        Self::generic_address_best_match_inner(&inner, &inner.local_inet_address, &inner.local_inet6_address)
+        Self::generic_address_best_match_inner(
+            &inner,
+            &inner.local_inet_address,
+            &inner.local_inet6_address,
+        )
     }
 
-    fn generic_address_best_match_inner(inner: &Inner, inet: &SocketAddress, inet6: &SocketAddress) -> SocketAddress {
+    fn generic_address_best_match_inner(
+        inner: &Inner,
+        inet: &SocketAddress,
+        inet6: &SocketAddress,
+    ) -> SocketAddress {
         if inet.is_unspec() {
             return inet6.clone();
         }
@@ -472,15 +519,27 @@ impl NetworkConfig {
 
     pub fn bind_address_or_unspec_and_null(&self) -> Option<SocketAddress> {
         let inner = self.inner.lock().unwrap();
-        Self::generic_address_or_unspec_and_null_inner(&inner, &inner.bind_inet_address, &inner.bind_inet6_address)
+        Self::generic_address_or_unspec_and_null_inner(
+            &inner,
+            &inner.bind_inet_address,
+            &inner.bind_inet6_address,
+        )
     }
 
     pub fn local_address_or_unspec_and_null(&self) -> Option<SocketAddress> {
         let inner = self.inner.lock().unwrap();
-        Self::generic_address_or_unspec_and_null_inner(&inner, &inner.local_inet_address, &inner.local_inet6_address)
+        Self::generic_address_or_unspec_and_null_inner(
+            &inner,
+            &inner.local_inet_address,
+            &inner.local_inet6_address,
+        )
     }
 
-    fn generic_address_or_unspec_and_null_inner(inner: &Inner, inet: &SocketAddress, inet6: &SocketAddress) -> Option<SocketAddress> {
+    fn generic_address_or_unspec_and_null_inner(
+        inner: &Inner,
+        inet: &SocketAddress,
+        inet6: &SocketAddress,
+    ) -> Option<SocketAddress> {
         if inner.block_ipv4 && inner.block_ipv6 {
             return None;
         }
@@ -519,7 +578,10 @@ impl NetworkConfig {
         match family {
             AddressFamily::Inet => {
                 if inner.block_ipv4 || inner.bind_inet_address.is_unspec() {
-                    AddressDevice { address: None, device: String::new() }
+                    AddressDevice {
+                        address: None,
+                        device: String::new(),
+                    }
                 } else {
                     AddressDevice {
                         address: Some(inner.bind_inet_address.clone()),
@@ -529,7 +591,10 @@ impl NetworkConfig {
             }
             AddressFamily::Inet6 => {
                 if inner.block_ipv6 || inner.bind_inet6_address.is_unspec() {
-                    AddressDevice { address: None, device: String::new() }
+                    AddressDevice {
+                        address: None,
+                        device: String::new(),
+                    }
                 } else {
                     AddressDevice {
                         address: Some(inner.bind_inet6_address.clone()),
@@ -537,14 +602,20 @@ impl NetworkConfig {
                     }
                 }
             }
-            _ => AddressDevice { address: None, device: String::new() },
+            _ => AddressDevice {
+                address: None,
+                device: String::new(),
+            },
         }
     }
 
     pub fn bind_address_for_udp_connect(&self, family: AddressFamily) -> AddressDevice {
         let inner = self.inner.lock().unwrap();
         if inner.block_udp {
-            return AddressDevice { address: None, device: String::new() };
+            return AddressDevice {
+                address: None,
+                device: String::new(),
+            };
         }
         drop(inner);
         self.bind_address_for_tcp_connect(family)

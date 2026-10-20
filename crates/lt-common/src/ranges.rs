@@ -31,7 +31,6 @@ impl<T: Ord + Copy> Ranges<T> {
         self.ranges.iter()
     }
 
-
     pub fn first(&self) -> Option<&(T, T)> {
         self.ranges.first()
     }

@@ -54,7 +54,8 @@ fn test_jsonrpc_basic_calls() {
         r#"{"id":1,"jsonrpc":"2.0","result":[41]}"#
     );
 
-    let req4 = r#"{"jsonrpc": "2.0", "method": "jsonrpc_reflect", "params": ["", 2247483647], "id": 1}"#;
+    let req4 =
+        r#"{"jsonrpc": "2.0", "method": "jsonrpc_reflect", "params": ["", 2247483647], "id": 1}"#;
     assert_eq!(
         rpc.process(req4, &map, true),
         r#"{"id":1,"jsonrpc":"2.0","result":[2247483647]}"#
@@ -104,14 +105,16 @@ fn test_jsonrpc_errors() {
     );
 
     // Target not string
-    let req_bad_target = r#"{"jsonrpc": "2.0", "method": "jsonrpc_reflect", "params": [41], "id": 1}"#;
+    let req_bad_target =
+        r#"{"jsonrpc": "2.0", "method": "jsonrpc_reflect", "params": [41], "id": 1}"#;
     assert_eq!(
         rpc.process(req_bad_target, &map, true),
         r#"{"error":{"code":-32602,"message":"invalid parameters: target must be a string"},"id":1,"jsonrpc":"2.0"}"#
     );
 
     // Float rejected
-    let req_float = r#"{"jsonrpc": "2.0", "method": "jsonrpc_reflect", "params": ["", 3.14], "id": 1}"#;
+    let req_float =
+        r#"{"jsonrpc": "2.0", "method": "jsonrpc_reflect", "params": ["", 3.14], "id": 1}"#;
     assert_eq!(
         rpc.process(req_float, &map, true),
         r#"{"error":{"code":-32602,"message":"invalid parameters: unexpected data type float"},"id":1,"jsonrpc":"2.0"}"#

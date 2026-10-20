@@ -485,8 +485,7 @@ impl ChunksSeenWindow {
 
     fn resize_auxiliary_bits(&mut self) {
         if self.completed.size_bits() != self.piece_count {
-            let completed =
-                Bitfield::from_bytes(self.completed.as_bytes(), self.piece_count);
+            let completed = Bitfield::from_bytes(self.completed.as_bytes(), self.piece_count);
             self.completed = completed;
         }
         if self.active_pieces.len() != self.piece_count {
@@ -610,10 +609,7 @@ impl ChunksSeenWindow {
 
             if label_width > 0 {
                 let marker = if selected { '>' } else { ' ' };
-                let label = fit_label(
-                    &format!("{}{}", marker, peer.address),
-                    label_width,
-                );
+                let label = fit_label(&format!("{}{}", marker, peer.address), label_width);
                 let label_style = if selected {
                     Style::default()
                         .fg(Color::Black)
@@ -652,7 +648,9 @@ impl ChunksSeenWindow {
         };
         let title = format!(
             "[Chunks seen: {}] {} pieces, {} peers",
-            name, self.piece_count, self.peers.len()
+            name,
+            self.piece_count,
+            self.peers.len()
         );
         canvas.print_at(0, 0, &title);
 

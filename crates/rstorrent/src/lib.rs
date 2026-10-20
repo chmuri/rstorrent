@@ -5,8 +5,8 @@ pub mod control;
 pub mod grpc;
 pub mod scgi;
 pub mod setup;
-pub mod ui_commands;
 pub mod signals;
+pub mod ui_commands;
 
 pub use cli::Cli;
 pub use control::Control;
@@ -64,8 +64,7 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     // raw mode so a failure inside `TerminalGuard::enter` still unwinds
     // cleanly.
     let _terminal_session = signals::TerminalSessionGuard::enter();
-    let mut terminal_guard =
-        TerminalGuard::enter_with_options(TerminalInputOptions::all())?;
+    let mut terminal_guard = TerminalGuard::enter_with_options(TerminalInputOptions::all())?;
     let mut terminal_backend = TerminalBackend::new();
 
     let (cols, rows) = TerminalBackend::size();
@@ -79,11 +78,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    control
-        .root_ui
-        .lock()
-        .unwrap()
-        .push_log("rstorrent initialized. Press 'l' for log, Backspace to load, ^X for command, ^Q to exit.");
+    control.root_ui.lock().unwrap().push_log(
+        "rstorrent initialized. Press 'l' for log, Backspace to load, ^X for command, ^Q to exit.",
+    );
 
     while !control.signals.is_shutdown() && !control.root_ui.lock().unwrap().shutdown_requested {
         control.inc_tick();
@@ -132,12 +129,8 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = control.try_load_torrent(&text, false);
                             }
                             InputPromptMode::Filter => {
-                                let win = control
-                                    .root_ui
-                                    .lock()
-                                    .unwrap()
-                                    .window_download_list
-                                    .clone();
+                                let win =
+                                    control.root_ui.lock().unwrap().window_download_list.clone();
                                 let mut win_lock = win.lock().unwrap();
                                 let view_arc = win_lock.view.clone();
                                 if let Some(v_arc) = &view_arc {
@@ -146,7 +139,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                                         v.set_filter_temp(lt_common::Object::create_empty());
                                     } else {
                                         let pattern = rt_tui::ui::create_filter_pattern(&text);
-                                        v.set_filter_temp(rt_tui::ui::create_filter_command(&pattern));
+                                        v.set_filter_temp(rt_tui::ui::create_filter_command(
+                                            &pattern,
+                                        ));
                                     }
                                     v.filter(None);
                                 }

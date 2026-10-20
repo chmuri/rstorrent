@@ -6,9 +6,7 @@ use lt_common::hash_string::HashString;
 use lt_crypto::sha1::sha1_hash;
 use lt_engine::constructor::{TorrentFileEntry, TorrentMetadata};
 use lt_engine::download::Download;
-use lt_engine::network::{
-    peer_fast_pieces, pex_statistics, run_inbound_peer_with_pool,
-};
+use lt_engine::network::{peer_fast_pieces, pex_statistics, run_inbound_peer_with_pool};
 use lt_engine::peer_pool::{PeerPool, PeerPoolHandle, PeerSource};
 use lt_protocol::extensions::{extension_handshake_payload, ut_pex_payload};
 use lt_protocol::handshake::HandshakeMessage;
@@ -60,8 +58,7 @@ async fn start(
     pool: Option<PeerPoolHandle>,
 ) -> (TcpStream, tokio::task::JoinHandle<()>, watch::Sender<bool>) {
     let our_peer_id = HashString::from_hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
-    let remote_peer_id =
-        HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
+    let remote_peer_id = HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
     let info_hash = *download.lock().unwrap().info_hash();
 
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -137,8 +134,7 @@ async fn fast_allowed_and_suggested_pieces_are_tracked() {
     let metadata = metadata(&payload, false);
     let info_hash = metadata.info_hash;
     let download = Arc::new(Mutex::new(Download::new(metadata)));
-    let remote_peer_id =
-        HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
+    let remote_peer_id = HashString::from_hex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
 
     let (mut client, session, shutdown_tx) = start(Arc::clone(&download), None).await;
     send_extension_handshake(&mut client, 1).await;
@@ -193,10 +189,7 @@ async fn pex_sends_connected_peers_and_accepts_updates() {
         .write_all(
             &PeerMessage::Extended {
                 id: LOCAL_PEX_ID,
-                payload: ut_pex_payload(
-                    &[lt_net::addr::SocketAddress::from(new_peer)],
-                    &[],
-                ),
+                payload: ut_pex_payload(&[lt_net::addr::SocketAddress::from(new_peer)], &[]),
             }
             .encode(),
         )
@@ -213,9 +206,10 @@ async fn pex_sends_connected_peers_and_accepts_updates() {
             .expect("peer closed");
         if let PeerMessage::Extended { id: 1, payload } = message {
             let pex = lt_protocol::extensions::UtPexMessage::parse(&payload).unwrap();
-            if pex.all_added().any(|address| {
-                address.as_socket_addr() == Some(peer)
-            }) {
+            if pex
+                .all_added()
+                .any(|address| address.as_socket_addr() == Some(peer))
+            {
                 saw_pex = true;
             }
         }
@@ -251,10 +245,7 @@ async fn private_torrents_ignore_pex() {
         .write_all(
             &PeerMessage::Extended {
                 id: LOCAL_PEX_ID,
-                payload: ut_pex_payload(
-                    &[lt_net::addr::SocketAddress::from(injected)],
-                    &[],
-                ),
+                payload: ut_pex_payload(&[lt_net::addr::SocketAddress::from(injected)], &[]),
             }
             .encode(),
         )

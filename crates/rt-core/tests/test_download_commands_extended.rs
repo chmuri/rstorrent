@@ -2,16 +2,15 @@ use std::sync::{Arc, RwLock};
 
 use lt_common::hash_string::HashString;
 use lt_common::Object;
-use rt_core::commands::download::register_download_commands;
 use lt_engine::constructor::{TorrentFileEntry, TorrentMetadata};
+use rt_core::commands::download::register_download_commands;
 use rt_core::download::Download;
 use rt_core::download_list::DownloadList;
 use rt_core::view_manager::ViewManager;
 use rt_rpc::{CommandMap, Target};
 
 fn metadata() -> TorrentMetadata {
-    let info_hash =
-        HashString::from_hex("3131313131313131313131313131313131313131").unwrap();
+    let info_hash = HashString::from_hex("3131313131313131313131313131313131313131").unwrap();
     let mut path = lt_common::path::Path::new();
     path.push("payload.bin");
 
@@ -56,7 +55,12 @@ fn setup() -> (CommandMap, Target, Arc<RwLock<Download>>) {
     (map, Target::Download(hash), download)
 }
 
-fn call(map: &CommandMap, name: &str, target: &Target, args: Vec<Object>) -> Result<Object, rt_rpc::RpcError> {
+fn call(
+    map: &CommandMap,
+    name: &str,
+    target: &Target,
+    args: Vec<Object>,
+) -> Result<Object, rt_rpc::RpcError> {
     let args = Object::create_list_with(args);
     map.call_command(name, &args, target, true)
 }
@@ -65,12 +69,48 @@ fn call(map: &CommandMap, name: &str, target: &Target, args: Vec<Object>) -> Res
 fn extended_getters_report_download_state() {
     let (map, target, _) = setup();
 
-    assert_eq!(call(&map, "d.is_meta", &target, vec![]).unwrap().as_value().unwrap(), 0);
-    assert_eq!(call(&map, "d.is_multi_file", &target, vec![]).unwrap().as_value().unwrap(), 0);
-    assert_eq!(call(&map, "d.chunk_size", &target, vec![]).unwrap().as_value().unwrap(), 16384);
-    assert_eq!(call(&map, "d.size_files", &target, vec![]).unwrap().as_value().unwrap(), 1);
-    assert_eq!(call(&map, "d.peers_max", &target, vec![]).unwrap().as_value().unwrap(), 200);
-    assert_eq!(call(&map, "d.tracker_size", &target, vec![]).unwrap().as_value().unwrap(), 1);
+    assert_eq!(
+        call(&map, "d.is_meta", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        call(&map, "d.is_multi_file", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        call(&map, "d.chunk_size", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        16384
+    );
+    assert_eq!(
+        call(&map, "d.size_files", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        call(&map, "d.peers_max", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        200
+    );
+    assert_eq!(
+        call(&map, "d.tracker_size", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        1
+    );
     assert!(call(&map, "d.state", &target, vec![])
         .unwrap()
         .as_value()
@@ -88,18 +128,30 @@ fn setters_and_custom_fields_round_trip() {
 
     assert!(call(&map, "d.message.set", &target, vec![Object::from("hello")]).is_ok());
     assert_eq!(
-        call(&map, "d.message", &target, vec![]).unwrap().as_str().unwrap(),
+        call(&map, "d.message", &target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
         "hello"
     );
 
     assert!(call(&map, "d.custom1.set", &target, vec![Object::from("tag")]).is_ok());
     assert_eq!(
-        call(&map, "d.custom1", &target, vec![]).unwrap().as_str().unwrap(),
+        call(&map, "d.custom1", &target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
         "tag"
     );
 
     assert!(call(&map, "d.group.set", &target, vec![Object::from(3i64)]).is_ok());
-    assert_eq!(call(&map, "d.group", &target, vec![]).unwrap().as_value().unwrap(), 3);
+    assert_eq!(
+        call(&map, "d.group", &target, vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        3
+    );
 
     assert!(call(&map, "d.peers_max.set", &target, vec![Object::from(25i64)]).is_ok());
     assert_eq!(
@@ -112,7 +164,13 @@ fn setters_and_custom_fields_round_trip() {
         25
     );
     assert!(call(&map, "d.peers_max.set", &target, vec![Object::from(-1i64)]).is_err());
-    assert!(call(&map, "d.peers_max.set", &target, vec![Object::from(65537i64)]).is_err());
+    assert!(call(
+        &map,
+        "d.peers_max.set",
+        &target,
+        vec![Object::from(65537i64)]
+    )
+    .is_err());
     assert!(call(&map, "d.peers_min.set", &target, vec![Object::from(-1i64)]).is_err());
 }
 
@@ -137,7 +195,13 @@ fn view_commands_manipulate_membership() {
         1
     );
 
-    assert!(call(&map, "d.views.push_back", &target, vec![Object::from("other")]).is_ok());
+    assert!(call(
+        &map,
+        "d.views.push_back",
+        &target,
+        vec![Object::from("other")]
+    )
+    .is_ok());
     assert_eq!(
         call(&map, "d.views.has", &target, vec![Object::from("other")])
             .unwrap()
@@ -161,10 +225,7 @@ fn peer_accounting_commands_use_chunk_statistics() {
     let mut path = lt_common::path::Path::new();
     path.push("payload.bin");
     let metadata = TorrentMetadata {
-        info_hash: HashString::from_hex(
-            "3232323232323232323232323232323232323232",
-        )
-        .unwrap(),
+        info_hash: HashString::from_hex("3232323232323232323232323232323232323232").unwrap(),
         name: "peer-accounting".to_string(),
         piece_length: 4,
         pieces: vec![0u8; 40],
@@ -234,7 +295,11 @@ fn peer_accounting_commands_use_chunk_statistics() {
         1
     );
 
-    download.write().unwrap().download_mut().remove_peer(&partial_id);
+    download
+        .write()
+        .unwrap()
+        .download_mut()
+        .remove_peer(&partial_id);
     assert_eq!(
         call(&map, "d.peers_accounted", &target, vec![])
             .unwrap()

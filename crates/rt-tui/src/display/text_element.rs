@@ -24,7 +24,11 @@ pub trait TextElement: Send + Sync {
         chunks.into_iter().map(|(s, _)| s).collect()
     }
 
-    fn render_styled(&self, target: &Target, command_map: Option<&CommandMap>) -> Vec<(String, Style)>;
+    fn render_styled(
+        &self,
+        target: &Target,
+        command_map: Option<&CommandMap>,
+    ) -> Vec<(String, Style)>;
 
     fn max_length(&self) -> usize;
 }
@@ -58,7 +62,11 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 impl TextElement for TextElementString {
-    fn render_styled(&self, _target: &Target, _command_map: Option<&CommandMap>) -> Vec<(String, Style)> {
+    fn render_styled(
+        &self,
+        _target: &Target,
+        _command_map: Option<&CommandMap>,
+    ) -> Vec<(String, Style)> {
         let mut out = self.text.clone();
         if (self.flags & FLAG_ESCAPE_HEX) != 0 {
             out = to_hex(out.as_bytes());
@@ -99,7 +107,11 @@ impl TextElementValue {
 }
 
 impl TextElement for TextElementValue {
-    fn render_styled(&self, target: &Target, _command_map: Option<&CommandMap>) -> Vec<(String, Style)> {
+    fn render_styled(
+        &self,
+        target: &Target,
+        _command_map: Option<&CommandMap>,
+    ) -> Vec<(String, Style)> {
         let val = (self.value_provider)(target);
 
         let formatted = if (self.flags & FLAG_KB) != 0 {
@@ -143,7 +155,12 @@ impl TextElementCommand {
         }
     }
 
-    pub fn with_length(command: impl Into<String>, flags: u32, style: Style, length: usize) -> Self {
+    pub fn with_length(
+        command: impl Into<String>,
+        flags: u32,
+        style: Style,
+        length: usize,
+    ) -> Self {
         Self {
             command: command.into(),
             flags,
@@ -154,7 +171,11 @@ impl TextElementCommand {
 }
 
 impl TextElement for TextElementCommand {
-    fn render_styled(&self, target: &Target, command_map: Option<&CommandMap>) -> Vec<(String, Style)> {
+    fn render_styled(
+        &self,
+        target: &Target,
+        command_map: Option<&CommandMap>,
+    ) -> Vec<(String, Style)> {
         let text = if let Some(map) = command_map {
             match map.call_command(&self.command, &Object::create_empty(), target, true) {
                 Ok(obj) => {
@@ -178,7 +199,10 @@ impl TextElement for TextElementCommand {
         }
         if self.length < res.len() {
             res.truncate(self.length);
-        } else if (self.flags & FLAG_FIXED_WIDTH) != 0 && self.length != usize::MAX && res.len() < self.length {
+        } else if (self.flags & FLAG_FIXED_WIDTH) != 0
+            && self.length != usize::MAX
+            && res.len() < self.length
+        {
             let pad = self.length - res.len();
             res.extend(std::iter::repeat(' ').take(pad));
         }
@@ -226,9 +250,17 @@ impl TextElementList {
 }
 
 impl TextElement for TextElementList {
-    fn render_styled(&self, target: &Target, command_map: Option<&CommandMap>) -> Vec<(String, Style)> {
+    fn render_styled(
+        &self,
+        target: &Target,
+        command_map: Option<&CommandMap>,
+    ) -> Vec<(String, Style)> {
         let mut out = Vec::new();
-        let mut col_count = if self.column_width.is_some() { self.column } else { 0 };
+        let mut col_count = if self.column_width.is_some() {
+            self.column
+        } else {
+            0
+        };
 
         for elem in &self.elements {
             let chunks = elem.render_styled(target, command_map);
@@ -258,7 +290,11 @@ impl TextElement for TextElementList {
 
     fn max_length(&self) -> usize {
         let mut total = 0usize;
-        let mut col_count = if self.column_width.is_some() { self.column } else { 0 };
+        let mut col_count = if self.column_width.is_some() {
+            self.column
+        } else {
+            0
+        };
         for elem in &self.elements {
             let len = if col_count > 0 {
                 col_count -= 1;

@@ -275,7 +275,10 @@ impl Menu {
     }
 
     pub fn title(&self) -> &str {
-        self.levels.first().map(|level| level.title.as_str()).unwrap_or("")
+        self.levels
+            .first()
+            .map(|level| level.title.as_str())
+            .unwrap_or("")
     }
 
     pub fn current_title(&self) -> &str {
@@ -297,7 +300,9 @@ impl Menu {
     }
 
     pub fn current_mut(&mut self) -> &mut MenuLevel {
-        self.levels.last_mut().expect("menu always has a root level")
+        self.levels
+            .last_mut()
+            .expect("menu always has a root level")
     }
 
     pub fn root(&self) -> &MenuLevel {
@@ -524,11 +529,7 @@ impl Menu {
     /// Up/down and page keys change the selection. Enter/right activate the
     /// selected entry (dispatching through `command_map`); escape/left pop one
     /// submenu level or request that the caller close the menu at the root.
-    pub fn handle_key(
-        &mut self,
-        key: i32,
-        command_map: &CommandMap,
-    ) -> Option<MenuOutcome> {
+    pub fn handle_key(&mut self, key: i32, command_map: &CommandMap) -> Option<MenuOutcome> {
         match key {
             k if k == KEY_UP || k == b'k' as i32 => {
                 self.move_up();
@@ -626,7 +627,8 @@ impl Menu {
         if len == 1 {
             self.current_mut().selected = 0;
         } else {
-            self.current_mut().selected = (selected as isize + delta).rem_euclid(len as isize) as usize;
+            self.current_mut().selected =
+                (selected as isize + delta).rem_euclid(len as isize) as usize;
         }
         self.ensure_visible(self.page_size);
     }
@@ -698,11 +700,7 @@ impl MenuElement {
     }
 
     /// Route a key to the menu and mark the element dirty for any handled key.
-    pub fn handle_key(
-        &mut self,
-        key: i32,
-        command_map: &CommandMap,
-    ) -> Option<MenuOutcome> {
+    pub fn handle_key(&mut self, key: i32, command_map: &CommandMap) -> Option<MenuOutcome> {
         let outcome = self.menu.handle_key(key, command_map)?;
         self.dirty = true;
         Some(outcome)
@@ -787,11 +785,7 @@ pub fn download_context_menu(hash: &HashString) -> Menu {
 }
 
 /// Download context menu with the state-dependent entries disabled.
-pub fn download_context_menu_with_state(
-    hash: &HashString,
-    active: bool,
-    paused: bool,
-) -> Menu {
+pub fn download_context_menu_with_state(hash: &HashString, active: bool, paused: bool) -> Menu {
     let mut menu = download_context_menu(hash);
     for entry in &mut menu.current_mut().entries {
         match entry.command.as_deref() {
@@ -834,11 +828,7 @@ pub fn file_context_menu(hash: &HashString, file_index: u32) -> Menu {
 }
 
 /// File context menu that disables the priority entry already in effect.
-pub fn file_context_menu_with_priority(
-    hash: &HashString,
-    file_index: u32,
-    priority: u32,
-) -> Menu {
+pub fn file_context_menu_with_priority(hash: &HashString, file_index: u32, priority: u32) -> Menu {
     let mut menu = file_context_menu(hash, file_index);
     if let Some(priority_menu) = menu
         .current_mut()
@@ -960,7 +950,9 @@ fn run_command(
 ) -> Result<(), rt_rpc::RpcError> {
     let trimmed = command.trim();
     if trimmed.is_empty() {
-        return Err(rt_rpc::RpcError::InputError("Empty menu command.".to_string()));
+        return Err(rt_rpc::RpcError::InputError(
+            "Empty menu command.".to_string(),
+        ));
     }
 
     let owned;

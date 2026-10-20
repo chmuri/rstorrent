@@ -240,7 +240,12 @@ impl TrackerController {
         let mut found_usable = false;
         let count = self.tracker_list.size();
         for i in 0..count {
-            if !self.tracker_list.at(i).map(|t| t.is_usable()).unwrap_or(false) {
+            if !self
+                .tracker_list
+                .at(i)
+                .map(|t| t.is_usable())
+                .unwrap_or(false)
+            {
                 continue;
             }
 
@@ -267,7 +272,12 @@ impl TrackerController {
 
         let count = self.tracker_list.size();
         for i in 0..count {
-            if self.tracker_list.at(i).map(|t| t.is_in_use()).unwrap_or(false) {
+            if self
+                .tracker_list
+                .at(i)
+                .map(|t| t.is_in_use())
+                .unwrap_or(false)
+            {
                 self.tracker_list.send_event(i, TrackerEvent::Stopped);
             }
         }
@@ -285,7 +295,12 @@ impl TrackerController {
 
         let count = self.tracker_list.size();
         for i in 0..count {
-            if self.tracker_list.at(i).map(|t| t.is_in_use()).unwrap_or(false) {
+            if self
+                .tracker_list
+                .at(i)
+                .map(|t| t.is_in_use())
+                .unwrap_or(false)
+            {
                 self.tracker_list.send_event(i, TrackerEvent::Completed);
             }
         }
@@ -533,7 +548,10 @@ impl TrackerController {
         let groups = self.tracker_list.size_group();
 
         for group in 0..groups {
-            if self.tracker_list.has_active_not_scrape_in_group(group as u32) {
+            if self
+                .tracker_list
+                .has_active_not_scrape_in_group(group as u32)
+            {
                 continue;
             }
 
