@@ -72,7 +72,7 @@ impl LuaEngine {
             .create_function(
                 move |lua,
                       (method, target_value, args): (
-                    mlua::String,
+                    mlua::LuaString,
                     mlua::Value,
                     mlua::MultiValue,
                 )| {
@@ -265,7 +265,7 @@ impl LuaEngine {
         // that would poison later calls.
         let started = Instant::now();
         let call_result = {
-            self.lua.set_hook(
+            let _ = self.lua.set_hook(
                 mlua::HookTriggers::new().every_nth_instruction(LUA_HOOK_INTERVAL),
                 move |_, _| {
                     if started.elapsed() > LUA_EXECUTION_TIMEOUT {
