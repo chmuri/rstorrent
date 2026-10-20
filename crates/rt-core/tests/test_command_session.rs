@@ -20,7 +20,7 @@ fn temp_session_dir(tag: &str) -> std::path::PathBuf {
             .as_nanos()
     ));
     std::fs::create_dir_all(&path).unwrap();
-    path
+    std::fs::canonicalize(&path).unwrap_or(path)
 }
 
 #[test]
