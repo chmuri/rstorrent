@@ -7,7 +7,6 @@ use nix::unistd::fdatasync;
 use nix::unistd::{fsync, write};
 use std::fs;
 use std::io::{self, Error, ErrorKind};
-use std::os::fd::RawFd;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,8 +200,6 @@ pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntr
     Ok(entries)
 }
 
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-
 fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
     // Remove any leftover temporary file first so that O_EXCL only ever fails
     // on an entry that appeared after the unlink, and O_NOFOLLOW keeps a symlink
@@ -213,14 +210,12 @@ fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
         Err(err) => return Err(err),
     }
 
-    let raw_fd: RawFd = open(
+    let fd = open(
         path,
         OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::from_bits_truncate(0o600),
     )
     .map_err(|e| Error::from_raw_os_error(e as i32))?;
-
-    let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
 
     let mut cursor = 0;
     while cursor < data.len() {
@@ -235,9 +230,9 @@ fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
 
     if use_fsyncdisk {
         #[cfg(target_os = "macos")]
-        let sync_res = fsync(fd.as_raw_fd());
+        let sync_res = fsync(&fd);
         #[cfg(not(target_os = "macos"))]
-        let sync_res = fdatasync(fd.as_raw_fd());
+        let sync_res = fdatasync(&fd);
 
         if let Err(e) = sync_res {
             return Err(Error::from_raw_os_error(e as i32));
@@ -265,11 +260,10 @@ fn sync_directory_of(path: &str) -> io::Result<()> {
         None => ".",
     };
 
-    let raw_fd = open(dir, OFlag::O_RDONLY | OFlag::O_DIRECTORY, Mode::empty())
+    let fd = open(dir, OFlag::O_RDONLY | OFlag::O_DIRECTORY, Mode::empty())
         .map_err(|e| Error::from_raw_os_error(e as i32))?;
 
-    let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
-    fsync(fd.as_raw_fd()).map_err(|e| Error::from_raw_os_error(e as i32))?;
+    fsync(&fd).map_err(|e| Error::from_raw_os_error(e as i32))?;
     drop(fd);
     Ok(())
 }

@@ -4,8 +4,9 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use hickory_resolver::config::{ResolverConfig, ResolverOpts};
-use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::config::ResolverConfig;
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
+use hickory_resolver::TokioResolver;
 
 use crate::addr::{AddressFamily, SocketAddress};
 use crate::error::NetError;
@@ -61,7 +62,7 @@ impl DnsCache {
 }
 
 pub struct DnsResolver {
-    resolver: TokioAsyncResolver,
+    resolver: TokioResolver,
     cache: DnsCache,
 }
 
@@ -73,17 +74,24 @@ impl Default for DnsResolver {
 
 impl DnsResolver {
     pub fn new() -> Result<Self, NetError> {
-        let resolver = match TokioAsyncResolver::tokio_from_system_conf() {
-            Ok(r) => r,
-            Err(_) => TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()),
-        };
+        let resolver = TokioResolver::builder_tokio()
+            .and_then(|b| b.build())
+            .or_else(|_| {
+                TokioResolver::builder_with_config(
+                    ResolverConfig::default(),
+                    TokioRuntimeProvider::default(),
+                )
+                .build()
+            })
+            .map_err(|e| NetError::Internal(format!("Failed to initialize DNS resolver: {e}")))?;
+
         Ok(Self {
             resolver,
             cache: DnsCache::default(),
         })
     }
 
-    pub fn with_resolver_and_cache(resolver: TokioAsyncResolver, cache: DnsCache) -> Self {
+    pub fn with_resolver_and_cache(resolver: TokioResolver, cache: DnsCache) -> Self {
         Self { resolver, cache }
     }
 
@@ -132,8 +140,9 @@ impl DnsResolver {
             let result_ips: Vec<IpAddr> = lookup.iter().collect();
             let min_ttl = lookup
                 .as_lookup()
-                .record_iter()
-                .map(|r| r.ttl())
+                .answers()
+                .iter()
+                .map(|r| r.ttl)
                 .min()
                 .unwrap_or(300);
             self.cache.insert(

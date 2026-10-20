@@ -1,6 +1,6 @@
-# GitHub Copilot Code Review Instructions
+# GitHub Copilot Code Review & Autofix Instructions
 
-This document provides guidelines for GitHub Copilot when reviewing Pull Requests in the `rstorrent` repository.
+This document provides guidelines for GitHub Copilot when reviewing Pull Requests and diagnosing/fixing CI failures in the `rstorrent` repository.
 
 ## General Repository Guidelines
 
@@ -29,3 +29,25 @@ When reviewing Pull Requests created by `@dependabot` (e.g. branch `dependabot/*
      - Submit an **Approve** review so that automated merge pipelines can proceed.
    - If the update causes a compilation failure, test regression, or introduces high-severity advisory alerts:
      - Request changes with a clear explanation of the failure.
+
+---
+
+## Automated CI Failure Diagnosis & Self-Healing Remediation
+
+When requested to resolve CI failures or when triggered via **"Fix with Copilot"**:
+
+### 1. Diagnosis Phase
+- Extract the exact compiler diagnostics from the failed run (`error[E...]`, `mismatched types`, `unresolved import`, etc.).
+- Identify which crate and source files triggered the compilation error.
+- Check recent changes in `Cargo.lock` / `Cargo.toml` to determine if a dependency bump introduced breaking API changes (e.g., `getrandom::getrandom` -> `getrandom::fill`, `nix::fcntl::open` returning `OwnedFd` instead of `RawFd`, or renamed resolver builders).
+
+### 2. Planning Phase
+- Formulate a precise, minimal patch addressing the breaking change across all affected crates in the workspace.
+- Avoid cascading architectural rewrites unless strictly necessary for type or lifetime compliance.
+- Prefer updating call sites to match modern idiomatic APIs over pinning old deprecated methods.
+
+### 3. Implementation Phase
+- Ensure memory safety: Do not introduce `unsafe` blocks.
+- Preserve existing comments and docstrings.
+- Ensure all modified targets pass formatting (`cargo fmt --check`) and workspace checks (`cargo check --workspace --all-targets`).
+- Verify that unit and integration tests compile and execute cleanly (`cargo test --workspace`).

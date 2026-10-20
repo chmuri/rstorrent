@@ -14,6 +14,9 @@ updates:
       - "rust"
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "quick-xml"
+        versions: [">= 0.38"]
     groups:
       tokio-ecosystem:
         patterns:
