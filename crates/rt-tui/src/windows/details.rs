@@ -13,6 +13,25 @@ pub enum DetailTab {
     Transfers,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CachedPeerDetailRow {
+    pub addr: String,
+    pub client: String,
+    pub flags: String,
+    pub rate_down_kb: f64,
+    pub rate_up_kb: f64,
+    pub downloaded: u64,
+    pub uploaded: u64,
+    pub done_pct: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CachedPeersState {
+    rows: Vec<CachedPeerDetailRow>,
+    tracker_status: String,
+    tracker_count: usize,
+}
+
 pub struct WindowDownloadDetails {
     pub flags: u32,
     pub download: Option<Arc<RwLock<Download>>>,
@@ -20,6 +39,10 @@ pub struct WindowDownloadDetails {
     pub scroll_offset: usize,
     pub page_size: usize,
     dirty: bool,
+    /// Refresh interval for the Peers tab (permanently throttled to 1.0s by default).
+    pub peer_refresh_interval: std::time::Duration,
+    last_peer_refresh: Option<std::time::Instant>,
+    cached_peers: CachedPeersState,
 }
 
 impl Default for WindowDownloadDetails {
@@ -37,19 +60,40 @@ impl WindowDownloadDetails {
             scroll_offset: 0,
             page_size: 15,
             dirty: true,
+            peer_refresh_interval: std::time::Duration::from_secs(1),
+            last_peer_refresh: None,
+            cached_peers: CachedPeersState::default(),
         }
     }
 
     pub fn set_download(&mut self, download: Option<Arc<RwLock<Download>>>) {
         self.download = download;
         self.scroll_offset = 0;
+        self.last_peer_refresh = None;
+        self.cached_peers = CachedPeersState::default();
         self.dirty = true;
     }
 
     pub fn set_tab(&mut self, tab: DetailTab) {
         self.current_tab = tab;
         self.scroll_offset = 0;
+        if tab == DetailTab::Peers {
+            self.last_peer_refresh = None;
+        }
         self.dirty = true;
+    }
+
+    pub fn refresh_peers(&mut self) {
+        self.last_peer_refresh = None;
+        self.dirty = true;
+    }
+
+    pub fn set_peer_refresh_interval(&mut self, interval: std::time::Duration) {
+        self.peer_refresh_interval = interval;
+    }
+
+    pub fn cached_peer_rows(&self) -> &[CachedPeerDetailRow] {
+        &self.cached_peers.rows
     }
 
     pub fn scroll_up(&mut self) {
@@ -243,68 +287,97 @@ impl Window for WindowDownloadDetails {
                 }
             }
             DetailTab::Peers => {
-                let engine = dl.download();
-                let connections = engine.connection_list();
+                let should_refresh = match self.last_peer_refresh {
+                    Some(last) => last.elapsed() >= self.peer_refresh_interval,
+                    None => true,
+                };
 
-                let mut peer_rows: Vec<_> = connections
-                    .iter()
-                    .map(|peer| {
-                        let mut rate_up = peer.rate_up.clone();
-                        let mut rate_down = peer.rate_down.clone();
-                        let rate_up_kb = (rate_up.rate() as f64) / 1024.0;
-                        let rate_down_kb = (rate_down.rate() as f64) / 1024.0;
-                        let bits = peer.bitfield.size_bits();
-                        let done_pct = if bits == 0 {
-                            0
-                        } else {
-                            (100 * peer.bitfield.size_set() as u64) / bits as u64
-                        };
-                        let mut flags = String::new();
-                        if peer.is_encrypted {
-                            flags.push('E');
-                        }
-                        if peer.is_obfuscated {
-                            flags.push('O');
-                        }
-                        if peer.is_incoming() {
-                            flags.push('I');
-                        }
-                        if peer.is_snubbed {
-                            flags.push('N');
-                        }
-                        if peer.is_preferred {
-                            flags.push('P');
-                        }
-                        if peer.is_banned {
-                            flags.push('B');
-                        }
-                        if peer.is_seeder() {
-                            flags.push('S');
-                        }
-                        if flags.is_empty() {
-                            flags.push('-');
-                        }
+                if should_refresh {
+                    self.last_peer_refresh = Some(std::time::Instant::now());
+                    let engine = dl.download();
+                    let connections = engine.connection_list();
 
-                        (
-                            peer.socket_address.pretty_str(),
-                            peer.client_version(),
-                            flags,
-                            rate_down_kb,
-                            rate_up_kb,
-                            peer.downloaded,
-                            peer.uploaded,
-                            done_pct,
-                        )
-                    })
-                    .collect();
+                    let mut peer_rows: Vec<CachedPeerDetailRow> = connections
+                        .iter()
+                        .map(|peer| {
+                            let mut rate_up = peer.rate_up.clone();
+                            let mut rate_down = peer.rate_down.clone();
+                            let rate_up_kb = (rate_up.rate() as f64) / 1024.0;
+                            let rate_down_kb = (rate_down.rate() as f64) / 1024.0;
+                            let bits = peer.bitfield.size_bits();
+                            let done_pct = if bits == 0 {
+                                0
+                            } else {
+                                (100 * peer.bitfield.size_set() as u64) / bits as u64
+                            };
+                            let mut flags = String::new();
+                            if peer.is_encrypted {
+                                flags.push('E');
+                            }
+                            if peer.is_obfuscated {
+                                flags.push('O');
+                            }
+                            if peer.is_incoming() {
+                                flags.push('I');
+                            }
+                            if peer.is_snubbed {
+                                flags.push('N');
+                            }
+                            if peer.is_preferred {
+                                flags.push('P');
+                            }
+                            if peer.is_banned {
+                                flags.push('B');
+                            }
+                            if peer.is_seeder() {
+                                flags.push('S');
+                            }
+                            if flags.is_empty() {
+                                flags.push('-');
+                            }
 
-                // Sort: actively downloading peers first (highest rate_down), then most downloaded bytes, then rate_up
-                peer_rows.sort_by(|a, b| {
-                    b.3.partial_cmp(&a.3)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| b.5.cmp(&a.5))
-                        .then_with(|| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal))
-                });
+                            CachedPeerDetailRow {
+                                addr: peer.socket_address.pretty_str(),
+                                client: peer.client_version(),
+                                flags,
+                                rate_down_kb,
+                                rate_up_kb,
+                                downloaded: peer.downloaded,
+                                uploaded: peer.uploaded,
+                                done_pct,
+                            }
+                        })
+                        .collect();
+
+                    // Sort: actively downloading peers first (highest rate_down), then most downloaded bytes, then rate_up
+                    peer_rows.sort_by(|a, b| {
+                        b.rate_down_kb
+                            .partial_cmp(&a.rate_down_kb)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| b.downloaded.cmp(&a.downloaded))
+                            .then_with(|| {
+                                b.rate_up_kb
+                                    .partial_cmp(&a.rate_up_kb)
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                    });
+
+                    let tracker_controller = engine.tracker_controller();
+                    let t_count = tracker_controller.tracker_list.size();
+                    let status = if tracker_controller.is_requesting() {
+                        "Announcing to tracker...".to_string()
+                    } else if t_count == 0 {
+                        "No trackers available".to_string()
+                    } else {
+                        "Waiting for tracker response or incoming connections".to_string()
+                    };
+
+                    self.cached_peers = CachedPeersState {
+                        rows: peer_rows,
+                        tracker_status: status,
+                        tracker_count: t_count,
+                    };
+                }
 
                 let width = canvas.width();
                 if width >= 105 {
@@ -324,61 +397,45 @@ impl Window for WindowDownloadDetails {
                 }
                 y += 1;
 
-                if peer_rows.is_empty() {
+                if self.cached_peers.rows.is_empty() {
                     canvas.print_at(
                         0,
                         y,
                         "  [No peers currently connected — contacting trackers / DHT...]",
                     );
                     y += 1;
-                    let tracker_controller = engine.tracker_controller();
-                    let t_count = tracker_controller.tracker_list.size();
-                    let status = if tracker_controller.is_requesting() {
-                        "Announcing to tracker..."
-                    } else if t_count == 0 {
-                        "No trackers available"
-                    } else {
-                        "Waiting for tracker response or incoming connections"
-                    };
                     canvas.print_at(
                         0,
                         y,
-                        &format!("  Status: {} (Trackers configured: {})", status, t_count),
+                        &format!(
+                            "  Status: {} (Trackers configured: {})",
+                            self.cached_peers.tracker_status, self.cached_peers.tracker_count
+                        ),
                     );
                 } else {
-                    for (
-                        addr,
-                        client,
-                        flags,
-                        rate_down_kb,
-                        rate_up_kb,
-                        downloaded,
-                        uploaded,
-                        done_pct,
-                    ) in peer_rows.into_iter().skip(self.scroll_offset)
-                    {
+                    for row in self.cached_peers.rows.iter().skip(self.scroll_offset) {
                         if y >= max_y {
                             break;
                         }
-                        let down_str = format_xb(downloaded as i64);
-                        let up_str = format_xb(uploaded as i64);
+                        let down_str = format_xb(row.downloaded as i64);
+                        let up_str = format_xb(row.uploaded as i64);
 
                         let line = if width >= 105 {
                             format!(
                                 "  {:<19} | {:<20} | {:>9.1} | {:>8.1} | {:>10} | {:>8} | {:>5}% | {:<5} ",
-                                addr,
-                                client,
-                                rate_down_kb,
-                                rate_up_kb,
+                                row.addr,
+                                row.client,
+                                row.rate_down_kb,
+                                row.rate_up_kb,
                                 down_str,
                                 up_str,
-                                done_pct,
-                                flags
+                                row.done_pct,
+                                row.flags
                             )
                         } else {
                             format!(
                                 "  {:<18} | {:<15} | {:>9.1} | {:>8.1} | {:>10} | {:<5} ",
-                                addr, client, rate_down_kb, rate_up_kb, down_str, flags
+                                row.addr, row.client, row.rate_down_kb, row.rate_up_kb, down_str, row.flags
                             )
                         };
                         canvas.print_at(0, y, &line);
