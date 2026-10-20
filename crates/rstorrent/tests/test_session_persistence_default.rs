@@ -81,7 +81,10 @@ async fn test_default_session_persists_and_restores_torrents() {
 
         let session_path = {
             let sm = control.session_manager.lock().unwrap();
-            assert!(sm.is_active(), "Session manager should be active by default");
+            assert!(
+                sm.is_active(),
+                "Session manager should be active by default"
+            );
             sm.path().to_string()
         };
 
@@ -91,7 +94,10 @@ async fn test_default_session_persists_and_restores_torrents() {
             "Session path should point to default XDG path, got: {}",
             session_path
         );
-        assert!(expected_session.exists(), "Default session directory should exist");
+        assert!(
+            expected_session.exists(),
+            "Default session directory should exist"
+        );
 
         let load_res = control.try_load_torrent(torrent_file.to_str().unwrap(), true);
         assert!(load_res.is_ok(), "Load failed: {:?}", load_res.err());

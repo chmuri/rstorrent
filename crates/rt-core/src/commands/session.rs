@@ -208,7 +208,8 @@ pub fn register_session_commands(
             let downloads = save_list.read().unwrap().all();
             let mut entries = Vec::with_capacity(downloads.len());
             for download in downloads {
-                let guard = download.read().unwrap();
+                let mut guard = download.write().unwrap();
+                guard.sync_metadata_from_engine();
                 match Manager::build_commit_entry(&guard) {
                     Ok(entry) => entries.push(entry),
                     Err(err) => {

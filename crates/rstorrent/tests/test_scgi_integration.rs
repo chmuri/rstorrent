@@ -56,7 +56,13 @@ where
 #[tokio::test]
 async fn test_scgi_socket_flood_xmlrpc() {
     let sock_path = format!("/tmp/test_rtorrent_{}.sock", std::process::id());
+    let session_dir = format!(
+        "/tmp/test_rtorrent_scgi_session_flood_{}",
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&sock_path);
+    let _ = std::fs::remove_dir_all(&session_dir);
+    std::fs::create_dir_all(&session_dir).unwrap();
 
     let mut control = Control::new();
     let cli = Cli {
@@ -64,7 +70,7 @@ async fn test_scgi_socket_flood_xmlrpc() {
         directory: None,
         local_address: None,
         port_range: None,
-        session: None,
+        session: Some(session_dir.clone()),
         no_rc: true,
         config_file: None,
         daemon: true,
@@ -122,12 +128,20 @@ async fn test_scgi_socket_flood_xmlrpc() {
     assert!(remaining.is_empty());
 
     let _ = std::fs::remove_file(&sock_path);
+    control.shutdown().await;
+    let _ = std::fs::remove_dir_all(&session_dir);
 }
 
 #[tokio::test]
 async fn test_scgi_socket_load_raw_start() {
     let sock_path = format!("/tmp/test_rtorrent_load_{}.sock", std::process::id());
+    let session_dir = format!(
+        "/tmp/test_rtorrent_scgi_session_load_{}",
+        std::process::id()
+    );
     let _ = std::fs::remove_file(&sock_path);
+    let _ = std::fs::remove_dir_all(&session_dir);
+    std::fs::create_dir_all(&session_dir).unwrap();
 
     let mut control = Control::new();
     let cli = Cli {
@@ -135,7 +149,7 @@ async fn test_scgi_socket_load_raw_start() {
         directory: None,
         local_address: None,
         port_range: None,
-        session: None,
+        session: Some(session_dir.clone()),
         no_rc: true,
         config_file: None,
         daemon: true,
@@ -198,4 +212,6 @@ async fn test_scgi_socket_load_raw_start() {
 
     stream.shutdown().await.unwrap();
     let _ = std::fs::remove_file(&sock_path);
+    control.shutdown().await;
+    let _ = std::fs::remove_dir_all(&session_dir);
 }

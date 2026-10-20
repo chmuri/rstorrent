@@ -104,7 +104,9 @@ impl DownloadFactory {
         if let Some(uri) = &self.magnet {
             let metadata = DownloadConstructor::from_magnet_uri(uri)
                 .map_err(|e| Error::new(ErrorKind::InvalidData, format!("magnet error: {}", e)))?;
-            return Ok(Download::from_metadata(metadata));
+            let mut download = Download::from_metadata(metadata);
+            download.set_magnet_uri(uri.clone());
+            return Ok(download);
         }
 
         let object = self

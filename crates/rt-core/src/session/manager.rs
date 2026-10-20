@@ -88,8 +88,8 @@ impl SessionManager {
             return Ok(());
         }
 
-        let expanded = crate::commands::system::expand_tilde(path)
-            .unwrap_or_else(|_| path.to_string());
+        let expanded =
+            crate::commands::system::expand_tilde(path).unwrap_or_else(|_| path.to_string());
         let _ = fs::create_dir_all(&expanded);
 
         let resolved = resolve_path(&expanded);
@@ -374,6 +374,15 @@ impl SessionManager {
         });
         entries.sort_by(|a, b| a.s_name.cmp(&b.s_name));
         Ok(entries)
+    }
+
+    /// Returns all restorable base names, including magnet placeholders whose
+    /// static `.torrent` file has not been written yet.
+    pub fn get_restorable_entries(&self) -> io::Result<Vec<super::storer::SessionEntry>> {
+        if self.path.is_empty() {
+            return Ok(Vec::new());
+        }
+        super::storer::get_restorable_entries(&self.path)
     }
 
     pub fn remove_session_files(&self, info_hash_hex: &str) -> io::Result<()> {

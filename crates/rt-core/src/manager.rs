@@ -103,6 +103,11 @@ impl Manager {
             "state_counter",
             Object::from(download.state_counter() as i64),
         );
+        if let Some(uri) = download.magnet_uri() {
+            // Kept even after metadata arrives: if the `.torrent` file is ever
+            // missing, the placeholder can still be recreated from this URI.
+            let _ = rtorrent_obj.insert_key("magnet_uri", Object::from(uri));
+        }
 
         let resume = download.to_resume_data();
         let mut resume_obj = resume.to_object();
@@ -142,7 +147,11 @@ impl Manager {
         let mut first_error = None;
 
         for download in downloads {
-            let guard = download.read().unwrap();
+            let mut guard = download.write().unwrap();
+            // Magnet metadata may have been applied since the last network
+            // supervisor tick. Refresh the wrapper (and its bencode) before
+            // serializing so a shutdown never loses a freshly fetched torrent.
+            guard.sync_metadata_from_engine();
             match Self::build_commit_entry(&guard) {
                 Ok(entry) => entries.push(entry),
                 Err(err) => {
@@ -234,7 +243,7 @@ impl Manager {
             if !session.is_used() || !session.is_active() {
                 return Ok(0);
             }
-            match session.get_valid_entries() {
+            match session.get_restorable_entries() {
                 Ok(entries) => entries,
                 Err(err) => {
                     tracing::error!(
@@ -255,21 +264,38 @@ impl Manager {
         let mut restored = 0usize;
 
         for entry in entries {
-            let torrent_path = format!("{}{}", session_path, entry.s_name);
-            let expected_hash = &entry.s_name[..40];
+            let torrent_path = format!("{}{}", session_path, entry.base_name);
+            let expected_hash = &entry.base_name[..40];
 
-            let restored_entry =
-                match crate::session::load_session_download(&torrent_path, expected_hash) {
-                    Ok(entry) => entry,
-                    Err(err) => {
-                        tracing::warn!(
-                            path = %torrent_path,
-                            error = %err,
-                            "Skipping invalid session torrent entry."
-                        );
-                        continue;
-                    }
-                };
+            if self
+                .download_list
+                .read()
+                .unwrap()
+                .find_hex(expected_hash)
+                .is_some()
+            {
+                tracing::debug!(
+                    path = %torrent_path,
+                    "Session entry already loaded; skipping duplicate."
+                );
+                continue;
+            }
+
+            let restored_entry = match crate::session::restore_session_entry(
+                &torrent_path,
+                expected_hash,
+                entry.has_torrent,
+            ) {
+                Ok(entry) => entry,
+                Err(err) => {
+                    tracing::warn!(
+                        path = %torrent_path,
+                        error = %err,
+                        "Skipping invalid session torrent entry."
+                    );
+                    continue;
+                }
+            };
 
             if let Some(err) = &restored_entry.resume_error {
                 tracing::warn!(

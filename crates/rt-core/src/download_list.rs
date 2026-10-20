@@ -22,10 +22,25 @@ impl DownloadList {
         self.listeners.push(listener);
     }
 
+    /// Dispatches an internal lifecycle event to every registered listener.
+    ///
+    /// This is not exposed through RPC: listeners are process-local hooks such
+    /// as the session writer. Callers must not hold a download read/write lock
+    /// when invoking it.
     fn emit(&self, event: &str, download: &Arc<RwLock<Download>>) {
         for listener in &self.listeners {
             listener(event, download);
         }
+    }
+
+    /// Notifies listeners that verified magnet metadata just became available.
+    ///
+    /// The network supervisor calls this exactly once per download, immediately
+    /// after [`Download::sync_metadata_from_engine`] has rebuilt the static
+    /// torrent. The session writer uses it to persist `<info-hash>.torrent`
+    /// without waiting for the periodic commit.
+    pub fn notify_metadata_updated(&self, download: &Arc<RwLock<Download>>) {
+        self.emit("event.download.metadata", download);
     }
 
     pub fn len(&self) -> usize {
