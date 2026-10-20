@@ -558,16 +558,60 @@ impl Control {
     }
 
     pub fn try_load_torrent(&self, path: &str, start: bool) -> Result<(), String> {
+        let trimmed = path.trim().trim_matches('\'').trim_matches('"').trim();
+        if trimmed.is_empty() {
+            return Err("Empty torrent path or magnet URI".to_string());
+        }
+
         let mut factory = DownloadFactory::new();
         factory.set_start(start);
         factory.set_init_load(true);
-        factory
-            .load_file(path)
-            .map_err(|e| format!("Load failed: {}", e))?;
+
+        if trimmed.starts_with("data:") {
+            let pos = trimmed
+                .find("base64,")
+                .ok_or_else(|| "Invalid data uri: not base64 encoded".to_string())?;
+            let start_idx = pos + 7;
+            let b64 = &trimmed[start_idx..];
+            let cleaned: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
+            use base64::prelude::*;
+            let decoded = BASE64_STANDARD
+                .decode(&cleaned)
+                .map_err(|e| format!("Invalid base64 in data URI: {e}"))?;
+            factory
+                .load_raw_data(&decoded)
+                .map_err(|e| format!("Load data failed: {}", e))?;
+        } else if trimmed.starts_with("magnet:?") {
+            factory
+                .load_magnet(trimmed)
+                .map_err(|e| format!("Load magnet failed: {}", e))?;
+        } else {
+            factory
+                .load_file(trimmed)
+                .map_err(|e| format!("Load failed: {}", e))?;
+        }
+
         let mut dl_list = self.download_list.write().unwrap();
-        let download = factory
-            .commit(&mut dl_list)
-            .map_err(|e| format!("Commit failed: {}", e))?;
+        let download = match factory.commit(&mut dl_list) {
+            Ok(dl) => dl,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if let Ok(placeholder) = factory.create_download() {
+                    let hash = *placeholder.info_hash();
+                    if let Some(existing_dl) = dl_list.find(&hash) {
+                        if start {
+                            dl_list.start(&existing_dl);
+                        }
+                        self.root_ui.lock().unwrap().push_log(format!(
+                            "Torrent already exists, updated/started: '{}'",
+                            trimmed
+                        ));
+                        return Ok(());
+                    }
+                }
+                return Err(format!("Commit failed: {}", e));
+            }
+            Err(e) => return Err(format!("Commit failed: {}", e)),
+        };
 
         let default_dir = {
             let map = self.command_map.read().unwrap();
@@ -588,7 +632,7 @@ impl Control {
         self.root_ui
             .lock()
             .unwrap()
-            .push_log(format!("Loaded torrent from '{}'", path));
+            .push_log(format!("Loaded torrent from '{}'", trimmed));
         Ok(())
     }
 
