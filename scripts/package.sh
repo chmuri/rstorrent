@@ -27,6 +27,10 @@ mkdir -p "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}"
 install -m 0755 "${BINARY}" "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent"
 ln -s rstorrent "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rtorrent"
 
+if [[ "${TARGET}" == *"apple-darwin"* ]] && command -v codesign >/dev/null 2>&1; then
+    codesign -s - "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent" || true
+fi
+
 for doc in README.md CHANGELOG.md LICENSE CONTRIBUTING.md; do
     if [ -f "${ROOT_DIR}/${doc}" ]; then
         install -m 0644 "${ROOT_DIR}/${doc}" "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/${doc}"

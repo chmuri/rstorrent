@@ -11,10 +11,7 @@ env:
 
 jobs:
   fmt:
-    name: rustfmt (advisory)
-    # The port is not fully rustfmt-clean yet; keep the check visible without
-    # blocking pull requests until the formatting pass lands.
-    continue-on-error: true
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +42,6 @@ jobs:
 
   test:
     name: test (${{ matrix.os }})
-    # Linux is the reference runtime and gates the build. The macOS build and
-    # packages are blocking, but a few storage tests still assert Linux-only
-    # fadvise behaviour, so macOS test results are advisory for now.
-    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

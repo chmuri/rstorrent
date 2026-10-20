@@ -177,19 +177,31 @@ fn test_peer_commands() {
     assert_eq!(51413, port.as_value().unwrap());
 }
 
+fn bin_prog(name: &str) -> String {
+    for dir in ["/bin", "/usr/bin"] {
+        let p = format!("{dir}/{name}");
+        if std::path::Path::new(&p).exists() {
+            return p;
+        }
+    }
+    name.to_string()
+}
+
 #[test]
 fn test_execute_command_family() {
     let mut map = CommandMap::new();
     register_exec_commands(&mut map).unwrap();
 
+    let echo_cmd = bin_prog("echo");
     let capture_args =
-        Object::create_list_with(vec![Object::from("/bin/echo"), Object::from("domain")]);
+        Object::create_list_with(vec![Object::from(echo_cmd), Object::from("domain")]);
     let captured = map
         .call_command("execute.capture", &capture_args, &Target::None, true)
         .unwrap();
     assert_eq!(captured.as_string().unwrap(), b"domain\n");
 
-    let false_args = Object::create_list_with(vec![Object::from("/bin/false")]);
+    let false_cmd = bin_prog("false");
+    let false_args = Object::create_list_with(vec![Object::from(false_cmd)]);
     assert!(map
         .call_command("execute", &false_args, &Target::None, true)
         .is_err());
