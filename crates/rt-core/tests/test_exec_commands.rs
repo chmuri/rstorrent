@@ -24,6 +24,16 @@ fn call_objects(
     map.call_command(name, &list, &Target::None, true)
 }
 
+fn bin_prog(name: &str) -> String {
+    for dir in ["/bin", "/usr/bin"] {
+        let p = format!("{dir}/{name}");
+        if std::path::Path::new(&p).exists() {
+            return p;
+        }
+    }
+    name.to_string()
+}
+
 #[test]
 fn all_execute_variants_are_registered() {
     let map = map();
@@ -105,21 +115,23 @@ fn capture_nothrow_returns_output_on_failure() {
 #[test]
 fn throw_and_nothrow_semantics() {
     let map = map();
+    let t = bin_prog("true");
+    let f = bin_prog("false");
 
     assert_eq!(
-        call(&map, "execute", vec!["/bin/true"])
+        call(&map, "execute", vec![&t])
             .unwrap()
             .as_value()
             .unwrap(),
         0
     );
-    assert!(call(&map, "execute", vec!["/bin/false"]).is_err());
-    assert!(call(&map, "execute.throw", vec!["/bin/false"]).is_err());
+    assert!(call(&map, "execute", vec![&f]).is_err());
+    assert!(call(&map, "execute.throw", vec![&f]).is_err());
 
-    let result = call(&map, "execute.nothrow", vec!["/bin/false"]).unwrap();
+    let result = call(&map, "execute.nothrow", vec![&f]).unwrap();
     assert_eq!(result.as_value().unwrap(), 1);
 
-    let raw = call(&map, "execute.raw_nothrow", vec!["/bin/false"]).unwrap();
+    let raw = call(&map, "execute.raw_nothrow", vec![&f]).unwrap();
     assert_eq!(raw.as_value().unwrap(), 1);
 }
 
@@ -185,14 +197,15 @@ fn rejects_missing_or_empty_command() {
 #[test]
 fn enforces_argument_limit() {
     let map = map();
+    let t = bin_prog("true");
 
     // Command path plus the maximum of 128 arguments is accepted.
-    let mut max_args = vec![Object::from("/bin/true")];
+    let mut max_args = vec![Object::from(t.clone())];
     max_args.extend((0..128).map(|index| Object::from(format!("arg-{index}"))));
     assert!(call_objects(&map, "execute", max_args).is_ok());
 
     // One more argument is rejected before spawning.
-    let mut too_many = vec![Object::from("/bin/true")];
+    let mut too_many = vec![Object::from(t)];
     too_many.extend((0..129).map(|index| Object::from(format!("arg-{index}"))));
     let error = call_objects(&map, "execute", too_many)
         .unwrap_err()
@@ -204,7 +217,8 @@ fn enforces_argument_limit() {
 fn background_never_blocks_the_rpc_caller() {
     let map = map();
     let start = Instant::now();
-    let result = call(&map, "execute.throw.bg", vec!["/bin/sleep", "2"]).unwrap();
+    let sleep_cmd = bin_prog("sleep");
+    let result = call(&map, "execute.throw.bg", vec![&sleep_cmd, "2"]).unwrap();
     let elapsed = start.elapsed();
 
     assert_eq!(result.as_value().unwrap(), 0);
@@ -213,7 +227,8 @@ fn background_never_blocks_the_rpc_caller() {
         "background command blocked for {elapsed:?}"
     );
 
-    let result = call(&map, "execute.nothrow.bg", vec!["/bin/true"]).unwrap();
+    let t = bin_prog("true");
+    let result = call(&map, "execute.nothrow.bg", vec![&t]).unwrap();
     assert_eq!(result.as_value().unwrap(), 0);
 }
 
@@ -272,13 +287,15 @@ fn tilde_expansion_is_applied_only_to_legacy_variants() {
 #[test]
 fn execute2_is_a_legacy_alias_for_execute() {
     let map = map();
+    let t = bin_prog("true");
+    let f = bin_prog("false");
 
     assert_eq!(
-        call(&map, "execute2", vec!["/bin/true"])
+        call(&map, "execute2", vec![&t])
             .unwrap()
             .as_value()
             .unwrap(),
         0
     );
-    assert!(call(&map, "execute2", vec!["/bin/false"]).is_err());
+    assert!(call(&map, "execute2", vec![&f]).is_err());
 }
