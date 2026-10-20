@@ -34,7 +34,7 @@ impl DiffieHellman {
         let size = prime_bytes.len();
 
         let mut priv_bytes = [0u8; 96];
-        getrandom::getrandom(&mut priv_bytes).expect("getrandom failed");
+        getrandom::fill(&mut priv_bytes).expect("getrandom failed");
         let mut priv_key = BigUint::from_bytes_be(&priv_bytes);
         if priv_key >= prime {
             priv_key %= &prime;

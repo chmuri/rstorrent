@@ -207,13 +207,13 @@ async fn read_until_pattern<S: AsyncRead + Unpin>(
 
 fn random_padding() -> Result<Vec<u8>, MseError> {
     let mut length_bytes = [0u8; 2];
-    getrandom::getrandom(&mut length_bytes)
+    getrandom::fill(&mut length_bytes)
         .map_err(|err| MseError::Protocol(format!("getrandom failed: {err}")))?;
     // Legacy: random() % enc_pad_size, i.e. strictly less than 512.
     let length = u16::from_be_bytes(length_bytes) as usize % MAX_PAD;
 
     let mut padding = vec![0u8; length];
-    getrandom::getrandom(&mut padding)
+    getrandom::fill(&mut padding)
         .map_err(|err| MseError::Protocol(format!("getrandom failed: {err}")))?;
     Ok(padding)
 }

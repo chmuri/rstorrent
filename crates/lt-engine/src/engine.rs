@@ -26,7 +26,7 @@ impl EngineManager {
         // Generate client Peer ID with standard prefix '-RS0100-'
         let mut id_bytes = [0u8; 20];
         id_bytes[0..8].copy_from_slice(b"-RS0100-");
-        let _ = getrandom::getrandom(&mut id_bytes[8..20]);
+        let _ = getrandom::fill(&mut id_bytes[8..20]);
 
         Self {
             peer_id: HashString::new(id_bytes),

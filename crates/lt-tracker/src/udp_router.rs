@@ -14,7 +14,7 @@ impl RandomEngine {
 
     pub fn new() -> Self {
         let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed).expect("failed to get random seed");
+        getrandom::fill(&mut seed).expect("failed to get random seed");
         let mut state = [0u32; 8];
         for i in 0..8 {
             state[i] = u32::from_ne_bytes([
