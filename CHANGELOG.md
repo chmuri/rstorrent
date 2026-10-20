@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-20
+
+Point release overhauling the TUI torrent detail views, adding full per-peer download/upload rate and progress tracking, introducing auto-refresh for file completion, and fixing UI key navigation.
+
+### Added
+
+- **Torrent Details View Overhaul (`rt-tui`)**:
+  - Implemented dynamic data rendering across all tabs in `WindowDownloadDetails`:
+    - `[1: Info]`: Live transfer rates (Up/Down KB/s), downloaded/uploaded totals, ratio, ETA, connected peers count, and active tracker summary.
+    - `[2: Peers]`: Live peer list populated from `connection_list()`, displaying endpoint (`IP:Port`), client identification, protocol flags (`EINPSBO`), download and upload speeds, downloaded/uploaded totals, and piece completion percentage.
+    - `[3: Files]`: Live file status reporting actual file priority (`off`, `normal`, `high`), file size, completed bytes, and progress percentage.
+    - `[4: Trackers]`: Real-time tracker status from `TrackerController` (`Active`, `Connect`, `Failed`, `Disabled`, `Idle`), protocol type (`HTTP`, `UDP`, `DHT`), scrape statistics (seeders/leechers), and announce countdown.
+    - `[5: Chunks]`: Chunk distribution overview, piece size, integrity progress bar, and active download count.
+    - `[6: Transfers]`: Active block transfer monitoring from the engine delegator.
+  - Added sorting in the peer tab: actively downloading peers (highest download rate) and peers with the most downloaded bytes automatically sort to the top of the list.
+  - Added responsive layout in the peer tab: compact format designed to fit within standard 80-column terminals without clipping download statistics, expanding to include upload and piece completion on wider displays (>= 105 cols).
+  - Added `PageUp` and `PageDown` scrolling support across detail tabs.
+  - Added dedicated unit test suite for download details (`test_ui_details.rs`).
+
+- **Per-Peer Transfer Accounting (`lt-engine`)**:
+  - Wired peer-level download accounting (`peer.add_downloaded`) upon receiving `PeerMessage::Piece` blocks in `network.rs`, enabling real-time per-peer download rates and downloaded byte totals.
+  - Wired peer-level upload accounting (`dl.record_upload_for_peer`) when sending block payloads.
+
+- **Auto-Refresh for File View (`rt-tui`)**:
+  - Added `auto_refresh` support to `WindowFileList` (`'v'` view) to dynamically reflect chunk completion and progress in real time without requiring manual refresh (`'r'`).
+
+### Fixed
+
+- **Torrent Details Tab 2 Stub**:
+  - Fixed hardcoded `[No peers currently connected]` stub in `WindowDownloadDetails` that prevented connected peers from ever being displayed after pressing `Enter` and navigating to tab 2.
+- **Lock Deadlock in Detail Files Tab**:
+  - Fixed reentrant mutex deadlock in `WindowDownloadDetails` when querying file progress while holding the engine download guard.
+- **TUI Key Routing in Detail Views**:
+  - Guarded keys `7` through `0` while in `ActiveScreen::DownloadDetails` to prevent unintentional switching of background download list views.
+
 ## [0.10.1] - 2026-10-20
 
 Point release resolving interactive terminal paste issues, fixing platform-specific test failures on macOS, enabling blocking multi-platform CI, and enforcing codebase-wide formatting standards.

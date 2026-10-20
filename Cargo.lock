@@ -1157,7 +1157,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lt-common"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "base64 0.22.1",
  "bitflags",
@@ -1171,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "lt-crypto"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "getrandom 0.2.17",
  "lt-common",
@@ -1184,7 +1184,7 @@ dependencies = [
 
 [[package]]
 name = "lt-dht"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bytes",
  "lt-common",
@@ -1197,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "lt-engine"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1217,7 +1217,7 @@ dependencies = [
 
 [[package]]
 name = "lt-net"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "lt-protocol"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "lt-storage"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1265,7 +1265,7 @@ dependencies = [
 
 [[package]]
 name = "lt-sys"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "flate2",
  "libc",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "lt-tracker"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1941,7 +1941,7 @@ dependencies = [
 
 [[package]]
 name = "rstorrent"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1966,7 +1966,7 @@ dependencies = [
 
 [[package]]
 name = "rt-core"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.2.17",
@@ -1989,7 +1989,7 @@ dependencies = [
 
 [[package]]
 name = "rt-grpc"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "futures-util",
  "lt-common",
@@ -2010,7 +2010,7 @@ dependencies = [
 
 [[package]]
 name = "rt-rpc"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "base64 0.22.1",
  "lt-common",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "rt-scgi"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bytes",
  "flate2",
@@ -2040,11 +2040,13 @@ dependencies = [
 
 [[package]]
 name = "rt-tui"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "crossterm",
  "lt-common",
  "lt-engine",
+ "lt-net",
+ "lt-protocol",
  "ratatui",
  "rt-core",
  "rt-rpc",

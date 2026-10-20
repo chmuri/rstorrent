@@ -16,3 +16,5 @@ crossterm.workspace = true
 
 [dev-dependencies]
 lt-engine.workspace = true
+lt-protocol.workspace = true
+lt-net.workspace = true

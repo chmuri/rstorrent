@@ -11,6 +11,10 @@ cookies.txt
 # Large test payloads / torrent media
 *.torrent
 *.iso
+*.mp4
+*.mkv
+*.avi
+Black Panther*/
 
 # Logs & audit reports
 *.log

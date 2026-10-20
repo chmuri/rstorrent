@@ -119,6 +119,7 @@ pub struct WindowFileList {
     pub total_dirs: usize,
     last_height: u32,
     all_files: Vec<FileTarget>,
+    pub auto_refresh: bool,
     dirty: bool,
 }
 
@@ -146,6 +147,7 @@ impl WindowFileList {
             total_dirs: 0,
             last_height: 24,
             all_files: Vec::new(),
+            auto_refresh: true,
             dirty: true,
         }
     }
@@ -748,6 +750,9 @@ impl Window for WindowFileList {
         }
 
         canvas.erase();
+        if self.auto_refresh && self.download.is_some() {
+            self.refresh();
+        }
         self.last_height = canvas.height();
         self.clamp_focus();
 
