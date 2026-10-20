@@ -194,14 +194,14 @@ pub fn install_panic_hook() {
         let restored = restore_terminal_once();
         if let Some(location) = info.location() {
             eprintln!(
-                "rtorrent: panic at {}:{}:{} (terminal restored: {})",
+                "rstorrent: panic at {}:{}:{} (terminal restored: {})",
                 location.file(),
                 location.line(),
                 location.column(),
                 restored
             );
         } else {
-            eprintln!("rtorrent: panic (terminal restored: {})", restored);
+            eprintln!("rstorrent: panic (terminal restored: {})", restored);
         }
         default_hook(info);
     }));

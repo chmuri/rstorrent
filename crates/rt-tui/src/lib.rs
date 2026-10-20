@@ -1,4 +1,4 @@
-//! Crate `rt-tui`: Terminal User Interface for rtorrent
+//! Crate `rt-tui`: Terminal User Interface for rstorrent
 
 pub mod display;
 pub mod input;

@@ -1,4 +1,4 @@
-# Default rTorrent configuration for Docker container
+# Default rstorrent configuration for Docker container
 
 # Default download directory
 directory.default.set = /downloads

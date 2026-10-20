@@ -1,4 +1,4 @@
-//! Crate `rtorrent`: Main entry point, CLI, Control, Setup, Signals
+//! Crate `rstorrent`: Main entry point, CLI, Control, Setup, Signals
 
 pub mod cli;
 pub mod control;

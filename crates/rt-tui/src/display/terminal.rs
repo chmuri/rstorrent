@@ -2,7 +2,7 @@
 //!
 //! # Main-loop wiring
 //!
-//! `rtorrent/src/main.rs` should:
+//! `rstorrent/src/main.rs` should:
 //!
 //! 1. Choose capture options and enter terminal mode with
 //!    [`TerminalGuard::enter_with_options`]. Mouse and focus reporting are only
