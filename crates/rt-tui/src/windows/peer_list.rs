@@ -345,9 +345,11 @@ pub struct PeerListWindow {
     /// `None` means use [`PeerColumnWidths::for_width`] at draw time.
     pub column_widths: Option<PeerColumnWidths>,
     pub sort_mode: PeerSort,
-    /// When true, `redraw` snapshots the live download on every frame. This
-    /// keeps connect/disconnect and rate ticks current without extra wiring.
+    /// When true, `redraw` snapshots the live download at the configured interval.
     pub auto_refresh: bool,
+    /// Throttling interval for auto-refreshing the peer list (permanently throttled to 1.0s by default).
+    pub refresh_interval: std::time::Duration,
+    last_refresh: Option<std::time::Instant>,
     dirty: bool,
 }
 
@@ -369,6 +371,8 @@ impl PeerListWindow {
             column_widths: None,
             sort_mode: PeerSort::ConnectionOrder,
             auto_refresh: true,
+            refresh_interval: std::time::Duration::from_secs(1),
+            last_refresh: None,
             dirty: true,
         }
     }
@@ -377,7 +381,19 @@ impl PeerListWindow {
         self.download = download;
         self.selected = 0;
         self.scroll_offset = 0;
+        self.last_refresh = None;
         self.refresh();
+    }
+
+    /// Set throttling interval for auto-refreshing the peer list.
+    pub fn set_refresh_interval(&mut self, interval: std::time::Duration) {
+        self.refresh_interval = interval;
+    }
+
+    /// Invalidate the refresh timestamp to force a refresh on the next redraw.
+    pub fn invalidate_refresh(&mut self) {
+        self.last_refresh = None;
+        self.dirty = true;
     }
 
     /// Install a detached snapshot, primarily useful for tests and for
@@ -458,6 +474,7 @@ impl PeerListWindow {
     /// Re-snapshot the live download's peer list. Selection is preserved by
     /// peer id + address; if that peer vanished the index is clamped.
     pub fn refresh(&mut self) {
+        self.last_refresh = Some(std::time::Instant::now());
         let previous = self.selection_key();
         match self.snapshot_live_peers() {
             Some(peers) => {
@@ -783,7 +800,13 @@ impl Window for PeerListWindow {
         canvas.erase();
 
         if self.auto_refresh && self.download.is_some() {
-            self.refresh();
+            let should_refresh = match self.last_refresh {
+                Some(last) => last.elapsed() >= self.refresh_interval,
+                None => true,
+            };
+            if should_refresh {
+                self.refresh();
+            }
         }
         self.normalize_selection();
 

@@ -244,3 +244,39 @@ fn test_actions_report_missing_context() {
     );
     assert_eq!(window.handle_action_key(b'x' as i32), None);
 }
+
+#[test]
+fn test_peer_list_refresh_throttling() {
+    use lt_net::addr::SocketAddress;
+    use lt_protocol::connection::PeerConnection;
+    use std::str::FromStr;
+
+    let dl = make_download();
+    let mut window = PeerListWindow::new();
+    assert_eq!(window.refresh_interval, std::time::Duration::from_secs(1));
+
+    window.set_download(Some(dl.clone()));
+    let mut canvas = Canvas::new(0, 0, 80, 10);
+    window.redraw(&mut canvas);
+    assert_eq!(window.len(), 0);
+
+    // Add peer directly to download
+    {
+        let mut guard = dl.write().unwrap();
+        let mut engine = guard.download_mut();
+        let sa = SocketAddress::from_str("10.0.0.9:6881").unwrap();
+        let peer_id = HashString::new([9u8; 20]);
+        let peer = PeerConnection::new(peer_id, sa, 1);
+        engine.connection_list_mut().push(peer);
+    }
+
+    // Immediate redraw within 1s: throttled, no new peer snapshot yet
+    window.redraw(&mut canvas);
+    assert_eq!(window.len(), 0);
+
+    // After invalidate_refresh() or 1s elapsed: updates
+    window.invalidate_refresh();
+    window.redraw(&mut canvas);
+    assert_eq!(window.len(), 1);
+    assert_eq!(window.peer_at(0).unwrap().address, "10.0.0.9:6881");
+}

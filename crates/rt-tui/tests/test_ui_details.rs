@@ -105,6 +105,7 @@ fn test_details_render_peers_tab_empty_and_with_peers() {
     }
 
     // 3. Redraw: peer row should now be visible with IP, port, client and flags
+    details.refresh_peers();
     details.redraw(&mut canvas);
     let rows_with_peer = canvas.to_string_rows();
     let text_with_peer = rows_with_peer.join("\n");
@@ -260,4 +261,38 @@ fn test_root_ui_details_keys_and_tabs_switching() {
     // Backspace / Left arrow returns to DownloadList
     ui.handle_key(0x104); // Left Arrow
     assert_eq!(ui.active_screen, ActiveScreen::DownloadList);
+}
+
+#[test]
+fn test_details_peers_tab_refresh_throttling() {
+    let dl = make_test_download("throttling_test");
+    let mut details = WindowDownloadDetails::new();
+    assert_eq!(details.peer_refresh_interval, std::time::Duration::from_secs(1));
+
+    details.set_download(Some(dl.clone()));
+    details.set_tab(DetailTab::Peers);
+
+    let mut canvas = Canvas::new(0, 0, 100, 20);
+    details.redraw(&mut canvas);
+    assert_eq!(details.cached_peer_rows().len(), 0);
+
+    // Add peer to live download without waiting 1s
+    {
+        let mut guard = dl.write().unwrap();
+        let mut engine = guard.download_mut();
+        let sa = SocketAddress::from_str("10.0.0.1:5000").unwrap();
+        let peer_id = HashString::new([1u8; 20]);
+        let peer = PeerConnection::new(peer_id, sa, 1);
+        engine.connection_list_mut().push(peer);
+    }
+
+    // Redraw immediately within 1s: should NOT refresh, should still have 0 cached peers
+    details.redraw(&mut canvas);
+    assert_eq!(details.cached_peer_rows().len(), 0);
+
+    // Explicit refresh_peers() or after interval: updates immediately
+    details.refresh_peers();
+    details.redraw(&mut canvas);
+    assert_eq!(details.cached_peer_rows().len(), 1);
+    assert_eq!(details.cached_peer_rows()[0].addr, "10.0.0.1:5000");
 }
