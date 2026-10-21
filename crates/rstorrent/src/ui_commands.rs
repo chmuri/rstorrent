@@ -258,6 +258,32 @@ pub fn register_ui_commands(
 
     let ui_get = Arc::clone(&ui);
     map.insert_func(
+        "keys.layout",
+        move |_target, _obj| Ok(Object::from(ui_get.lock().unwrap().throttle_layout.clone())),
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Get the throttle key layout.",
+    )?;
+
+    let ui_set = Arc::clone(&ui);
+    map.insert_func(
+        "keys.layout.set",
+        move |_target, obj| {
+            let value = to_str(obj)?;
+            ui_set
+                .lock()
+                .unwrap()
+                .set_throttle_layout(&value)
+                .map_err(RpcError::InputError)?;
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<layout>",
+        "Set the throttle key layout (qwerty, azerty, qwertz or dvorak).",
+    )?;
+
+    let ui_get = Arc::clone(&ui);
+    map.insert_func(
         "ui.torrent_list.layout",
         move |_target, _obj| {
             Ok(Object::from(

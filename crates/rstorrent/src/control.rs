@@ -715,6 +715,25 @@ impl Control {
         Ok(())
     }
 
+    /// Applies the `change_directory` prompt (`^O`) to the focused download.
+    pub fn set_download_directory(&self, path: &str) -> Result<(), String> {
+        let hash = self
+            .root_ui
+            .lock()
+            .unwrap()
+            .selected_download_hash()
+            .ok_or_else(|| "No download selected".to_string())?;
+        let map = self.command_map.read().unwrap();
+        map.call_command(
+            "d.directory.set",
+            &Object::from(path),
+            &Target::Download(hash),
+            true,
+        )
+        .map(|_| ())
+        .map_err(|error| format!("Failed to change directory: {error}"))
+    }
+
     pub fn execute_command(&self, cmd: &str) -> Result<String, String> {
         let map = self.command_map.read().unwrap();
         match parse_command(cmd, &Target::None, &map, true) {

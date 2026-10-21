@@ -124,6 +124,7 @@ pub fn translate_key_event(key_event: KeyEvent) -> Option<i32> {
         KeyCode::Delete => Some(KEY_DC),
         KeyCode::Enter => Some(10), // '\n'
         KeyCode::Tab => Some(9),    // '\t'
+        KeyCode::BackTab => Some(0x154),
         KeyCode::Esc => Some(0x1B),
         KeyCode::F(n) if (1..=12).contains(&n) => Some(KEY_F1 + (n as i32 - 1)),
         KeyCode::Char(c) => Some(c as i32),

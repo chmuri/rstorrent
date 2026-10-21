@@ -44,6 +44,78 @@ impl NavigationKey {
     ];
 }
 
+/// Keyboard layout used by the global throttle-adjustment keys.
+///
+/// The legacy C++ client selects the layout with `keys.layout`; the throttle
+/// bindings are the only keys whose physical position matters.  The key strings
+/// below match `Root::get_throttle_keys()` in rTorrent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThrottleKeyLayout {
+    #[default]
+    Qwerty,
+    Azerty,
+    Qwertz,
+    Dvorak,
+}
+
+impl ThrottleKeyLayout {
+    /// Parses a value accepted by `keys.layout.set`.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "qwerty" => Ok(ThrottleKeyLayout::Qwerty),
+            "azerty" => Ok(ThrottleKeyLayout::Azerty),
+            "qwertz" => Ok(ThrottleKeyLayout::Qwertz),
+            "dvorak" => Ok(ThrottleKeyLayout::Dvorak),
+            _ => Err(format!("unknown keyboard layout: {value}")),
+        }
+    }
+
+    /// Canonical name for this layout.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ThrottleKeyLayout::Qwerty => "qwerty",
+            ThrottleKeyLayout::Azerty => "azerty",
+            ThrottleKeyLayout::Qwertz => "qwertz",
+            ThrottleKeyLayout::Dvorak => "dvorak",
+        }
+    }
+
+    /// The twelve throttle keys in the legacy order:
+    /// upload small +/-, download small +/-, upload medium +/-,
+    /// download medium +/-, upload large +/-, download large +/-.
+    pub fn keys(self) -> [i32; 12] {
+        let text = match self {
+            ThrottleKeyLayout::Qwerty => "azAZsxSXdcDC",
+            ThrottleKeyLayout::Azerty => "qwQWsxSXdcDC",
+            ThrottleKeyLayout::Qwertz => "ayAYsxSXdcDC",
+            ThrottleKeyLayout::Dvorak => "a;A:oqOQejEJ",
+        };
+        let mut keys = [0i32; 12];
+        for (slot, ch) in keys.iter_mut().zip(text.chars()) {
+            *slot = ch as i32;
+        }
+        keys
+    }
+
+    /// Resolves a pressed key to `(upload, delta)`.
+    ///
+    /// Each delta is read from the matching configured step variable, so
+    /// `ui.throttle.global.step.*` changes take effect immediately.
+    pub fn action(self, key: i32, small: u32, medium: u32, large: u32) -> Option<(bool, i32)> {
+        // Each step contributes four keys: upload +/- and download +/-.
+        // Within a pair the first key increases and the second decreases.
+        let steps = [small, medium, large];
+        self.keys()
+            .iter()
+            .position(|bound| *bound == key)
+            .map(|index| {
+                let up = index % 4 < 2;
+                let delta = steps[index / 4] as i32;
+                (up, if index % 2 == 0 { delta } else { -delta })
+            })
+    }
+}
+
 /// Supported keymap styles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KeymapStyle {

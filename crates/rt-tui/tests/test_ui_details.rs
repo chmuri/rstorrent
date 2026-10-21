@@ -211,49 +211,29 @@ fn test_root_ui_details_keys_and_tabs_switching() {
         DetailTab::Info
     );
 
-    // Key '2' switches to Peers
-    ui.handle_key(b'2' as i32);
-    assert_eq!(
-        ui.window_details.lock().unwrap().current_tab,
-        DetailTab::Peers
-    );
+    // Tab cycles through the tabs.
+    for expected in [
+        DetailTab::Peers,
+        DetailTab::Files,
+        DetailTab::Trackers,
+        DetailTab::Chunks,
+        DetailTab::Transfers,
+        DetailTab::Info,
+    ] {
+        ui.handle_key(9);
+        assert_eq!(ui.window_details.lock().unwrap().current_tab, expected);
+    }
 
-    // Key '3' switches to Files
-    ui.handle_key(b'3' as i32);
-    assert_eq!(
-        ui.window_details.lock().unwrap().current_tab,
-        DetailTab::Files
-    );
+    // Numeric keys adjust per-torrent limits and never change the tab.
+    for key in [b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8'] {
+        ui.handle_key(key as i32);
+        assert_eq!(
+            ui.window_details.lock().unwrap().current_tab,
+            DetailTab::Info
+        );
+    }
 
-    // Key '4' switches to Trackers
-    ui.handle_key(b'4' as i32);
-    assert_eq!(
-        ui.window_details.lock().unwrap().current_tab,
-        DetailTab::Trackers
-    );
-
-    // Key '5' switches to Chunks
-    ui.handle_key(b'5' as i32);
-    assert_eq!(
-        ui.window_details.lock().unwrap().current_tab,
-        DetailTab::Chunks
-    );
-
-    // Key '6' switches to Transfers
-    ui.handle_key(b'6' as i32);
-    assert_eq!(
-        ui.window_details.lock().unwrap().current_tab,
-        DetailTab::Transfers
-    );
-
-    // Key '1' switches back to Info
-    ui.handle_key(b'1' as i32);
-    assert_eq!(
-        ui.window_details.lock().unwrap().current_tab,
-        DetailTab::Info
-    );
-
-    // Key '7' does not change current view when in DownloadDetails
+    // The numeric view-switch shortcuts are inactive while details are shown.
     let view_before = ui.current_view_name.clone();
     ui.handle_key(b'7' as i32);
     assert_eq!(ui.current_view_name, view_before);

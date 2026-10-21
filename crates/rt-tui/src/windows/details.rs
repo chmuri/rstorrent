@@ -177,6 +177,26 @@ impl WindowDownloadDetails {
         self.dirty = true;
     }
 
+    /// Cycles through the detail tabs.  Numeric keys are reserved for the
+    /// per-torrent limit adjustments in rTorrent, so tab navigation uses
+    /// Tab / Shift-Tab instead.
+    pub fn cycle_tab(&mut self, delta: i32) {
+        const TABS: [DetailTab; 6] = [
+            DetailTab::Info,
+            DetailTab::Peers,
+            DetailTab::Files,
+            DetailTab::Trackers,
+            DetailTab::Chunks,
+            DetailTab::Transfers,
+        ];
+        let current = TABS
+            .iter()
+            .position(|tab| *tab == self.current_tab)
+            .unwrap_or(0) as i32;
+        let next = (current + delta).rem_euclid(TABS.len() as i32) as usize;
+        self.set_tab(TABS[next]);
+    }
+
     pub fn refresh(&mut self) {
         self.last_refresh = None;
         self.dirty = true;

@@ -243,8 +243,16 @@ pub fn register_file_commands(
                     message: "Download not found".into(),
                 })?;
 
-            let dl_guard = dl.read().unwrap();
-            let num_files = dl_guard.metadata().files.len();
+            // The file commands invoked below take a write lock on the
+            // download, so the read guard must be released first.  Use the
+            // engine's file list (not only `metadata.files`) so single-file
+            // torrents are covered as well.
+            let num_files = {
+                let dl_guard = dl.read().unwrap();
+                let engine = dl_guard.download();
+                let count = engine.file_list().files().len();
+                count
+            };
 
             let map_guard = mc_map.read().unwrap();
             let mut result_rows = Vec::with_capacity(num_files);
