@@ -32,6 +32,24 @@ pub fn register_throttle_commands(
     map: &mut CommandMap,
     manager: Arc<RwLock<ThrottleManager>>,
 ) -> Result<(), RpcError> {
+    // 0. throttle.names: the named throttle groups, used by the UI when
+    // cycling a download's throttle (`^T`).
+    let mgr_names = Arc::clone(&manager);
+    map.insert_func(
+        "throttle.names",
+        move |_target, _obj| {
+            let mgr = mgr_names.read().unwrap();
+            let mut names: Vec<String> = mgr.named_throttles.keys().cloned().collect();
+            names.sort();
+            Ok(Object::create_list_with(
+                names.into_iter().map(Object::from).collect(),
+            ))
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "List the named throttle groups.",
+    )?;
+
     // 1. throttle.global_down.max_rate.set_kb
     let mgr_gdown_kb = Arc::clone(&manager);
     map.insert_func(

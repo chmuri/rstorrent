@@ -8,7 +8,7 @@ pub mod text_input;
 
 pub use bindings::Bindings;
 pub use history::{InputHistory, DEFAULT_INPUT_HISTORY_SIZE, MAX_INPUT_HISTORY_SIZE};
-pub use keymap::{Keymap, KeymapStyle, NavigationKey};
+pub use keymap::{Keymap, KeymapStyle, NavigationKey, ThrottleKeyLayout};
 pub use manager::InputManager;
 pub use path_input::PathInput;
 pub use text_input::{

@@ -1,21 +1,21 @@
 use crate::display::{Canvas, ColorKind, ColorMap, Frame, FrameNode, Window};
 use crate::input::{
-    Bindings, InputHistory, InputManager, KeymapStyle, NavigationKey, PathInput, KEY_DOWN, KEY_UP,
-    MAX_INPUT_HISTORY_SIZE,
+    Bindings, InputHistory, InputManager, KeymapStyle, NavigationKey, PathInput, ThrottleKeyLayout,
+    KEY_DOWN, KEY_UP, MAX_INPUT_HISTORY_SIZE,
 };
 use crate::windows::chunks_seen::ChunksSeenWindow;
-use crate::windows::menu::{download_context_menu, Menu, MenuElement, MenuOutcome};
+use crate::windows::menu::{download_context_menu, Menu, MenuElement, MenuEntry, MenuOutcome};
 use crate::windows::peer_list::{PeerActionOutcome, PeerListWindow};
 use crate::windows::tracker_list::{TrackerAction, TrackerActionOutcome, TrackerListWindow};
 use crate::windows::transfer_list::TransferListWindow;
 use crate::windows::{
-    DetailTab, FilePriority, WindowDownloadDetails, WindowDownloadList, WindowFileList,
-    WindowInput, WindowLog, WindowStatusbar, WindowTitle,
+    FilePriority, WindowDownloadDetails, WindowDownloadList, WindowFileList, WindowInput,
+    WindowLog, WindowStatusbar, WindowTitle,
 };
-use lt_common::HashString;
+use lt_common::{HashString, Object};
 use ratatui::style::{Color, Modifier, Style};
 use rt_core::{Download, DownloadList, View, ViewManager};
-use rt_rpc::CommandMap;
+use rt_rpc::{parse_command_multiple, CommandMap, Target};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -38,6 +38,9 @@ pub enum InputPromptMode {
     LoadNormal,
     Command,
     Filter,
+    /// `^O` in the download list: change the target directory of the focused
+    /// download.  Submitted by the event loop with `d.directory.set`.
+    ChangeDirectory,
 }
 
 pub struct RootUI {
@@ -74,6 +77,9 @@ pub struct RootUI {
     pub listen_port: u16,
 
     pub shutdown_requested: bool,
+    /// Set by a second `^Q`: skip the graceful shutdown sequence.
+    pub force_shutdown_requested: bool,
+    last_shutdown_request: Option<std::time::Instant>,
     pub log_messages: Vec<String>,
 
     pub color_map: Arc<RwLock<ColorMap>>,
@@ -90,6 +96,8 @@ pub struct RootUI {
     pub throttle_step_small: u32,
     pub throttle_step_medium: u32,
     pub throttle_step_large: u32,
+    /// Keyboard layout used by the throttle keys (`keys.layout`).
+    pub throttle_layout: String,
 }
 
 impl Default for RootUI {
@@ -156,6 +164,8 @@ impl RootUI {
             rate_down: 0.0,
             listen_port: 6881,
             shutdown_requested: false,
+            force_shutdown_requested: false,
+            last_shutdown_request: None,
             log_messages: Vec::new(),
             color_map: Arc::new(RwLock::new(ColorMap::new())),
             color_definitions: HashMap::new(),
@@ -167,9 +177,12 @@ impl RootUI {
             focus_page_size: 0,
             status_throttle_up: String::new(),
             status_throttle_down: String::new(),
-            throttle_step_small: 5,
-            throttle_step_medium: 50,
-            throttle_step_large: 500,
+            // Defaults match rTorrent's `ui.throttle.global.step.*`: 1, 5
+            // and 50 KB.
+            throttle_step_small: 1,
+            throttle_step_medium: 5,
+            throttle_step_large: 50,
+            throttle_layout: ThrottleKeyLayout::Qwerty.as_str().to_string(),
         };
 
         ui.update_statusbar();
@@ -234,6 +247,39 @@ impl RootUI {
         self.input_manager.lock().unwrap().set_keymap_style(parsed);
         self.window_input.lock().unwrap().mark_dirty();
         Ok(())
+    }
+
+    /// Parsed throttle keyboard layout.  Unknown values fall back to qwerty.
+    pub fn throttle_layout_enum(&self) -> ThrottleKeyLayout {
+        ThrottleKeyLayout::parse(&self.throttle_layout).unwrap_or_default()
+    }
+
+    /// Validates and switches the throttle keyboard layout (`keys.layout`).
+    pub fn set_throttle_layout(&mut self, layout: &str) -> Result<(), String> {
+        let parsed = ThrottleKeyLayout::parse(layout)?;
+        self.throttle_layout = parsed.as_str().to_string();
+        self.window_statusbar.lock().unwrap().mark_dirty();
+        Ok(())
+    }
+
+    /// Handles `^Q`: the first press requests a graceful shutdown, a second
+    /// press within the grace window forces an immediate exit.
+    pub fn request_shutdown(&mut self) {
+        let now = std::time::Instant::now();
+        let repeated = self.shutdown_requested
+            && self
+                .last_shutdown_request
+                .map(|last| now.duration_since(last) <= std::time::Duration::from_secs(2))
+                .unwrap_or(true);
+
+        if repeated {
+            self.force_shutdown_requested = true;
+            self.push_log("Force shutdown requested.");
+        } else {
+            self.shutdown_requested = true;
+            self.last_shutdown_request = Some(now);
+            self.push_log("Shutdown requested. Press ^Q again to exit immediately.");
+        }
     }
 
     /// Recalls the previous (older) input-history entry into the active
@@ -578,6 +624,279 @@ impl RootUI {
         self.command_map = Some(map);
     }
 
+    /// Hash of the download focused in the active view.
+    pub fn selected_download_hash(&self) -> Option<HashString> {
+        self.selected_download()
+            .map(|download| *download.read().unwrap().info_hash())
+    }
+
+    /// Runs one or more `;`-separated commands against the focused download.
+    pub fn execute_download_commands(&mut self, commands: &str) -> bool {
+        let Some(hash) = self.selected_download_hash() else {
+            self.push_log("No download selected");
+            return false;
+        };
+        let Some(command_map) = self.command_map.clone() else {
+            self.push_log("Command map is not configured");
+            return false;
+        };
+
+        let map = command_map.read().unwrap();
+        match parse_command_multiple(commands, &Target::Download(hash), &map, true) {
+            Ok(_) => true,
+            Err(error) => {
+                self.push_log(format!("Command failed: {commands}: {error}"));
+                false
+            }
+        }
+    }
+
+    /// Calls an RPC command against the focused download, returning its result.
+    fn call_download_command(&mut self, name: &str, args: Object) -> Option<Object> {
+        let hash = self.selected_download_hash()?;
+        let command_map = self.command_map.clone()?;
+        let map = command_map.read().unwrap();
+        match map.call_command(name, &args, &Target::Download(hash), true) {
+            Ok(result) => Some(result),
+            Err(error) => {
+                self.push_log(format!("Command failed: {name}: {error}"));
+                None
+            }
+        }
+    }
+
+    /// Reads an integer-valued `d.*` variable of the focused download.
+    pub fn download_value(&mut self, name: &str) -> Option<i64> {
+        self.call_download_command(name, Object::create_empty())
+            .and_then(|object| object.as_value().ok())
+    }
+
+    /// Reads a string-valued `d.*` variable of the focused download.
+    pub fn download_string(&mut self, name: &str) -> Option<String> {
+        self.call_download_command(name, Object::create_empty())
+            .and_then(|object| object.as_str().map(str::to_string).ok())
+    }
+
+    fn set_download_value(&mut self, name: &str, value: impl Into<String>) -> bool {
+        self.call_download_command(name, Object::from(value.into()))
+            .is_some()
+    }
+
+    /// Cycles the focused download's priority (off → low → normal → high).
+    pub fn adjust_selected_priority(&mut self, delta: i32) -> bool {
+        let Some(current) = self.download_value("d.priority") else {
+            return false;
+        };
+        let next = (current + delta as i64).rem_euclid(4);
+        self.set_download_value("d.priority.set", next.to_string())
+    }
+
+    /// Adjusts one of the `uploads_*`, `downloads_*` or `peers_*` limits.
+    /// Values saturate at zero.
+    pub fn adjust_download_limit(&mut self, name: &str, delta: i64) -> bool {
+        let Some(current) = self.download_value(name) else {
+            return false;
+        };
+        let value = current.saturating_add(delta).max(0);
+        self.set_download_value(&format!("{name}.set"), value.to_string())
+    }
+
+    /// Toggles `d.ignore_commands` on the focused download (`I`).
+    pub fn toggle_download_ignore_commands(&mut self) -> bool {
+        let current = self.download_value("d.ignore_commands").unwrap_or(0);
+        self.set_download_value(
+            "d.ignore_commands.set",
+            if current == 0 { "1" } else { "0" },
+        )
+    }
+
+    /// `^D`: stop an active download, erase a stopped one.
+    pub fn delete_selected_download(&mut self) -> bool {
+        let Some(state) = self.download_value("d.state") else {
+            return false;
+        };
+        if state != 0 {
+            return self.execute_download_commands("d.stop=");
+        }
+
+        let Some(hash) = self.selected_download_hash() else {
+            return false;
+        };
+        let erased = self.execute_download_commands("d.erase=");
+        if erased {
+            if let Some(view_manager) = self.view_manager.clone() {
+                view_manager
+                    .write()
+                    .unwrap()
+                    .erase_download_from_all(&hash, None);
+            }
+            self.mark_view_dirty();
+        }
+        erased
+    }
+
+    /// `^B`: enable initial seeding (BEP 16) when the download is inactive.
+    pub fn enable_initial_seeding(&mut self) -> bool {
+        if self
+            .selected_download()
+            .map(|download| download.read().unwrap().is_active())
+            .unwrap_or(false)
+        {
+            self.push_log("Cannot enable initial seeding while the download is active");
+            return false;
+        }
+        self.set_download_value("d.connection_seed.set", "initial_seed")
+    }
+
+    /// `^O`: pre-fill the change-directory prompt with the current path.
+    pub fn open_change_directory_prompt(&mut self) -> bool {
+        let Some(download) = self.selected_download() else {
+            self.push_log("No download selected");
+            return false;
+        };
+        let (active, mut directory) = {
+            let guard = download.read().unwrap();
+            (guard.is_active(), guard.directory().to_string())
+        };
+        if active {
+            self.push_log("Cannot change the directory while the download is active");
+            return false;
+        }
+        if directory.is_empty() {
+            if let Some(command_map) = self.command_map.clone() {
+                let map = command_map.read().unwrap();
+                directory = map
+                    .call_command(
+                        "directory.default",
+                        &Object::create_empty(),
+                        &Target::None,
+                        true,
+                    )
+                    .ok()
+                    .and_then(|object| object.as_str().map(str::to_string).ok())
+                    .unwrap_or_default();
+            }
+        }
+        self.enable_input_with_text(
+            "change_directory",
+            InputPromptMode::ChangeDirectory,
+            directory,
+        );
+        true
+    }
+
+    /// `^T`: cycle the named throttle group assigned to the focused download.
+    pub fn cycle_selected_throttle(&mut self) -> bool {
+        let current = self.download_string("d.throttle_name").unwrap_or_default();
+        let mut names = self
+            .call_download_command("throttle.names", Object::create_empty())
+            .and_then(|object| {
+                object.as_list().ok().map(|list| {
+                    list.iter()
+                        .filter_map(|item| item.as_str().ok().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_default();
+        names.sort();
+        names.dedup();
+        // The empty entry removes the per-download throttle again.
+        names.insert(0, String::new());
+        if !names.contains(&current) {
+            names.push(current.clone());
+        }
+
+        let index = names.iter().position(|name| *name == current).unwrap_or(0);
+        let next = names[(index + 1) % names.len()].clone();
+        self.set_download_value("d.throttle_name.set", next)
+    }
+
+    /// `t` / `T` in the download view: request a tracker announce.
+    pub fn announce_selected_tracker(&mut self, force: bool) -> bool {
+        if self.download_value("d.tracker.has_active").unwrap_or(0) == 0 {
+            self.push_log("No active trackers");
+            return false;
+        }
+        let command = if force {
+            "d.tracker_announce.force="
+        } else {
+            "d.tracker_announce="
+        };
+        self.execute_download_commands(command)
+    }
+
+    /// `Home`: jump to the first download of the active view.
+    pub fn home_download(&mut self) {
+        let mut win = self.window_download_list.lock().unwrap();
+        let view_arc = win.view.clone();
+        let vm_arc = win.view_manager.clone();
+        let view_name = win.view_name.clone();
+
+        if let Some(view) = &view_arc {
+            view.write().unwrap().set_focus_index(0);
+        } else if let Some(vm) = &vm_arc {
+            if let Some(view) = vm.write().unwrap().find_mut(&view_name) {
+                view.set_focus_index(0);
+            }
+        }
+        win.mark_dirty();
+    }
+
+    /// `End`: jump to the last download of the active view.
+    pub fn end_download(&mut self) {
+        let mut win = self.window_download_list.lock().unwrap();
+        let view_arc = win.view.clone();
+        let vm_arc = win.view_manager.clone();
+        let view_name = win.view_name.clone();
+
+        if let Some(view) = &view_arc {
+            let mut view = view.write().unwrap();
+            let last = view.size_visible().saturating_sub(1);
+            view.set_focus_index(last);
+        } else if let Some(vm) = &vm_arc {
+            if let Some(view) = vm.write().unwrap().find_mut(&view_name) {
+                let last = view.size_visible().saturating_sub(1);
+                view.set_focus_index(last);
+            }
+        }
+        win.mark_dirty();
+    }
+
+    /// Opens the file-info popup for the selected file-list row.  Directories
+    /// are expanded instead.
+    pub fn open_selected_file_info(&mut self) {
+        let (is_dir, entries) = {
+            let window = self.window_file_list.lock().unwrap();
+            let Some(row) = window.selected_row() else {
+                return;
+            };
+            let priority = row
+                .priority
+                .map(|priority| priority.label().to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let entries = vec![
+                MenuEntry::new(format!("Name: {}", row.name)),
+                MenuEntry::new(format!("Path: {}", row.path)),
+                MenuEntry::new(format!("Size: {} bytes", row.size)),
+                MenuEntry::new(format!("Completed: {} bytes", row.completed)),
+                MenuEntry::new(format!("Progress: {}%", row.percent)),
+                MenuEntry::new(format!("Priority: {}", priority)),
+                MenuEntry::new(format!(
+                    "Created: {}  Padding: {}",
+                    if row.is_created { "yes" } else { "no" },
+                    if row.is_padding { "yes" } else { "no" }
+                )),
+            ];
+            (row.is_dir, entries)
+        };
+
+        if is_dir {
+            self.window_file_list.lock().unwrap().expand_selected();
+        } else {
+            self.open_menu(Menu::from_entries("File Info", entries));
+        }
+    }
+
     pub fn open_menu(&mut self, menu: Menu) {
         self.window_menu = Some(Arc::new(Mutex::new(MenuElement::new(menu))));
     }
@@ -801,6 +1120,16 @@ impl RootUI {
     }
 
     pub fn enable_input(&mut self, title: &str, mode: InputPromptMode) {
+        self.enable_input_with_text(title, mode, "");
+    }
+
+    /// Opens a prompt with pre-filled text (used by `^O`/change_directory).
+    pub fn enable_input_with_text(
+        &mut self,
+        title: &str,
+        mode: InputPromptMode,
+        initial: impl Into<String>,
+    ) {
         self.input_mode = mode;
         self.ensure_history_size();
         self.input_history.reset_navigation();
@@ -812,6 +1141,10 @@ impl RootUI {
             // Filesystem scans run off-thread so a slow mount cannot stall
             // the event loop.
             input.set_async_completion(true);
+            let initial = initial.into();
+            if !initial.is_empty() {
+                input.set_text(initial);
+            }
             if mode == InputPromptMode::Command {
                 if let Some(map) = &self.command_map {
                     let names: Vec<String> = map
@@ -909,6 +1242,22 @@ impl RootUI {
             self.poll_active_completion();
 
             match key {
+                0x07 => {
+                    // ^G: abort the prompt, like Esc.
+                    self.disable_input();
+                    return None;
+                }
+                0x0C => {
+                    // ^L: repaint while keeping the prompt open.
+                    self.mark_ui_dirty();
+                    return None;
+                }
+                0x11 => {
+                    // ^Q: close the prompt and request shutdown.
+                    self.disable_input();
+                    self.request_shutdown();
+                    return None;
+                }
                 10 | 13 => {
                     // Enter submitted input
                     let (mode, text) = self.disable_input();
@@ -1029,22 +1378,73 @@ impl RootUI {
         // Global shortcuts
         let k = key;
         if k == 0x11 {
-            // ^Q: quit
-            self.shutdown_requested = true;
+            // ^Q: graceful shutdown, or a forced exit on a repeated press.
+            self.request_shutdown();
         } else if k == 0x0C {
-            // ^L: redraw
-            self.window_title.lock().unwrap().mark_dirty();
-            self.window_download_list.lock().unwrap().mark_dirty();
-            self.window_details.lock().unwrap().mark_dirty();
-            self.window_file_list.lock().unwrap().mark_dirty();
-            self.window_peer_list.lock().unwrap().mark_dirty();
-            self.window_tracker_list.lock().unwrap().mark_dirty();
-            self.window_chunks_seen.lock().unwrap().mark_dirty();
-            self.window_transfer_list.lock().unwrap().mark_dirty();
-            self.window_statusbar.lock().unwrap().mark_dirty();
+            if self.keymap_style_enum() == KeymapStyle::Vi {
+                // Vi style binds layout switching to ^L.
+                self.toggle_layout();
+            } else {
+                // ^L: redraw
+                self.mark_ui_dirty();
+                self.window_statusbar.lock().unwrap().mark_dirty();
+            }
         } else if k == 0x18 {
             // ^X: execute command
             self.enable_input("execute", InputPromptMode::Command);
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x13 {
+            // ^S: start the focused download.
+            self.execute_download_commands("d.start=");
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x04 {
+            // ^D: stop an active download, erase a stopped one.
+            self.delete_selected_download();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x0B {
+            // ^K: stop and close the download, ignoring further commands.
+            self.execute_download_commands("d.ignore_commands.set=1;d.stop=;d.close=");
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x12 {
+            // ^R: force a complete re-hash.
+            self.execute_download_commands("d.complete.set=0;d.check_hash=");
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x05 {
+            // ^E: queue the creation/resizing of every file.
+            self.execute_download_commands(
+                "f.multicall=,f.set_create_queued=0,f.set_resize_queued=0",
+            );
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x14 {
+            // ^T: cycle the named throttle group.
+            self.cycle_selected_throttle();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x0F {
+            // ^O: change the download directory.
+            self.open_change_directory_prompt();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x02 {
+            // ^B: enable initial seeding.
+            self.enable_initial_seeding();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == (b'I' as i32) {
+            // I: toggle d.ignore_commands.
+            self.toggle_download_ignore_commands();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == (b'U' as i32) {
+            // U: delete the file the download is tied to.
+            self.execute_download_commands("d.delete_tied=");
+        } else if self.active_screen == ActiveScreen::DownloadList && k == (b'+' as i32) {
+            self.adjust_selected_priority(1);
+        } else if self.active_screen == ActiveScreen::DownloadList && k == (b'-' as i32) {
+            self.adjust_selected_priority(-1);
+        } else if self.active_screen == ActiveScreen::DownloadList
+            && keymap.matches(NavigationKey::DeleteItem, k)
+        {
+            // RT_KEY_DELETE_ITEM / vi 'x'.
+            self.delete_selected_download();
+        } else if let Some((up, delta)) = self.throttle_layout_enum().action(
+            k,
+            self.throttle_step_small,
+            self.throttle_step_medium,
+            self.throttle_step_large,
+        ) {
+            // Global throttle keys; the layout comes from `keys.layout`.
+            if up {
+                self.adjust_up_throttle(delta);
+            } else {
+                self.adjust_down_throttle(delta);
+            }
         } else if k == 0x107 || k == 0x7F || k == 8 {
             // Backspace: collapse a directory or leave the current sub-view.
             if self.active_screen == ActiveScreen::FileList {
@@ -1071,17 +1471,26 @@ impl RootUI {
             if self.active_screen != ActiveScreen::DownloadList {
                 self.set_active_screen(ActiveScreen::DownloadList);
             }
-        } else if k == 0x104 {
-            // Left Arrow: return to DownloadList.
+        } else if keymap.matches(NavigationKey::Left, k) {
+            // Left Arrow / ^B (emacs) / h (vi): return to the download list.
             if self.active_screen != ActiveScreen::DownloadList {
                 self.set_active_screen(ActiveScreen::DownloadList);
             }
-        } else if k == 0x105 {
-            // Right Arrow: expand a directory or open details.
+        } else if keymap.matches(NavigationKey::Right, k) {
+            // Right Arrow / ^F (emacs) / l (vi): open details, or the file
+            // info popup on a file row.
             if self.active_screen == ActiveScreen::FileList {
-                self.window_file_list.lock().unwrap().expand_selected();
+                self.open_selected_file_info();
             } else if self.active_screen == ActiveScreen::DownloadList {
                 self.open_selected_download_details();
+            }
+        } else if keymap.matches(NavigationKey::Home, k) {
+            if self.active_screen == ActiveScreen::DownloadList {
+                self.home_download();
+            }
+        } else if keymap.matches(NavigationKey::End, k) {
+            if self.active_screen == ActiveScreen::DownloadList {
+                self.end_download();
             }
         } else if keymap.matches(NavigationKey::Up, k) {
             // Up arrow / style-specific key
@@ -1203,17 +1612,22 @@ impl RootUI {
                 self.open_menu(download_context_menu(&hash));
             }
         } else if k == (b'u' as i32) {
-            if self.active_screen == ActiveScreen::ChunksSeen {
-                self.set_active_screen(ActiveScreen::DownloadList);
-            } else {
-                self.set_active_screen(ActiveScreen::ChunksSeen);
-            }
-        } else if k == (b't' as i32) {
+            // 'u' opens the transfer list (chunks use 'i', as in rTorrent).
             if self.active_screen == ActiveScreen::TransferList {
                 self.set_active_screen(ActiveScreen::DownloadList);
             } else {
                 self.set_active_screen(ActiveScreen::TransferList);
             }
+        } else if k == (b'i' as i32) {
+            // 'i' opens the chunks-seen view.
+            if self.active_screen == ActiveScreen::ChunksSeen {
+                self.set_active_screen(ActiveScreen::DownloadList);
+            } else {
+                self.set_active_screen(ActiveScreen::ChunksSeen);
+            }
+        } else if self.active_screen == ActiveScreen::Log && k == 32 {
+            // Space returns from the log to the download list.
+            self.set_active_screen(ActiveScreen::DownloadList);
         } else if k == (b'o' as i32) && self.active_screen != ActiveScreen::FileList {
             // Open/close the tracker view. The file list keeps 'o' for the
             // legacy "priority off" action.
@@ -1222,7 +1636,7 @@ impl RootUI {
             } else {
                 self.set_active_screen(ActiveScreen::TrackerList);
             }
-        } else if k == (b'T' as i32) {
+        } else if k == (b'T' as i32) && self.active_screen != ActiveScreen::DownloadDetails {
             // Alternate tracker-view toggle that also works from the file list.
             if self.active_screen == ActiveScreen::TrackerList {
                 self.set_active_screen(ActiveScreen::DownloadList);
@@ -1247,57 +1661,86 @@ impl RootUI {
             } else {
                 self.set_active_screen(ActiveScreen::FileList);
             }
+        } else if keymap.matches(NavigationKey::DisplayLog, k) {
+            if self.active_screen == ActiveScreen::Log {
+                self.set_active_screen(ActiveScreen::DownloadList);
+            } else {
+                self.set_active_screen(ActiveScreen::Log);
+            }
+        } else if keymap.matches(NavigationKey::ToggleLayout, k) {
+            self.toggle_layout();
+        } else if k == (b'F' as i32) || k == (b'f' as i32) {
+            self.enable_input("filter", InputPromptMode::Filter);
+        } else if self.active_screen == ActiveScreen::DownloadDetails {
+            // rTorrent reserves the numeric keys for per-torrent limits, so
+            // tabs are switched with Tab / Shift-Tab.
+            match k {
+                9 => self.window_details.lock().unwrap().cycle_tab(1),
+                0x154 => self.window_details.lock().unwrap().cycle_tab(-1),
+                _ if k == (b'+' as i32) => {
+                    self.adjust_selected_priority(1);
+                }
+                _ if k == (b'-' as i32) => {
+                    self.adjust_selected_priority(-1);
+                }
+                _ if k == (b'1' as i32) => {
+                    self.adjust_download_limit("d.uploads_min", -1);
+                }
+                _ if k == (b'2' as i32) => {
+                    self.adjust_download_limit("d.uploads_min", 1);
+                }
+                _ if k == (b'3' as i32) => {
+                    self.adjust_download_limit("d.uploads_max", -1);
+                }
+                _ if k == (b'4' as i32) => {
+                    self.adjust_download_limit("d.uploads_max", 1);
+                }
+                _ if k == (b'!' as i32) => {
+                    self.adjust_download_limit("d.downloads_min", -1);
+                }
+                _ if k == (b'@' as i32) => {
+                    self.adjust_download_limit("d.downloads_min", 1);
+                }
+                _ if k == (b'#' as i32) => {
+                    self.adjust_download_limit("d.downloads_max", -1);
+                }
+                _ if k == (b'$' as i32) => {
+                    self.adjust_download_limit("d.downloads_max", 1);
+                }
+                _ if k == (b'5' as i32) => {
+                    self.adjust_download_limit("d.peers_min", -5);
+                }
+                _ if k == (b'6' as i32) => {
+                    self.adjust_download_limit("d.peers_min", 5);
+                }
+                _ if k == (b'7' as i32) => {
+                    self.adjust_download_limit("d.peers_max", -5);
+                }
+                _ if k == (b'8' as i32) => {
+                    self.adjust_download_limit("d.peers_max", 5);
+                }
+                _ if k == (b't' as i32) => {
+                    self.announce_selected_tracker(false);
+                }
+                _ if k == (b'T' as i32) => {
+                    self.announce_selected_tracker(true);
+                }
+                _ => {
+                    self.input_manager.lock().unwrap().pressed(key);
+                }
+            }
         } else if k == (b'1' as i32) {
-            if self.active_screen == ActiveScreen::DownloadDetails {
-                self.window_details.lock().unwrap().set_tab(DetailTab::Info);
-            } else {
-                self.switch_view("main");
-            }
+            self.switch_view("main");
         } else if k == (b'2' as i32) {
-            if self.active_screen == ActiveScreen::DownloadDetails {
-                self.window_details
-                    .lock()
-                    .unwrap()
-                    .set_tab(DetailTab::Peers);
-            } else {
-                self.switch_view("name");
-            }
+            self.switch_view("name");
         } else if k == (b'3' as i32) {
-            if self.active_screen == ActiveScreen::DownloadDetails {
-                self.window_details
-                    .lock()
-                    .unwrap()
-                    .set_tab(DetailTab::Files);
-            } else {
-                self.switch_view("started");
-            }
+            self.switch_view("started");
         } else if k == (b'4' as i32) {
-            if self.active_screen == ActiveScreen::DownloadDetails {
-                self.window_details
-                    .lock()
-                    .unwrap()
-                    .set_tab(DetailTab::Trackers);
-            } else {
-                self.switch_view("stopped");
-            }
+            self.switch_view("stopped");
         } else if k == (b'5' as i32) {
-            if self.active_screen == ActiveScreen::DownloadDetails {
-                self.window_details
-                    .lock()
-                    .unwrap()
-                    .set_tab(DetailTab::Chunks);
-            } else {
-                self.switch_view("complete");
-            }
+            self.switch_view("complete");
         } else if k == (b'6' as i32) {
-            if self.active_screen == ActiveScreen::DownloadDetails {
-                self.window_details
-                    .lock()
-                    .unwrap()
-                    .set_tab(DetailTab::Transfers);
-            } else {
-                self.switch_view("incomplete");
-            }
+            self.switch_view("incomplete");
         } else if k == (b'7' as i32) {
             if self.active_screen != ActiveScreen::DownloadDetails {
                 self.switch_view("hashing");
@@ -1314,40 +1757,6 @@ impl RootUI {
             if self.active_screen != ActiveScreen::DownloadDetails {
                 self.switch_view("active");
             }
-        } else if k == (b'l' as i32) {
-            if self.active_screen == ActiveScreen::Log {
-                self.set_active_screen(ActiveScreen::DownloadList);
-            } else {
-                self.set_active_screen(ActiveScreen::Log);
-            }
-        } else if k == (b'L' as i32) {
-            self.toggle_layout();
-        } else if k == (b'F' as i32) || k == (b'f' as i32) {
-            self.enable_input("filter", InputPromptMode::Filter);
-        } else if k == (b'a' as i32) {
-            self.adjust_up_throttle(1);
-        } else if k == (b'z' as i32) {
-            self.adjust_up_throttle(-1);
-        } else if k == (b's' as i32) {
-            self.adjust_up_throttle(5);
-        } else if k == (b'x' as i32) {
-            self.adjust_up_throttle(-5);
-        } else if k == (b'd' as i32) {
-            self.adjust_up_throttle(50);
-        } else if k == (b'c' as i32) {
-            self.adjust_up_throttle(-50);
-        } else if k == (b'A' as i32) {
-            self.adjust_down_throttle(1);
-        } else if k == (b'Z' as i32) {
-            self.adjust_down_throttle(-1);
-        } else if k == (b'S' as i32) {
-            self.adjust_down_throttle(5);
-        } else if k == (b'X' as i32) {
-            self.adjust_down_throttle(-5);
-        } else if k == (b'D' as i32) {
-            self.adjust_down_throttle(50);
-        } else if k == (b'C' as i32) {
-            self.adjust_down_throttle(-50);
         } else {
             self.input_manager.lock().unwrap().pressed(key);
         }

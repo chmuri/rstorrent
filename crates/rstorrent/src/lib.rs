@@ -132,6 +132,11 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                                     control.root_ui.lock().unwrap().push_log(e);
                                 }
                             }
+                            InputPromptMode::ChangeDirectory => {
+                                if let Err(e) = control.set_download_directory(&text) {
+                                    control.root_ui.lock().unwrap().push_log(e);
+                                }
+                            }
                             InputPromptMode::Filter => {
                                 let win =
                                     control.root_ui.lock().unwrap().window_download_list.clone();
@@ -175,6 +180,16 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         terminal_backend.flush_canvas(&canvas)?;
+    }
+
+    // A second ^Q forces an immediate exit without waiting for the graceful
+    // network/session shutdown sequence.
+    let force_shutdown = control.root_ui.lock().unwrap().force_shutdown_requested;
+    if force_shutdown {
+        tracing::warn!("Forced shutdown requested (double ^Q)");
+        terminal_guard.leave()?;
+        signals::mark_terminal_restored();
+        std::process::exit(0);
     }
 
     // Ordered shutdown: network -> disk/session commit/lock release. The
