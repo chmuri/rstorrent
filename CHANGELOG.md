@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-21
+
+Full rTorrent keyboard-shortcut parity release. The main download list, the
+download details view and every secondary view now honour the legacy bindings,
+including per-torrent limit tuning, throttle layouts, prompt control keys and
+style-aware navigation. The release also fixes an `f.multicall` self-deadlock
+and extends multicall coverage to single-file torrents.
+
+### Added
+
+- **Main download list shortcuts (`rt-tui`, `rstorrent`)**:
+  - `^S` starts the focused download, `^D` (or `Delete` / vi `x`) stops an
+    active download and erases a stopped one, `^K` sets `ignore_commands`,
+    stops and closes, `^R` forces a complete re-hash and `^E` queues file
+    creation/resizing through `f.multicall`.
+  - `+`/`-` cycle the torrent priority, `^T` cycles the assigned throttle
+    group, `I` toggles `d.ignore_commands`, `^B` enables initial seeding
+    (BEP 16) and `U` deletes the tied file.
+  - `^O` opens a `change_directory` prompt pre-filled with the current
+    directory; the submitted path is applied with `d.directory.set`. It is
+    rejected while the download is active, matching rTorrent.
+- **Download details shortcuts (`rt-tui`)**:
+  - `1`/`2` (`uploads_min`), `3`/`4` (`uploads_max`), `!`/`@`
+    (`downloads_min`), `#`/`$` (`downloads_max`), `5`/`6` (`peers_min`) and
+    `7`/`8` (`peers_max`) adjust per-torrent limits with saturation at zero.
+  - `+`/`-` adjust priority, `t` requests a tracker announce and `T` a forced
+    announce (only when an active tracker exists).
+  - Sub-view keys now match rTorrent: `i` chunks seen, `u` transfer list,
+    `p` peer list, `o` tracker list and `v` file list.
+  - Tabs are switched with `Tab` / `Shift-Tab`; the numeric keys are reserved
+    for limit tuning instead of switching tabs.
+- **Throttle layouts (`rt-tui`, `rstorrent`)**:
+  - Added `qwerty`, `azerty`, `qwertz` and `dvorak` throttle key maps,
+    selectable through the new `keys.layout` / `keys.layout.set` RPC commands.
+  - Throttle adjustments now use the configured
+    `ui.throttle.global.step.{small,medium,large}` values; defaults are
+    1 / 5 / 50 KB as in rTorrent.
+  - Added `throttle.names` to list named throttle groups for `^T`.
+- **Prompt and navigation (`rt-tui`)**:
+  - `^G` aborts the active prompt, `^L` redraws it and `^Q` closes the prompt
+    and requests shutdown.
+  - A second `^Q` performs an immediate forced exit, bypassing the graceful
+    network/session shutdown.
+  - `Home` / `End` jump to the first and last download.
+  - `^F` / vi `l` open the download details, `^B` / vi `h` return to the
+    download list; `Space` leaves the log view.
+  - The file list opens an information popup when Right is pressed on a file
+    row (directories still expand in place).
+
+### Changed
+
+- `rt-tui` throttle defaults are now 1 / 5 / 50 KB instead of hard-coded
+  5 / 50 / 500 KB steps.
+- In the download details view, `t`/`T` no longer toggle views; they announce
+  to the tracker. Transfer and chunk views are reached with `u` and `i`.
+- Added `BackTab` translation for the terminal event reader.
+
+### Fixed
+
+- **`f.multicall` deadlock (`rt-core`)**: the command held a read lock on the
+  download while invoking file setters that require a write lock, which hung
+  `^E` and any `f.multicall` containing setters. The guard is now released
+  before dispatch.
+- **Single-file torrents in `f.multicall` (`rt-core`)**: multicall now uses the
+  engine file list instead of `metadata.files`, so single-file downloads are
+  included.
+
 ## [0.10.6] - 2026-10-20
 
 Magnet session persistence release: downloads added from a magnet link now save
