@@ -48,7 +48,7 @@ async fn bootstrap_adds_responding_node() {
     let mut replied = 0;
     for _ in 0..20 {
         replied = controller_a
-            .bootstrap(&[bootstrap_address.clone()])
+            .bootstrap(std::slice::from_ref(&bootstrap_address))
             .await
             .unwrap();
         if replied > 0 {

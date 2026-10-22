@@ -170,12 +170,14 @@ fn corrupt_cache_is_ignored_and_state_is_preserved() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn periodic_refresh_prunes_stale_peers_and_nodes() {
-    let mut config = DhtLifecycleConfig::default();
-    config.mode = DhtMode::On;
-    config.refresh_interval = Duration::from_millis(50);
-    config.bootstrap_retry_interval = Duration::from_millis(50);
-    config.peer_timeout = 1;
-    config.remove_node_timeout = 0;
+    let config = DhtLifecycleConfig {
+        mode: DhtMode::On,
+        refresh_interval: Duration::from_millis(50),
+        bootstrap_retry_interval: Duration::from_millis(50),
+        peer_timeout: 1,
+        remove_node_timeout: 0,
+        ..Default::default()
+    };
 
     let controller = Arc::new(DhtController::with_config(
         id(0xcc),

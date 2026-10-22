@@ -57,7 +57,9 @@ fn decode_peer(compact: &[u8; 6]) -> Option<SocketAddress> {
 /// Decodes the compact node list used by `find_node` and `get_peers`.
 pub(crate) fn decode_nodes(bytes: &[u8]) -> Vec<DhtNode> {
     bytes
-        .chunks_exact(26)
+        .as_chunks::<26>()
+        .0
+        .iter()
         .filter_map(|chunk| {
             let id = HashString::from_slice(&chunk[0..20])?;
             let ip = Ipv4Addr::new(chunk[20], chunk[21], chunk[22], chunk[23]);
@@ -170,13 +172,12 @@ async fn lookup(
             }
         }
 
-        candidates.sort_by(|a, b| xor_distance(&a.id, &target).cmp(&xor_distance(&b.id, &target)));
+        candidates.sort_by_key(|a| xor_distance(&a.id, &target));
         candidates.truncate(MAX_CANDIDATES);
     }
 
     let mut token_list: Vec<(DhtNode, Vec<u8>)> = tokens.into_values().collect();
-    token_list
-        .sort_by(|(a, _), (b, _)| xor_distance(&a.id, &target).cmp(&xor_distance(&b.id, &target)));
+    token_list.sort_by_key(|(a, _)| xor_distance(&a.id, &target));
 
     LookupOutcome {
         peers: peers.into_iter().collect(),
