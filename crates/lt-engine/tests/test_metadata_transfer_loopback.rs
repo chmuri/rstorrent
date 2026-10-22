@@ -169,14 +169,15 @@ async fn magnet_metadata_is_downloaded_from_pieces_and_applied() {
         }
     }
 
-    let download_guard = download.lock().unwrap();
-    assert!(
-        !download_guard.is_metadata_download(),
-        "metadata was never applied"
-    );
-    assert_eq!(download_guard.metadata().name, "magnet-loopback");
-    assert_eq!(download_guard.metadata().total_size, 40_000);
-    drop(download_guard);
+    {
+        let download_guard = download.lock().unwrap();
+        assert!(
+            !download_guard.is_metadata_download(),
+            "metadata was never applied"
+        );
+        assert_eq!(download_guard.metadata().name, "magnet-loopback");
+        assert_eq!(download_guard.metadata().total_size, 40_000);
+    }
 
     let _ = shutdown_tx.send(true);
     let _ = session.await;

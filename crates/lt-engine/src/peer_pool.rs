@@ -218,7 +218,7 @@ impl PeerPoolConfig {
 
 /// The default number of concurrent dials for a given peer limit.
 pub fn max_connecting_for(max_peers: usize) -> usize {
-    max_peers.max(1).min(DEFAULT_MAX_CONNECTING)
+    max_peers.clamp(1, DEFAULT_MAX_CONNECTING)
 }
 
 /// Converts IPv4-mapped IPv6 addresses to their IPv4 form so that the same

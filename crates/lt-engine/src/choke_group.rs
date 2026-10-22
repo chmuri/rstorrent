@@ -364,11 +364,13 @@ mod tests {
 
     #[test]
     fn ratio_helpers_use_percent_units() {
-        let mut config = RatioConfig::default();
-        config.enabled = true;
-        config.min = 200.0;
-        config.max = 300.0;
-        config.upload = 100;
+        let config = RatioConfig {
+            enabled: true,
+            min: 200.0,
+            max: 300.0,
+            upload: 100,
+            ..Default::default()
+        };
 
         assert_eq!(RatioConfig::ratio_percent(200, 100), 200.0);
         assert!(!config.ratio_reached(10, 0));

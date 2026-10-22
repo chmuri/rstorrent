@@ -6,6 +6,21 @@ use lt_storage::block::{BlockList, TransferList, DEFAULT_BLOCK_SIZE};
 use lt_storage::file::Priority;
 use lt_storage::piece::Piece;
 
+/// Peer-specific inputs for [`Delegator::delegate`].
+pub struct DelegatePeer<'a> {
+    pub peer_id: usize,
+    pub peer_bf: &'a Bitfield,
+    pub is_seeder: bool,
+    pub affinity: Option<u32>,
+}
+
+/// Shared per-download state borrowed by [`Delegator::delegate`].
+pub struct DelegateCtx<'a> {
+    pub chunk_selector: &'a mut ChunkSelector,
+    pub stats: &'a ChunkStatistics,
+    pub peer_cache: &'a mut PartialQueue,
+}
+
 /// Delegator orchestrates assigning blocks to peer download pipelines and activates Endgame mode.
 #[derive(Debug, Default)]
 pub struct Delegator {
@@ -90,14 +105,9 @@ impl Delegator {
     /// Returns the allocated block transfers (piece, offset, length, peer_id).
     pub fn delegate<F>(
         &mut self,
-        peer_id: usize,
-        peer_bf: &Bitfield,
-        is_seeder: bool,
-        affinity: Option<u32>,
+        peer: DelegatePeer<'_>,
+        ctx: &mut DelegateCtx<'_>,
         max_pieces: usize,
-        chunk_selector: &mut ChunkSelector,
-        stats: &ChunkStatistics,
-        peer_cache: &mut PartialQueue,
         chunk_size_fn: F,
     ) -> Vec<Piece>
     where
@@ -106,9 +116,9 @@ impl Delegator {
         let mut new_transfers = Vec::new();
 
         // 1. Check affinity (piece currently being downloaded by this peer)
-        if let Some(aff_idx) = affinity {
+        if let Some(aff_idx) = peer.affinity {
             if let Some(bl) = self.transfers.find_mut(aff_idx) {
-                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer_id);
+                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
                 if new_transfers.len() >= max_pieces {
                     return new_transfers;
                 }
@@ -116,38 +126,30 @@ impl Delegator {
         }
 
         // 2. Prioritize full seeders
-        if is_seeder {
+        if peer.is_seeder {
             for bl in self.transfers.iter_mut() {
                 if new_transfers.len() >= max_pieces {
                     return new_transfers;
                 }
                 if bl.by_seeder() {
-                    Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer_id);
+                    Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
                 }
             }
 
             self.delegate_new_chunks(
                 &mut new_transfers,
                 max_pieces,
-                peer_id,
-                peer_bf,
-                is_seeder,
+                &peer,
                 true,
-                chunk_selector,
-                stats,
-                peer_cache,
+                ctx,
                 &chunk_size_fn,
             );
             self.delegate_new_chunks(
                 &mut new_transfers,
                 max_pieces,
-                peer_id,
-                peer_bf,
-                is_seeder,
+                &peer,
                 false,
-                chunk_selector,
-                stats,
-                peer_cache,
+                ctx,
                 &chunk_size_fn,
             );
         }
@@ -161,8 +163,8 @@ impl Delegator {
             if new_transfers.len() >= max_pieces {
                 return new_transfers;
             }
-            if bl.priority() == Priority::High && peer_bf.get(bl.index() as usize) {
-                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer_id);
+            if bl.priority() == Priority::High && peer.peer_bf.get(bl.index() as usize) {
+                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
             }
         }
 
@@ -170,13 +172,9 @@ impl Delegator {
         self.delegate_new_chunks(
             &mut new_transfers,
             max_pieces,
-            peer_id,
-            peer_bf,
-            is_seeder,
+            &peer,
             true,
-            chunk_selector,
-            stats,
-            peer_cache,
+            ctx,
             &chunk_size_fn,
         );
 
@@ -189,8 +187,8 @@ impl Delegator {
             if new_transfers.len() >= max_pieces {
                 return new_transfers;
             }
-            if bl.priority() == Priority::Normal && peer_bf.get(bl.index() as usize) {
-                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer_id);
+            if bl.priority() == Priority::Normal && peer.peer_bf.get(bl.index() as usize) {
+                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
             }
         }
 
@@ -198,13 +196,9 @@ impl Delegator {
         self.delegate_new_chunks(
             &mut new_transfers,
             max_pieces,
-            peer_id,
-            peer_bf,
-            is_seeder,
+            &peer,
             false,
-            chunk_selector,
-            stats,
-            peer_cache,
+            ctx,
             &chunk_size_fn,
         );
 
@@ -218,13 +212,13 @@ impl Delegator {
             if new_transfers.len() >= max_pieces {
                 break;
             }
-            if peer_bf.get(bl.index() as usize) && bl.priority() != Priority::Off {
+            if peer.peer_bf.get(bl.index() as usize) && bl.priority() != Priority::Off {
                 for block in bl.blocks_mut() {
                     if new_transfers.len() >= max_pieces || block.size_not_stalled() >= overlapped {
                         break;
                     }
                     if !block.is_finished() {
-                        let _idx = block.insert(peer_id);
+                        let _idx = block.insert(peer.peer_id);
                         new_transfers.push(*block.piece());
                         overlapped = block.size_not_stalled();
                     }
@@ -239,37 +233,38 @@ impl Delegator {
         &mut self,
         transfers: &mut Vec<Piece>,
         max_pieces: usize,
-        peer_id: usize,
-        peer_bf: &Bitfield,
-        is_seeder: bool,
+        peer: &DelegatePeer<'_>,
         high_priority: bool,
-        chunk_selector: &mut ChunkSelector,
-        stats: &ChunkStatistics,
-        peer_cache: &mut PartialQueue,
+        ctx: &mut DelegateCtx<'_>,
         chunk_size_fn: &F,
     ) where
         F: Fn(u32) -> u32,
     {
         while transfers.len() < max_pieces {
-            let chunk_idx = match chunk_selector.find(peer_bf, peer_cache, is_seeder, stats) {
+            let chunk_idx = match ctx.chunk_selector.find(
+                peer.peer_bf,
+                ctx.peer_cache,
+                peer.is_seeder,
+                ctx.stats,
+            ) {
                 Some(idx) => idx,
                 None => return,
             };
 
-            chunk_selector.using_index(chunk_idx);
+            ctx.chunk_selector.using_index(chunk_idx);
 
             let chunk_len = chunk_size_fn(chunk_idx);
             let piece = Piece::new(chunk_idx, 0, chunk_len);
 
             let bl = self.transfers.insert(piece, DEFAULT_BLOCK_SIZE);
-            bl.set_by_seeder(is_seeder);
+            bl.set_by_seeder(peer.is_seeder);
             bl.set_priority(if high_priority {
                 Priority::High
             } else {
                 Priority::Normal
             });
 
-            Self::delegate_from_blocklist(transfers, max_pieces, bl, peer_id);
+            Self::delegate_from_blocklist(transfers, max_pieces, bl, peer.peer_id);
         }
     }
 
@@ -320,14 +315,18 @@ mod tests {
         peer_bf.set(1);
 
         let delegated = delegator.delegate(
-            100,
-            &peer_bf,
-            false,
-            None,
+            DelegatePeer {
+                peer_id: 100,
+                peer_bf: &peer_bf,
+                is_seeder: false,
+                affinity: None,
+            },
+            &mut DelegateCtx {
+                chunk_selector: &mut selector,
+                stats: &stats,
+                peer_cache: &mut peer_cache,
+            },
             2,
-            &mut selector,
-            &stats,
-            &mut peer_cache,
             |_| 32768, // 32KB = 2 blocks
         );
 

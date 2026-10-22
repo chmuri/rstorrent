@@ -918,13 +918,15 @@ impl DownloadNetworkCoordinator {
                         connect_tasks.spawn(async move {
                             run_peer_worker(
                                 peer_addr,
-                                info_hash,
-                                our_peer_id,
-                                dl_ref,
-                                peer_shutdown,
-                                connect_timeout,
-                                peer_encryption,
-                                Some(pool_ref),
+                                PeerWorkerContext {
+                                    info_hash,
+                                    our_peer_id,
+                                    download: dl_ref,
+                                    shutdown_rx: peer_shutdown,
+                                    connect_timeout,
+                                    policy: peer_encryption,
+                                    pool: Some(pool_ref),
+                                },
                             )
                             .await;
                         });
@@ -1259,10 +1261,8 @@ async fn outgoing_handshake(
     }
 }
 
-/// Runs an outbound peer connection: dials, exchanges handshakes, then runs
-/// the shared peer session loop.
-async fn run_peer_worker(
-    peer_addr: SocketAddr,
+/// Shared state for one outbound peer connection attempt.
+struct PeerWorkerContext {
     info_hash: HashString,
     our_peer_id: HashString,
     download: Arc<Mutex<Download>>,
@@ -1270,7 +1270,20 @@ async fn run_peer_worker(
     connect_timeout: Duration,
     policy: EncryptionPolicy,
     pool: Option<PeerPoolHandle>,
-) {
+}
+
+/// Runs an outbound peer connection: dials, exchanges handshakes, then runs
+/// the shared peer session loop.
+async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
+    let PeerWorkerContext {
+        info_hash,
+        our_peer_id,
+        download,
+        shutdown_rx,
+        connect_timeout,
+        policy,
+        pool,
+    } = ctx;
     debug!(peer = %peer_addr, "Connecting to peer...");
 
     let session =

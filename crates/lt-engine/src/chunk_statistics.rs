@@ -401,7 +401,7 @@ mod tests {
                 }
             }
 
-            let mut expected_counts = vec![0u8; PIECES];
+            let mut expected_counts = [0u8; PIECES];
             let mut expected_complete = 0;
             let mut expected_accounted = 0;
             for bf in model.values() {
@@ -409,9 +409,9 @@ mod tests {
                     expected_complete += 1;
                 } else if !bf.is_all_unset() {
                     expected_accounted += 1;
-                    for index in 0..PIECES {
+                    for (index, count) in expected_counts.iter_mut().enumerate() {
                         if bf.get(index) {
-                            expected_counts[index] += 1;
+                            *count += 1;
                         }
                     }
                 }
@@ -419,10 +419,10 @@ mod tests {
 
             assert_eq!(stats.complete(), expected_complete);
             assert_eq!(stats.accounted(), expected_accounted);
-            for index in 0..PIECES {
+            for (index, expected) in expected_counts.iter().enumerate() {
                 assert_eq!(
                     stats.rarity(index),
-                    expected_counts[index],
+                    *expected,
                     "rarity mismatch at piece {index}"
                 );
             }
