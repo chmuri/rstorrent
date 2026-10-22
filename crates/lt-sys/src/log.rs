@@ -125,6 +125,12 @@ impl LogRegistry {
     }
 }
 
+impl Default for LogRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 static REGISTRY: OnceLock<Mutex<LogRegistry>> = OnceLock::new();
 
 fn registry() -> &'static Mutex<LogRegistry> {

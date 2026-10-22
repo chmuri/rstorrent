@@ -48,10 +48,10 @@ impl Lockfile {
         }
 
         // Check if process exists using kill(pid, 0)
-        match kill(Pid::from_raw(pid), None) {
-            Err(nix::errno::Errno::ESRCH) => true,
-            _ => false,
-        }
+        matches!(
+            kill(Pid::from_raw(pid), None),
+            Err(nix::errno::Errno::ESRCH)
+        )
     }
 
     pub fn try_lock(&mut self) -> bool {

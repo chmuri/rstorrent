@@ -40,41 +40,39 @@ impl FileStat {
     }
 
     pub fn is_regular(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.is_file())
+        self.meta.as_ref().is_some_and(|m| m.is_file())
     }
 
     pub fn is_directory(&self) -> bool {
-        self.meta.as_ref().map_or(false, |m| m.is_dir())
+        self.meta.as_ref().is_some_and(|m| m.is_dir())
     }
 
     pub fn is_link(&self) -> bool {
         self.meta
             .as_ref()
-            .map_or(false, |m| m.file_type().is_symlink())
+            .is_some_and(|m| m.file_type().is_symlink())
     }
 
     pub fn is_fifo(&self) -> bool {
-        self.meta
-            .as_ref()
-            .map_or(false, |m| m.file_type().is_fifo())
+        self.meta.as_ref().is_some_and(|m| m.file_type().is_fifo())
     }
 
     pub fn is_socket(&self) -> bool {
         self.meta
             .as_ref()
-            .map_or(false, |m| m.file_type().is_socket())
+            .is_some_and(|m| m.file_type().is_socket())
     }
 
     pub fn is_block(&self) -> bool {
         self.meta
             .as_ref()
-            .map_or(false, |m| m.file_type().is_block_device())
+            .is_some_and(|m| m.file_type().is_block_device())
     }
 
     pub fn is_character(&self) -> bool {
         self.meta
             .as_ref()
-            .map_or(false, |m| m.file_type().is_char_device())
+            .is_some_and(|m| m.file_type().is_char_device())
     }
 
     pub fn size(&self) -> i64 {
