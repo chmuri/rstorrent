@@ -90,3 +90,98 @@ fn session_commands_round_trip_and_erase_entries() {
     manager.lock().unwrap().stop().unwrap();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn session_alias_realpath_and_fsync_commands() {
+    let dir = temp_session_dir("alias");
+    let path = format!("{}/", dir.display());
+
+    let manager = Arc::new(Mutex::new(SessionManager::new()));
+    let list = Arc::new(RwLock::new(DownloadList::new()));
+    let mut map = CommandMap::new();
+    register_session_commands(&mut map, Arc::clone(&manager), Arc::clone(&list)).unwrap();
+
+    // Both aliases write the same setting.
+    for name in ["session.set", "session"] {
+        assert!(call(&map, name, vec![Object::from(path.as_str())]).is_ok());
+        assert_eq!(
+            call(&map, "session.path", vec![])
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            path
+        );
+    }
+
+    let realpath = call(&map, "session.path.realpath.or_empty", vec![]).unwrap();
+    assert!(!realpath.as_str().unwrap().is_empty());
+    let realpath = call(&map, "session.path.realpath.or_throw", vec![]).unwrap();
+    assert!(!realpath.as_str().unwrap().is_empty());
+
+    // Invalid argument types are rejected without touching the path.
+    let _ = call(&map, "session.path.set", vec![Object::create_map()]);
+
+    // fsync defaults on and toggles through the command surface.
+    assert_eq!(
+        call(&map, "session.use_fsyncdisk", vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        1
+    );
+    assert!(call(&map, "session.use_fsyncdisk.set", vec![Object::from(0i64)]).is_ok());
+    assert_eq!(
+        call(&map, "session.use_fsyncdisk", vec![])
+            .unwrap()
+            .as_value()
+            .unwrap(),
+        0
+    );
+
+    // An empty path cannot be resolved, so the throwing variant errors.
+    assert!(call(&map, "session.path.set", vec![Object::from("")]).is_ok());
+    assert!(call(&map, "session.path.realpath.or_throw", vec![]).is_err());
+    assert_eq!(
+        call(&map, "session.path.realpath.or_empty", vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        ""
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn session_save_commits_a_download_entry() {
+    let dir = temp_session_dir("save_entry");
+    let path = format!("{}/", dir.display());
+
+    let manager = Arc::new(Mutex::new(SessionManager::new()));
+    let list = Arc::new(RwLock::new(DownloadList::new()));
+    let mut map = CommandMap::new();
+    register_session_commands(&mut map, Arc::clone(&manager), Arc::clone(&list)).unwrap();
+
+    assert!(call(&map, "session.path.set", vec![Object::from(path.as_str())]).is_ok());
+    manager.lock().unwrap().start().unwrap();
+
+    let mut info = Object::create_map();
+    info.insert_key("name", Object::from("save-entry")).unwrap();
+    info.insert_key("length", Object::from(16i64)).unwrap();
+    info.insert_key("piece length", Object::from(262144i64))
+        .unwrap();
+    info.insert_key("pieces", Object::from(vec![0u8; 20]))
+        .unwrap();
+    let mut root = Object::create_map();
+    root.insert_key("info", info).unwrap();
+    let mut factory = rt_core::DownloadFactory::new();
+    factory.load_object(root);
+    let download = factory.commit(&mut list.write().unwrap()).unwrap();
+    let hash = download.read().unwrap().info_hash_hex().to_uppercase();
+
+    assert!(call(&map, "session.save", vec![]).is_ok());
+    assert!(dir.join(format!("{hash}.torrent.rtorrent")).is_file());
+
+    manager.lock().unwrap().stop().unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}

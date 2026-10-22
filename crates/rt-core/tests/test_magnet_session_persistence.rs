@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use lt_common::hash_string::HashString;
 use lt_common::Object;
@@ -11,6 +12,14 @@ use rt_core::DownloadFactory;
 static COUNTER: AtomicU64 = AtomicU64::new(1);
 
 const TRACKER: &str = "http://tracker.example.com/announce";
+
+fn wait_until<F: Fn() -> bool>(label: &str, predicate: F) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !predicate() {
+        assert!(Instant::now() < deadline, "timed out waiting for {label}");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
 
 struct Fixture {
     root: PathBuf,
@@ -164,8 +173,12 @@ fn magnet_metadata_is_persisted_as_static_torrent_and_restored() {
         !restored.is_metadata_download(),
         "restored torrent must carry the real metadata"
     );
-    assert!(restored.is_active(), "active state must be restored");
     drop(restored);
+
+    // Existing payload is verified asynchronously before the transfer starts.
+    wait_until("restored download to become active", || {
+        downloads[0].read().unwrap().is_active()
+    });
 
     restored_manager.shutdown().unwrap();
 }

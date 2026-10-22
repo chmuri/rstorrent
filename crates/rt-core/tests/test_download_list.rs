@@ -90,3 +90,79 @@ fn test_erase_and_events() {
     assert_eq!("event.download.closed", evs[4].0);
     assert_eq!("event.download.erased", evs[5].0);
 }
+
+#[test]
+fn lifecycle_helpers_and_direct_close() {
+    let mut list = DownloadList::new();
+    let hex = insert_download(&mut list);
+
+    assert!(!list.is_empty());
+    assert_eq!(list.all().len(), 1);
+    assert!(list
+        .find(&lt_common::HashString::from_hex(&hex.to_uppercase()).unwrap())
+        .is_some());
+
+    let dl = list.find_hex(&hex).unwrap();
+
+    // A closed download cannot start and emits no lifecycle event.
+    assert!(list.try_start(&dl).is_err());
+
+    list.open(&dl);
+    list.start(&dl);
+    list.pause(&dl);
+    list.resume(&dl);
+    list.try_stop(&dl).unwrap();
+    list.close_directly(&dl);
+    assert!(!dl.read().unwrap().is_open());
+
+    // A hash pass without a configured directory still completes safely.
+    list.check_hash(&dl);
+    list.check_hash_final(&dl);
+
+    // Re-entrant erase is rejected without a second event stream.
+    dl.write().unwrap().set_erasing(true);
+    assert!(list.erase_hex(&hex).is_none());
+    dl.write().unwrap().set_erasing(false);
+
+    list.notify_metadata_updated(&dl);
+
+    list.clear();
+    assert!(list.is_empty());
+}
+
+#[test]
+fn start_and_hash_guards_while_verification_is_running() {
+    use lt_storage::file::Priority;
+    use lt_storage::resume::{ResumeData, MTIME_RECHECK};
+
+    let mut list = DownloadList::new();
+    let hex = insert_download(&mut list);
+    let dl = list.find_hex(&hex).unwrap();
+    list.open(&dl);
+
+    // A directory with no payload makes resume validation queue the piece.
+    let dir = std::env::temp_dir().join(format!(
+        "rstorrent_download_list_guards_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dl.write().unwrap().set_directory(dir.to_str().unwrap());
+
+    // Queue a deferred recheck, then pretend the pass is already running.
+    let resume = ResumeData {
+        bitfield: Some(lt_common::bitfield::Bitfield::new(1)),
+        file_priorities: vec![Priority::Normal],
+        file_mtimes: vec![MTIME_RECHECK],
+        completed_bytes: 0,
+    };
+    dl.write().unwrap().apply_resume(&resume).unwrap();
+    assert!(dl.read().unwrap().has_pending_hash_pieces());
+
+    dl.write().unwrap().set_hash_checking(true);
+    list.start(&dl); // already checking: no second pass, no event
+    list.check_hash(&dl); // already checking: early return
+    list.check_hash_final(&dl);
+    dl.write().unwrap().set_hash_checking(false);
+    let _ = std::fs::remove_dir_all(&dir);
+}

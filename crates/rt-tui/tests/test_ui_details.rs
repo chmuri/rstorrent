@@ -311,3 +311,75 @@ fn test_details_chunks_and_info_refresh_throttling() {
     let third_text = canvas.to_string_rows().join("\n");
     assert!(third_text.contains("Completed Pieces:  1 / 40"));
 }
+
+#[test]
+fn test_details_info_reports_hashing_state() {
+    let dl = make_test_download("hashing_torrent");
+    dl.write().unwrap().set_hash_checking(true);
+
+    let mut details = WindowDownloadDetails::new();
+    details.set_download(Some(Arc::clone(&dl)));
+
+    let mut canvas = Canvas::new(0, 0, 100, 25);
+    details.redraw(&mut canvas);
+    let text = canvas.to_string_rows().join("\n");
+
+    assert!(text.contains("Hashing 0/2"), "{text}");
+}
+
+#[test]
+fn test_details_files_tab_lists_multi_file_rows() {
+    use lt_common::path::Path as TorrentPath;
+    use lt_engine::constructor::TorrentFileEntry;
+
+    let mut a = TorrentPath::new();
+    a.push("a.bin");
+    let mut b = TorrentPath::new();
+    b.push("b.bin");
+
+    let metadata = lt_engine::constructor::TorrentMetadata {
+        info_hash: HashString::new([0x44; 20]),
+        name: "multi".to_string(),
+        piece_length: 262144,
+        pieces: vec![0u8; 40],
+        num_pieces: 2,
+        total_size: 524288,
+        is_multi_file: true,
+        files: vec![
+            TorrentFileEntry {
+                path: a,
+                length: 262144,
+                offset: 0,
+            },
+            TorrentFileEntry {
+                path: b,
+                length: 262144,
+                offset: 262144,
+            },
+        ],
+        announce: None,
+        announce_list: Vec::new(),
+        is_private: false,
+        is_meta_download: false,
+    };
+
+    let dl = Arc::new(RwLock::new(rt_core::Download::new(
+        lt_engine::download::Download::new(metadata),
+    )));
+    dl.write()
+        .unwrap()
+        .download_mut()
+        .chunk_selector_mut()
+        .mark_completed(0);
+
+    let mut details = WindowDownloadDetails::new();
+    details.set_download(Some(dl));
+    details.set_tab(DetailTab::Files);
+
+    let mut canvas = Canvas::new(0, 0, 100, 25);
+    details.redraw(&mut canvas);
+    let text = canvas.to_string_rows().join("\n");
+
+    assert!(text.contains("a.bin"), "{text}");
+    assert!(text.contains("b.bin"), "{text}");
+}

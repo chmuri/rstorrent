@@ -300,12 +300,15 @@ impl Window for WindowDownloadDetails {
 
             match self.current_tab {
                 DetailTab::Info => {
+                    let completed = dl.completed_bytes();
+                    let is_hashing = dl.is_hash_checking();
+                    let chunks_hashed = dl.chunks_hashed();
                     let mut engine = dl.download();
                     let downloaded = engine.downloaded_bytes();
                     let uploaded = engine.uploaded_bytes();
                     let total_size = meta.total_size;
                     let percent = if total_size > 0 {
-                        (downloaded * 100) / total_size
+                        (completed * 100) / total_size
                     } else {
                         0
                     };
@@ -324,9 +327,9 @@ impl Window for WindowDownloadDetails {
                     let completed_chunks = engine.completed_chunks() as u32;
                     drop(engine);
 
-                    let time_left = if rate_down_bytes > 0 && downloaded < total_size {
+                    let time_left = if rate_down_bytes > 0 && completed < total_size {
                         format_download_time_left(
-                            total_size.saturating_sub(downloaded),
+                            total_size.saturating_sub(completed),
                             rate_down_bytes,
                         )
                     } else if is_done {
@@ -352,12 +355,16 @@ impl Window for WindowDownloadDetails {
                         peers_count,
                         trackers_count,
                         directory: dl.directory().to_string(),
-                        state_str: format!(
-                            "{:?} (Active: {}, Done: {})",
-                            dl.state(),
-                            dl.is_active(),
-                            is_done
-                        ),
+                        state_str: if is_hashing {
+                            format!("Hashing {}/{}", chunks_hashed, meta.num_pieces)
+                        } else {
+                            format!(
+                                "{:?} (Active: {}, Done: {})",
+                                dl.state(),
+                                dl.is_active(),
+                                is_done
+                            )
+                        },
                         priority: dl.priority(),
                         message: dl.message().to_string(),
                     };
@@ -448,15 +455,16 @@ impl Window for WindowDownloadDetails {
                     };
                 }
                 DetailTab::Files => {
+                    let completed_bytes = dl.completed_bytes();
                     let engine = dl.download();
                     let file_list = engine.file_list();
                     let files = file_list.files();
 
                     if files.is_empty() {
                         let size_mb = meta.total_size as f64 / (1024.0 * 1024.0);
-                        let comp_mb = engine.downloaded_bytes() as f64 / (1024.0 * 1024.0);
+                        let comp_mb = completed_bytes as f64 / (1024.0 * 1024.0);
                         let percent = if meta.total_size > 0 {
-                            (engine.downloaded_bytes() * 100) / meta.total_size
+                            (completed_bytes * 100) / meta.total_size
                         } else {
                             0
                         };

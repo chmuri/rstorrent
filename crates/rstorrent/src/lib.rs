@@ -27,6 +27,7 @@ use rt_tui::display::Canvas;
 use rt_tui::ui::InputPromptMode;
 use rt_tui::Window;
 use std::io::IsTerminal;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
@@ -187,6 +188,22 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let force_shutdown = control.root_ui.lock().unwrap().force_shutdown_requested;
     if force_shutdown {
         tracing::warn!("Forced shutdown requested (double ^Q)");
+        // Best-effort resume checkpoint so a forced exit does not throw away
+        // progress since the last periodic save. Bounded: the exit stays
+        // immediate if the disk is wedged.
+        let session_manager = Arc::clone(&control.session_manager);
+        let download_list = Arc::clone(&control.download_list);
+        let save = tokio::task::spawn_blocking(move || {
+            Control::save_resume_checkpoint_state(session_manager, download_list)
+        });
+        match tokio::time::timeout(std::time::Duration::from_secs(10), save).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(err))) => {
+                tracing::warn!(error = %err, "Could not checkpoint resume data before forced exit")
+            }
+            Ok(Err(err)) => tracing::warn!(error = %err, "Forced checkpoint task failed"),
+            Err(_) => tracing::warn!("Timed out checkpointing resume data before forced exit"),
+        }
         terminal_guard.leave()?;
         signals::mark_terminal_restored();
         std::process::exit(0);

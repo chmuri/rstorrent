@@ -149,3 +149,108 @@ fn test_other_windows_rendering() {
     assert!(log_rows[1].contains("Initialized system"));
     assert!(log_rows[2].contains("Session loaded"));
 }
+
+#[test]
+fn progress_percent_uses_verified_bytes_not_transfer_counter() {
+    use rt_tui::windows::download_list::progress_percent;
+
+    assert_eq!(50, progress_percent(512, 1024));
+    assert_eq!(0, progress_percent(0, 1024));
+    assert_eq!(100, progress_percent(1024, 1024));
+    // Never exceed a full bar or divide by zero.
+    assert_eq!(0, progress_percent(10, 0));
+    assert_eq!(100, progress_percent(2048, 1024));
+}
+
+#[test]
+fn status_label_reports_hashing_before_activity() {
+    use rt_tui::windows::download_list::status_label;
+
+    // A hash pass outranks the stopped/active label: the transfer is held back
+    // while pieces are verified.
+    assert_eq!(
+        status_label(true, false, false, true, 3, 10),
+        "HASHING 3/10"
+    );
+    assert_eq!(status_label(false, false, false, false, 0, 10), "CLOSED");
+    assert_eq!(status_label(true, false, false, false, 0, 10), "STOPPED");
+    assert_eq!(status_label(true, true, true, false, 0, 10), "COMPLETED");
+    assert_eq!(status_label(true, true, false, false, 0, 10), "ACTIVE");
+}
+
+#[test]
+fn compact_layout_uses_verified_progress_and_hashed_status() {
+    use rt_tui::windows::WindowDownloadList;
+
+    let mut view = View::with_name("compact");
+    let dl = make_test_download(10);
+    {
+        let mut guard = dl.write().unwrap();
+        // One piece of one piece: 100% verified while the session counter is 0.
+        guard.download_mut().chunk_selector_mut().mark_completed(0);
+        guard.open().unwrap();
+        guard.start();
+    }
+    let hash = *dl.read().unwrap().info_hash();
+    view.insert(Arc::clone(&dl));
+    view.set_visible(&hash, None);
+
+    let view_arc = Arc::new(RwLock::new(view));
+    let mut win = WindowDownloadList::new();
+    win.set_view(Some(Arc::clone(&view_arc)));
+    win.set_layout("compact");
+
+    let mut canvas = Canvas::new(0, 0, 120, 6);
+    win.redraw(&mut canvas);
+    let text = canvas.to_string_rows().join("\n");
+    assert!(text.contains("COMPLETED"), "{text}");
+    assert!(text.contains("100%"), "{text}");
+
+    // A verification pass outranks activity and reports piece progress.
+    dl.write().unwrap().set_hash_checking(true);
+    let mut canvas = Canvas::new(0, 0, 120, 6);
+    win.redraw(&mut canvas);
+    let text = canvas.to_string_rows().join("\n");
+    assert!(text.contains("HASHING 0/1"), "{text}");
+    dl.write().unwrap().set_hash_checking(false);
+}
+
+#[test]
+fn download_list_window_trait_and_missing_view_paths() {
+    use rt_core::ViewManager;
+    use rt_tui::windows::WindowDownloadList;
+
+    let mut win = WindowDownloadList::new();
+    assert_ne!(win.flags(), 0);
+    win.set_flags(0);
+    assert_eq!(win.flags(), 0);
+    assert_eq!(win.min_width(), 20);
+    assert_eq!(win.min_height(), 5);
+
+    win.resize(0, 0, 10, 10);
+    win.mark_dirty();
+    assert!(win.is_dirty());
+
+    // No view configured.
+    let mut canvas = Canvas::new(0, 0, 80, 5);
+    win.redraw(&mut canvas);
+    assert!(canvas.get_line(0).contains("[No View]"));
+
+    // The manager does not know the requested view name.
+    let vm = Arc::new(RwLock::new(ViewManager::new()));
+    win.set_view_manager(Some(vm), "missing");
+    let mut canvas = Canvas::new(0, 0, 80, 5);
+    win.redraw(&mut canvas);
+    assert!(canvas.get_line(0).contains("[View 'missing' not found]"));
+
+    // A canvas too short for any row still renders the title.
+    let mut view = View::with_name("short");
+    let dl = make_test_download(30);
+    let hash = *dl.read().unwrap().info_hash();
+    view.insert(dl);
+    view.set_visible(&hash, None);
+    win.set_view(Some(Arc::new(RwLock::new(view))));
+    let mut canvas = Canvas::new(0, 0, 80, 1);
+    win.redraw(&mut canvas);
+    assert!(canvas.get_line(0).contains("[View: short]"));
+}

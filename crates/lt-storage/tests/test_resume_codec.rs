@@ -1,7 +1,7 @@
 use lt_common::Object;
 use lt_storage::file::Priority;
 use lt_storage::resume::{
-    ResumeData, MTIME_DOWNLOADING, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED,
+    ResumeData, ResumeExtras, MTIME_DOWNLOADING, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED,
 };
 
 fn string_key(value: &str) -> Object {
@@ -199,6 +199,7 @@ fn legacy_extras_round_trip_per_file_completed_and_trackers() {
 
     let extras = ResumeExtras {
         file_completed_chunks: vec![Some(7), None],
+        uncertain_pieces: vec![1],
         trackers: vec![
             TrackerResumeSettings {
                 url: "http://a/announce".into(),
@@ -218,6 +219,7 @@ fn legacy_extras_round_trip_per_file_completed_and_trackers() {
 
     let restored = ResumeExtras::from_object(&object);
     assert_eq!(restored.file_completed_chunks, vec![Some(7), None]);
+    assert_eq!(restored.uncertain_pieces, vec![1]);
     assert_eq!(restored.trackers.len(), 2);
     assert!(restored
         .trackers
@@ -237,4 +239,35 @@ fn legacy_extras_round_trip_per_file_completed_and_trackers() {
         vec![Priority::Normal, Priority::High]
     );
     assert_eq!(resume.file_mtimes, vec![MTIME_RECHECK, 1234]);
+}
+
+#[test]
+fn uncertain_pieces_codec_filters_invalid_entries_and_collapses_duplicates() {
+    // An empty set is omitted entirely so old clients never see the key.
+    let extras = ResumeExtras::default();
+    let mut object = Object::create_map();
+    extras.write_into(&mut object);
+    assert!(
+        object.get_key_list(b"uncertain_pieces").is_err(),
+        "uncertain_pieces must be omitted when every piece is durable"
+    );
+
+    // Out-of-range, negative and non-integer entries are ignored; duplicates
+    // collapse into a sorted set.
+    let mut list = Object::create_list();
+    for value in [
+        Object::create_value(2),
+        Object::create_value(-1),
+        string_key("nope"),
+        Object::create_value(2),
+        Object::create_value(u32::MAX as i64),
+        Object::create_value(u32::MAX as i64 + 1),
+    ] {
+        list.insert_back(value).unwrap();
+    }
+    let mut object = Object::create_map();
+    object.insert_key(b"uncertain_pieces", list).unwrap();
+
+    let extras = ResumeExtras::from_object(&object);
+    assert_eq!(extras.uncertain_pieces, vec![2, u32::MAX]);
 }

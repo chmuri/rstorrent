@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -241,6 +241,10 @@ pub struct Download {
     initial_seeding: Option<InitialSeeding>,
     resume_mtimes: Vec<i64>,
     resume_completed_bytes: u64,
+    /// Pieces marked complete from a disk write that has not been fsynced
+    /// since. Serialized into the resume extras so a crash cannot make the
+    /// next process trust page-cache-only data.
+    unsynced_pieces: BTreeSet<u32>,
     hash_checked: bool,
     hash_failed: bool,
     hash_failed_pieces: Vec<u32>,
@@ -375,6 +379,7 @@ impl Download {
             initial_seeding: None,
             resume_mtimes: Vec::new(),
             resume_completed_bytes: 0,
+            unsynced_pieces: BTreeSet::new(),
             hash_checked: false,
             hash_failed: false,
             hash_failed_pieces: Vec::new(),
@@ -477,6 +482,9 @@ impl Download {
                 }
                 Some(Ok(())) => {
                     let pending = self.pending_writes.remove(index);
+                    // The worker completed the write but did not fsync it; the
+                    // next resume snapshot must not trust this piece.
+                    self.unsynced_pieces.insert(pending.piece_index);
                     self.mark_piece_complete(pending.piece_index);
                     completed += 1;
                 }
@@ -527,8 +535,14 @@ impl Download {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
-        match &self.disk_thread {
-            Some(thread) => thread.sync_all(),
+        match self.disk_thread.clone().or_else(global_disk_thread) {
+            Some(thread) => {
+                thread.sync_all()?;
+                // Everything written before this sync is now durable and can
+                // be trusted by a future resume load.
+                self.unsynced_pieces.clear();
+                Ok(())
+            }
             None => Ok(()),
         }
     }
@@ -871,6 +885,22 @@ impl Download {
     /// run a partial recheck. The download is considered hash-checked only
     /// when nothing is pending.
     pub fn apply_resume(&mut self, resume: &ResumeData) -> Result<usize, String> {
+        self.apply_resume_with_uncertain(resume, &[])
+    }
+
+    /// Applies resume data and re-queues pieces whose data may not have been
+    /// fsynced when the snapshot was taken.
+    ///
+    /// `uncertain` comes from the `uncertain_pieces` resume extra. Those pieces
+    /// are cleared from the persisted bitfield and exposed through
+    /// [`Download::take_pending_hash_pieces`], so the first start re-hashes
+    /// them instead of trusting page-cache contents that may not have reached
+    /// the disk.
+    pub fn apply_resume_with_uncertain(
+        &mut self,
+        resume: &ResumeData,
+        uncertain: &[u32],
+    ) -> Result<usize, String> {
         let num_pieces = self.metadata.num_pieces;
 
         if let Some(bitfield) = &resume.bitfield {
@@ -889,8 +919,11 @@ impl Download {
             }
         }
 
+        self.unsynced_pieces.clear();
+
         if let Some(base_bitfield) = &resume.bitfield {
-            let (verified, pending) = self.validate_resume_bitfield(resume, base_bitfield);
+            let (verified, pending) =
+                self.validate_resume_bitfield(resume, base_bitfield, uncertain);
 
             // Apply the trusted part of the bitfield now. Pieces belonging to
             // changed files are left unset and exposed through
@@ -950,6 +983,7 @@ impl Download {
         &self,
         resume: &ResumeData,
         base: &Bitfield,
+        uncertain: &[u32],
     ) -> (Bitfield, Vec<u32>) {
         let mut bitfield = base.clone();
 
@@ -1015,6 +1049,17 @@ impl Download {
             if needs_recheck {
                 bitfield.unset_range(first as usize, last as usize);
                 recheck.extend(first..last);
+            }
+        }
+
+        // Pieces written but not fsynced when the snapshot was taken are never
+        // trusted, even when the file mtime looks valid (or the file is marked
+        // as actively downloading).
+        for index in uncertain {
+            let index = *index as usize;
+            if index < self.metadata.num_pieces {
+                bitfield.unset(index);
+                recheck.push(index as u32);
             }
         }
 
@@ -1616,6 +1661,54 @@ impl Download {
         self.downloaded_bytes
     }
 
+    /// Restores the session transfer counter from persisted state.
+    pub fn set_downloaded_bytes(&mut self, value: u64) {
+        self.downloaded_bytes = value;
+    }
+
+    /// Restores the session transfer counter from persisted state.
+    pub fn set_uploaded_bytes(&mut self, value: u64) {
+        self.uploaded_bytes = value;
+    }
+
+    /// Payload bytes covered by verified pieces.
+    ///
+    /// The last piece is usually shorter than `piece_length`, so a full
+    /// bitfield is clamped against `total_size` instead of counting it in
+    /// full. Computed from the set-bit count to stay O(1) per render.
+    pub fn completed_bytes(&self) -> u64 {
+        let pieces = self.metadata.num_pieces as u64;
+        if pieces == 0 || self.metadata.total_size == 0 {
+            return 0;
+        }
+
+        let completed = self.chunk_selector.completed().size_set() as u64;
+        if completed == 0 {
+            return 0;
+        }
+
+        // `piece_length * completed` over-counts a short final piece, so cap
+        // against the payload size instead of special-casing the last piece.
+        let piece_length = self.metadata.piece_length as u64;
+        completed
+            .saturating_mul(piece_length)
+            .min(self.metadata.total_size)
+    }
+
+    /// Pieces completed from a disk write that has not been fsynced yet.
+    ///
+    /// These are persisted as resume extras and re-hashed on restore instead of
+    /// being trusted, which keeps a crash from resurrecting page-cache-only
+    /// data.
+    pub fn uncertain_pieces(&self) -> Vec<u32> {
+        let completed = self.chunk_selector.completed();
+        self.unsynced_pieces
+            .iter()
+            .copied()
+            .filter(|index| completed.get(*index as usize))
+            .collect()
+    }
+
     pub fn rate_up(&mut self) -> u64 {
         self.rate_up.rate()
     }
@@ -1893,6 +1986,7 @@ impl Download {
         self.clear_hash_check_queue();
         self.pending_hash_pieces.clear();
         self.hash_failed_pieces.clear();
+        self.unsynced_pieces.clear();
         self.hash_checked = false;
         self.hash_failed = false;
     }
@@ -2702,6 +2796,8 @@ impl Download {
                     data,
                 )
                 .map_err(|err| format!("disk write failed: {err}"))?;
+            // `write_blocking` waits for the write syscall, not for fsync.
+            self.unsynced_pieces.insert(piece_index);
             self.mark_piece_complete(piece_index);
             return Ok(());
         };

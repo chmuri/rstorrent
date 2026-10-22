@@ -127,3 +127,21 @@ fn start_without_existing_files_marks_checked_and_downloads() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn completed_bytes_clamps_a_short_last_piece() {
+    let mut metadata = sample_metadata();
+    // 3 pieces of 8 bytes with a 4-byte tail: 20 bytes total.
+    metadata.total_size = 20;
+
+    let mut download = Download::new(metadata);
+    download.chunk_selector_mut().mark_completed(0);
+    assert_eq!(download.completed_bytes(), 8);
+
+    download.chunk_selector_mut().mark_completed(1);
+    assert_eq!(download.completed_bytes(), 16);
+
+    // The final piece only contributes its four remaining bytes.
+    download.chunk_selector_mut().mark_completed(2);
+    assert_eq!(download.completed_bytes(), 20);
+}

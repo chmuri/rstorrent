@@ -163,7 +163,7 @@ pub fn register_system_commands(map: &mut CommandMap) -> Result<(), RpcError> {
 
     map.insert_func(
         "system.client_version",
-        |_target, _obj| Ok(Object::from("0.10.0")),
+        |_target, _obj| Ok(Object::from(lt_common::version::VERSION)),
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
         "",
         "Get client version.",

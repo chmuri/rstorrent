@@ -64,8 +64,16 @@ fn test_try_load_torrent_magnet_with_quotes_and_whitespace() {
 #[tokio::test]
 async fn test_cli_positional_magnet_loading() {
     let mut control = Control::new();
+    // Isolate the session: restore-first startup would otherwise pick up a
+    // developer's real `~/.local/share/rstorrent/session` entry for this hash.
+    let root = std::env::temp_dir().join(format!("rstorrent_cli_magnet_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+
     let cli = Cli {
         files: vec![SAMPLE_MAGNET.to_string()],
+        session: Some(root.join("session").to_string_lossy().to_string()),
+        directory: Some(root.join("data").to_string_lossy().to_string()),
         ..Default::default()
     };
 
@@ -94,6 +102,7 @@ async fn test_cli_positional_magnet_loading() {
     drop(dl);
     drop(dl_arc);
     let _ = control.shutdown().await;
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

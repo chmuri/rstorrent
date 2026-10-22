@@ -81,10 +81,8 @@ impl Control {
         let root_ui = Arc::new(Mutex::new(RootUI::new()));
         let signals = SignalState::new();
 
-        let mut id_bytes = [0u8; 20];
-        id_bytes[0..8].copy_from_slice(b"-RS0100-");
-        let _ = getrandom::fill(&mut id_bytes[8..20]);
-        let our_peer_id = lt_common::hash_string::HashString::new(id_bytes);
+        let our_peer_id =
+            lt_common::hash_string::HashString::new(lt_common::version::new_peer_id());
 
         let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
 
@@ -408,6 +406,35 @@ impl Control {
                                 ),
                             }
                         }
+                        "event.download.paused" | "event.download.hash_done" => {
+                            // Persist immediately when a transfer stops or a
+                            // verification pass completes instead of waiting
+                            // for the periodic checkpoint.
+                            let session = session_manager.lock().unwrap();
+                            if !session.is_active() {
+                                return;
+                            }
+                            let guard = download.read().unwrap();
+                            if guard.is_hash_checking() || guard.is_erasing() {
+                                return;
+                            }
+                            match CoreManager::build_commit_entry(&guard) {
+                                Ok(entry) => {
+                                    if let Err(err) = session.save_resume(&entry) {
+                                        tracing::warn!(
+                                            error = %err,
+                                            event = %event,
+                                            "Could not checkpoint download state"
+                                        );
+                                    }
+                                }
+                                Err(err) => tracing::warn!(
+                                    error = %err,
+                                    event = %event,
+                                    "Could not serialize download for checkpoint"
+                                ),
+                            }
+                        }
                         _ => {}
                     }
                 }));
@@ -453,14 +480,9 @@ impl Control {
             }
         }
 
-        // 8. Load files from CLI positional arguments
-        for file in &cli.files {
-            if let Err(e) = self.try_load_torrent(file, true) {
-                tracing::warn!("Failed to load argument torrent '{}': {}", file, e);
-            }
-        }
-
-        // 8.5 Restore session entries and their resume data
+        // 8. Restore session entries and their resume data first. Loading CLI
+        // torrents into a not-yet-restored session would commit a fresh, empty
+        // resume and overwrite the saved progress.
         {
             let session_path = {
                 let session = self.session_manager.lock().unwrap();
@@ -540,8 +562,12 @@ impl Control {
                             .unwrap_or_else(|| ".".to_string())
                         };
                         download.set_directory(default_dir);
-                        download.queue_recheck_if_files_exist();
                     }
+
+                    // The directory may have come from the sidecar, so verify
+                    // existing payload regardless of whether we just filled in
+                    // a default.
+                    download.queue_recheck_if_files_exist();
 
                     let download = Arc::new(RwLock::new(download));
                     {
@@ -569,6 +595,15 @@ impl Control {
                         .unwrap()
                         .push_log(format!("Restored session torrent '{}'", torrent_path));
                 }
+            }
+        }
+
+        // 8.5 Load files from CLI positional arguments. Torrents already
+        // restored above are started from their existing entry instead of
+        // being re-committed from scratch.
+        for file in &cli.files {
+            if let Err(e) = self.try_load_torrent(file, true) {
+                tracing::warn!("Failed to load argument torrent '{}': {}", file, e);
             }
         }
 
@@ -800,6 +835,48 @@ impl Control {
             Arc::clone(&self.session_manager),
             Arc::clone(&self.download_list),
         )
+    }
+
+    /// Writes resume data for every download that is not mid-verification.
+    ///
+    /// This is the bounded-work variant used by the periodic checkpoint and the
+    /// forced-exit path: it never re-encodes `.torrent` files.
+    pub fn save_resume_checkpoint_state(
+        session_manager: Arc<Mutex<SessionManager>>,
+        download_list: Arc<RwLock<DownloadList>>,
+    ) -> std::io::Result<()> {
+        let session = session_manager.lock().unwrap();
+        if !session.is_used() || !session.is_active() {
+            return Ok(());
+        }
+
+        let mut first_error = None;
+        for download in download_list.read().unwrap().all() {
+            let guard = download.read().unwrap();
+            if guard.is_hash_checking() || guard.is_erasing() {
+                continue;
+            }
+            match CoreManager::build_commit_entry(&guard) {
+                Ok(entry) => {
+                    if let Err(err) = session.save_resume(&entry) {
+                        if first_error.is_none() {
+                            first_error = Some(err);
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(error = %err, "Could not serialize checkpoint entry");
+                    if first_error.is_none() {
+                        first_error = Some(err);
+                    }
+                }
+            }
+        }
+
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
     }
 
     fn save_session_state(
