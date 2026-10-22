@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Clippy gate (`CI`, workspace)**: `cargo clippy --workspace --all-targets -- -D
+  warnings` now blocks merges. The workspace is clippy-clean without new lint
+  suppressions; oversized internal APIs were regrouped into parameter structs
+  and the fallible `*_nothrow` parsers now return a typed `ParseError`.
+
 ### Fixed
 
 - **Magnet links verify an existing payload (`lt-engine`, `rt-core`)**: once
