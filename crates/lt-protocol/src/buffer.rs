@@ -55,11 +55,7 @@ impl<const N: usize> ProtocolBuffer<N> {
     }
 
     pub fn remaining(&self) -> usize {
-        if self.end >= self.position {
-            self.end - self.position
-        } else {
-            0
-        }
+        self.end.saturating_sub(self.position)
     }
 
     pub fn reserved(&self) -> usize {

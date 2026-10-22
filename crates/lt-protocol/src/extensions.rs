@@ -406,11 +406,13 @@ pub struct UtPexMessage {
 fn decode_compact_v4(bytes: &[u8]) -> Vec<SocketAddress> {
     // A compact list that is not a whole number of entries is malformed.
     // Ignore the whole field rather than accepting a truncated prefix.
-    if bytes.len() % 6 != 0 {
+    if !bytes.len().is_multiple_of(6) {
         return Vec::new();
     }
     bytes
-        .chunks_exact(6)
+        .as_chunks::<6>()
+        .0
+        .iter()
         .filter_map(|chunk| {
             let port = u16::from_be_bytes([chunk[4], chunk[5]]);
             if port == 0 {
@@ -425,11 +427,13 @@ fn decode_compact_v4(bytes: &[u8]) -> Vec<SocketAddress> {
 }
 
 fn decode_compact_v6(bytes: &[u8]) -> Vec<SocketAddress> {
-    if bytes.len() % 18 != 0 {
+    if !bytes.len().is_multiple_of(18) {
         return Vec::new();
     }
     bytes
-        .chunks_exact(18)
+        .as_chunks::<18>()
+        .0
+        .iter()
         .filter_map(|chunk| {
             let mut ip = [0u8; 16];
             ip.copy_from_slice(&chunk[0..16]);
