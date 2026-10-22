@@ -9,7 +9,7 @@ use tokio::net::UdpSocket;
 use tokio::time::{sleep, timeout};
 
 use crate::http::{
-    build_announce_url, uri_can_scrape, uri_generate_scrape_url, url_encode_bytes,
+    build_announce_url, uri_can_scrape, uri_generate_scrape_url, url_encode_bytes, AnnounceQuery,
     HttpAnnounceResponse, HttpTrackerError,
 };
 use crate::udp::{
@@ -131,7 +131,7 @@ pub async fn announce_detailed(
     } else if url.starts_with("udp://") {
         let router = global_udp_router();
         let mut router = router.lock().await;
-        announce_udp_detailed_with_router(url, params, &mut *router).await
+        announce_udp_detailed_with_router(url, params, &mut router).await
     } else {
         Err(TrackerClientError::UnsupportedScheme(url.to_string()))
     }
@@ -152,19 +152,19 @@ pub async fn announce_http_detailed(
     url: &str,
     params: &AnnounceParams,
 ) -> Result<TrackerAnnounceResult, TrackerClientError> {
-    let announce_url = build_announce_url(
-        url,
-        params.info_hash.as_bytes(),
-        params.peer_id.as_bytes(),
-        params.port,
-        params.uploaded,
-        params.downloaded,
-        params.left,
-        params.numwant,
-        params.event.as_deref(),
-        0x12345678,
-        true,
-    );
+    let announce_url = build_announce_url(AnnounceQuery {
+        base_url: url,
+        info_hash: params.info_hash.as_bytes(),
+        peer_id: params.peer_id.as_bytes(),
+        port: params.port,
+        uploaded: params.uploaded,
+        downloaded: params.downloaded,
+        left: params.left,
+        numwant: params.numwant,
+        event: params.event.as_deref(),
+        key: 0x12345678,
+        compact: true,
+    });
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -345,7 +345,7 @@ pub async fn announce_udp(
 ) -> Result<Vec<SocketAddr>, TrackerClientError> {
     let router = global_udp_router();
     let mut router = router.lock().await;
-    announce_udp_with_router(url, params, &mut *router).await
+    announce_udp_with_router(url, params, &mut router).await
 }
 
 /// Announces to a UDP tracker using a caller-supplied [`UdpRouter`].
@@ -529,7 +529,7 @@ pub async fn scrape_udp(
 ) -> Result<ScrapeStats, TrackerClientError> {
     let router = global_udp_router();
     let mut router = router.lock().await;
-    scrape_udp_with_router(url, info_hash, &mut *router).await
+    scrape_udp_with_router(url, info_hash, &mut router).await
 }
 
 /// Scrapes a UDP tracker using a caller-supplied [`UdpRouter`].

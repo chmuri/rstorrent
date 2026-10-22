@@ -30,8 +30,10 @@ impl Tracker {
             TrackerType::Http
         };
 
-        let mut state = TrackerState::default();
-        state.flags = flags;
+        let mut state = TrackerState {
+            flags,
+            ..Default::default()
+        };
         // HTTP trackers are scrapable when the announce URL can be rewritten
         // to `/scrape`. BEP 15 UDP trackers support scrape natively.
         if (tracker_type == TrackerType::Http && uri_can_scrape(&url))

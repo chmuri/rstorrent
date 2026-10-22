@@ -235,11 +235,11 @@ impl AnnounceResponse {
         let seeders = data.get_u32();
 
         let mut peers = AddressList::new();
-        let remaining = &data[..];
+        let remaining = data;
         // If remaining is multiple of 6, IPv4 compact
-        if remaining.len() % 6 == 0 {
+        if remaining.len().is_multiple_of(6) {
             peers.parse_address_compact(remaining);
-        } else if remaining.len() % 18 == 0 {
+        } else if remaining.len().is_multiple_of(18) {
             peers.parse_address_compact_ipv6(remaining);
         }
 

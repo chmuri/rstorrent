@@ -147,15 +147,11 @@ impl TrackerState {
     }
 
     pub fn set_normal_interval(&mut self, interval: u64) {
-        self.normal_interval = interval
-            .max(Self::MIN_NORMAL_INTERVAL)
-            .min(Self::MAX_NORMAL_INTERVAL);
+        self.normal_interval = interval.clamp(Self::MIN_NORMAL_INTERVAL, Self::MAX_NORMAL_INTERVAL);
     }
 
     pub fn set_min_interval(&mut self, interval: u64) {
-        self.min_interval = interval
-            .max(Self::MIN_MIN_INTERVAL)
-            .min(Self::MAX_MIN_INTERVAL);
+        self.min_interval = interval.clamp(Self::MIN_MIN_INTERVAL, Self::MAX_MIN_INTERVAL);
     }
 
     pub fn add_success_request(&mut self, time: u64) {
