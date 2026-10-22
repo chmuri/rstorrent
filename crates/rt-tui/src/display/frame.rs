@@ -233,20 +233,20 @@ impl Frame {
         }
 
         // Sort descending by min_height (stable sort)
-        dynamic_frames.sort_by(|a, b| b.bounds.min_height.cmp(&a.bounds.min_height));
+        dynamic_frames.sort_by_key(|entry| std::cmp::Reverse(entry.bounds.min_height));
 
         loop {
             let mut retry = false;
             let dynamic_len = dynamic_frames.len();
-            for i in 0..dynamic_len {
+            for (i, entry) in dynamic_frames.iter().enumerate() {
                 let distance = (dynamic_len - i) as i64;
-                let child_idx = dynamic_frames[i].idx;
+                let child_idx = entry.idx;
                 let cur_h = children[child_idx].height as i64;
                 let add = (remaining.max(0) + distance - 1) / distance;
                 let mut adjust = (cur_h + add) as u32;
 
-                adjust = adjust.max(dynamic_frames[i].bounds.min_height);
-                adjust = adjust.min(dynamic_frames[i].bounds.max_height);
+                adjust = adjust.max(entry.bounds.min_height);
+                adjust = adjust.min(entry.bounds.max_height);
 
                 remaining -= (adjust as i64) - cur_h;
                 if children[child_idx].height != adjust {
@@ -294,20 +294,20 @@ impl Frame {
         }
 
         // Sort descending by min_width (stable sort)
-        dynamic_frames.sort_by(|a, b| b.bounds.min_width.cmp(&a.bounds.min_width));
+        dynamic_frames.sort_by_key(|entry| std::cmp::Reverse(entry.bounds.min_width));
 
         loop {
             let mut retry = false;
             let dynamic_len = dynamic_frames.len();
-            for i in 0..dynamic_len {
+            for (i, entry) in dynamic_frames.iter().enumerate() {
                 let distance = (dynamic_len - i) as i64;
-                let child_idx = dynamic_frames[i].idx;
+                let child_idx = entry.idx;
                 let cur_w = children[child_idx].width as i64;
                 let add = (remaining.max(0) + distance - 1) / distance;
                 let mut adjust = (cur_w + add) as u32;
 
-                adjust = adjust.max(dynamic_frames[i].bounds.min_width);
-                adjust = adjust.min(dynamic_frames[i].bounds.max_width);
+                adjust = adjust.max(entry.bounds.min_width);
+                adjust = adjust.min(entry.bounds.max_width);
 
                 remaining -= (adjust as i64) - cur_w;
                 if children[child_idx].width != adjust {

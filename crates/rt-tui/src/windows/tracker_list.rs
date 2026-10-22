@@ -1037,9 +1037,7 @@ fn fit_url(url: &str, width: usize) -> String {
     let host_prefix = url
         .split_once("://")
         .map(|(scheme, rest)| {
-            let host_end = rest
-                .find(|ch| ch == '/' || ch == '?' || ch == '#')
-                .unwrap_or(rest.len());
+            let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
             format!("{}://{}", scheme, &rest[..host_end])
         })
         .unwrap_or_else(|| url.to_string());

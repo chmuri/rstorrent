@@ -204,7 +204,7 @@ impl TextElement for TextElementCommand {
             && res.len() < self.length
         {
             let pad = self.length - res.len();
-            res.extend(std::iter::repeat(' ').take(pad));
+            res.extend(std::iter::repeat_n(' ', pad));
         }
 
         vec![(res, self.style)]
@@ -277,7 +277,7 @@ impl TextElement for TextElementList {
                     total_s.truncate(col_w);
                 } else if total_s.len() < col_w {
                     let pad = col_w - total_s.len();
-                    total_s.extend(std::iter::repeat(' ').take(pad));
+                    total_s.extend(std::iter::repeat_n(' ', pad));
                 }
                 out.push((total_s, last_style));
             } else {

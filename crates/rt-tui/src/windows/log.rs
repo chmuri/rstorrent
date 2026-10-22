@@ -78,13 +78,13 @@ impl Window for WindowLog {
         let available_lines = height.saturating_sub(1);
         let skip = self.messages.len().saturating_sub(available_lines);
 
-        let mut y = 1u32;
-        for msg in self.messages.iter().skip(skip) {
-            if y >= canvas.height() {
+        let canvas_height = canvas.height();
+        for (offset, msg) in self.messages.iter().skip(skip).enumerate() {
+            let y = 1 + offset as u32;
+            if y >= canvas_height {
                 break;
             }
             canvas.print_at(0, y, msg);
-            y += 1;
         }
 
         self.dirty = false;

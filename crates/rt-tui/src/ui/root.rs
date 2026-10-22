@@ -1775,7 +1775,7 @@ impl RootUI {
         if let Some(menu) = &self.window_menu {
             if w > 2 && h > 2 {
                 let mut element = menu.lock().unwrap();
-                let menu_width = (w - 2).min(48).max(12);
+                let menu_width = (w - 2).clamp(12, 48);
                 let menu_height = (h - 2).min(element.menu().len() as u32 + 1).max(2);
                 let x = (w - menu_width) / 2;
                 let y = (h - menu_height) / 2;

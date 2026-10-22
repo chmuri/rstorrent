@@ -225,7 +225,7 @@ fn test_root_ui_details_keys_and_tabs_switching() {
     }
 
     // Numeric keys adjust per-torrent limits and never change the tab.
-    for key in [b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8'] {
+    for key in *b"12345678" {
         ui.handle_key(key as i32);
         assert_eq!(
             ui.window_details.lock().unwrap().current_tab,

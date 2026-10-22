@@ -96,19 +96,16 @@ pub fn format_download_time_left(bytes_left: u64, rate: u64) -> String {
         "--d --:--".to_string()
     } else {
         let rate_masked = rate & !(512 - 1);
-        if rate_masked == 0 {
-            "--d --:--".to_string()
-        } else {
-            let remaining = bytes_left / rate_masked;
-            format_ddhhmm(remaining)
+        match bytes_left.checked_div(rate_masked) {
+            Some(remaining) => format_ddhhmm(remaining),
+            None => "--d --:--".to_string(),
         }
     }
 }
 
 pub fn format_percentage(done: u64, total: u64) -> String {
-    if total == 0 {
-        "[ 0%]".to_string()
-    } else {
-        format!("[{:2}%]", (done * 100) / total)
+    match (done * 100).checked_div(total) {
+        Some(percent) => format!("[{:2}%]", percent),
+        None => "[ 0%]".to_string(),
     }
 }

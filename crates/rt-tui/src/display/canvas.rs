@@ -19,8 +19,8 @@ impl Default for Cell {
 pub struct Canvas {
     pub x: u32,
     pub y: u32,
-    pub width: u32,
-    pub height: u32,
+    pub buffer_width: u32,
+    pub buffer_height: u32,
     pub viewport_x: u32,
     pub viewport_y: u32,
     pub viewport_w: u32,
@@ -37,8 +37,8 @@ impl Canvas {
         Self {
             x,
             y,
-            width,
-            height,
+            buffer_width: width,
+            buffer_height: height,
             viewport_x: 0,
             viewport_y: 0,
             viewport_w: width,
@@ -67,11 +67,11 @@ impl Canvas {
     }
 
     pub fn full_width(&self) -> u32 {
-        self.width
+        self.buffer_width
     }
 
     pub fn full_height(&self) -> u32 {
-        self.height
+        self.buffer_height
     }
 
     pub fn x(&self) -> u32 {
@@ -83,10 +83,10 @@ impl Canvas {
     }
 
     pub fn set_viewport(&mut self, x: u32, y: u32, width: u32, height: u32) {
-        self.viewport_x = x.min(self.width);
-        self.viewport_y = y.min(self.height);
-        self.viewport_w = width.min(self.width.saturating_sub(self.viewport_x));
-        self.viewport_h = height.min(self.height.saturating_sub(self.viewport_y));
+        self.viewport_x = x.min(self.buffer_width);
+        self.viewport_y = y.min(self.buffer_height);
+        self.viewport_w = width.min(self.buffer_width.saturating_sub(self.viewport_x));
+        self.viewport_h = height.min(self.buffer_height.saturating_sub(self.viewport_y));
         self.cursor_x = 0;
         self.cursor_y = 0;
     }
@@ -94,8 +94,8 @@ impl Canvas {
     pub fn reset_viewport(&mut self) {
         self.viewport_x = 0;
         self.viewport_y = 0;
-        self.viewport_w = self.width;
-        self.viewport_h = self.height;
+        self.viewport_w = self.buffer_width;
+        self.viewport_h = self.buffer_height;
         self.cursor_x = 0;
         self.cursor_y = 0;
     }
@@ -107,8 +107,8 @@ impl Canvas {
     pub fn resize_pos(&mut self, x: u32, y: u32, width: u32, height: u32) {
         self.x = x;
         self.y = y;
-        self.width = width;
-        self.height = height;
+        self.buffer_width = width;
+        self.buffer_height = height;
         self.reset_viewport();
         let size = (width as usize) * (height as usize);
         self.buffer.resize(size, Cell::default());
@@ -124,8 +124,8 @@ impl Canvas {
     }
 
     pub fn erase(&mut self) {
-        if self.viewport_w == self.width
-            && self.viewport_h == self.height
+        if self.viewport_w == self.buffer_width
+            && self.viewport_h == self.buffer_height
             && self.viewport_x == 0
             && self.viewport_y == 0
         {
@@ -135,10 +135,11 @@ impl Canvas {
 
         for row in 0..self.viewport_h {
             let actual_y = self.viewport_y + row;
-            if actual_y >= self.height {
+            if actual_y >= self.buffer_height {
                 break;
             }
-            let start = (actual_y as usize) * (self.width as usize) + (self.viewport_x as usize);
+            let start =
+                (actual_y as usize) * (self.buffer_width as usize) + (self.viewport_x as usize);
             let end = start + (self.viewport_w as usize);
             if end <= self.buffer.len() {
                 for cell in &mut self.buffer[start..end] {
@@ -159,8 +160,8 @@ impl Canvas {
         if lx < self.viewport_w && ly < self.viewport_h {
             let actual_x = self.viewport_x + lx;
             let actual_y = self.viewport_y + ly;
-            if actual_x < self.width && actual_y < self.height {
-                let idx = (actual_y as usize) * (self.width as usize) + (actual_x as usize);
+            if actual_x < self.buffer_width && actual_y < self.buffer_height {
+                let idx = (actual_y as usize) * (self.buffer_width as usize) + (actual_x as usize);
                 if idx < self.buffer.len() {
                     self.buffer[idx] = Cell { ch, style };
                 }
@@ -202,8 +203,8 @@ impl Canvas {
             }
             let actual_x = self.viewport_x + cur_x;
             let actual_y = self.viewport_y + y;
-            if actual_x < self.width && actual_y < self.height {
-                let idx = (actual_y as usize) * (self.width as usize) + (actual_x as usize);
+            if actual_x < self.buffer_width && actual_y < self.buffer_height {
+                let idx = (actual_y as usize) * (self.buffer_width as usize) + (actual_x as usize);
                 if idx < self.buffer.len() {
                     self.buffer[idx].style = style;
                 }
@@ -215,8 +216,8 @@ impl Canvas {
         if lx < self.viewport_w && ly < self.viewport_h {
             let actual_x = self.viewport_x + lx;
             let actual_y = self.viewport_y + ly;
-            if actual_x < self.width && actual_y < self.height {
-                let idx = (actual_y as usize) * (self.width as usize) + (actual_x as usize);
+            if actual_x < self.buffer_width && actual_y < self.buffer_height {
+                let idx = (actual_y as usize) * (self.buffer_width as usize) + (actual_x as usize);
                 self.buffer.get(idx)
             } else {
                 None
@@ -227,8 +228,8 @@ impl Canvas {
     }
 
     pub fn get_raw_cell(&self, x: u32, y: u32) -> Option<&Cell> {
-        if x < self.width && y < self.height {
-            let idx = (y as usize) * (self.width as usize) + (x as usize);
+        if x < self.buffer_width && y < self.buffer_height {
+            let idx = (y as usize) * (self.buffer_width as usize) + (x as usize);
             self.buffer.get(idx)
         } else {
             None
@@ -240,10 +241,10 @@ impl Canvas {
             return String::new();
         }
         let actual_y = self.viewport_y + y;
-        if actual_y >= self.height {
+        if actual_y >= self.buffer_height {
             return String::new();
         }
-        let start = (actual_y as usize) * (self.width as usize) + (self.viewport_x as usize);
+        let start = (actual_y as usize) * (self.buffer_width as usize) + (self.viewport_x as usize);
         let end = start + (self.viewport_w as usize);
         if end <= self.buffer.len() {
             self.buffer[start..end].iter().map(|c| c.ch).collect()
