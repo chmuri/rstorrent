@@ -158,11 +158,11 @@ impl<T, const N: usize> QueueBuckets<T, N> {
     }
 
     /// Finds the index of the first element in queue `idx` matching predicate.
-    pub fn find_in_queue<F>(&self, idx: usize, mut pred: F) -> Option<usize>
+    pub fn find_in_queue<F>(&self, idx: usize, pred: F) -> Option<usize>
     where
         F: FnMut(&T) -> bool,
     {
-        self.queues[idx].iter().position(|item| pred(item))
+        self.queues[idx].iter().position(pred)
     }
 
     /// Finds the first matching element across all queues in order 0..N.
@@ -172,7 +172,7 @@ impl<T, const N: usize> QueueBuckets<T, N> {
         F: FnMut(&T) -> bool,
     {
         for (q_idx, q) in self.queues.iter().enumerate() {
-            if let Some(pos) = q.iter().position(|item| pred(item)) {
+            if let Some(pos) = q.iter().position(&mut pred) {
                 return Some((q_idx, pos));
             }
         }

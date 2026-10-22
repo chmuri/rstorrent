@@ -11,7 +11,7 @@ pub struct Bitfield {
 
 impl Bitfield {
     pub fn new(size_bits: usize) -> Self {
-        let size_bytes = (size_bits + 7) / 8;
+        let size_bytes = size_bits.div_ceil(8);
         Self {
             size_bits,
             size_set: 0,
@@ -20,7 +20,7 @@ impl Bitfield {
     }
 
     pub fn from_bytes(bytes: &[u8], size_bits: usize) -> Self {
-        let size_bytes = (size_bits + 7) / 8;
+        let size_bytes = size_bits.div_ceil(8);
         let mut data = vec![0u8; size_bytes];
         let copy_len = bytes.len().min(size_bytes);
         data[..copy_len].copy_from_slice(&bytes[..copy_len]);
@@ -62,7 +62,7 @@ impl Bitfield {
     }
 
     pub fn size_bytes(&self) -> usize {
-        (self.size_bits + 7) / 8
+        self.size_bits.div_ceil(8)
     }
 
     pub fn size_set(&self) -> usize {

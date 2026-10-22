@@ -1,5 +1,7 @@
+use std::convert::Infallible;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 #[derive(Clone, Copy)]
 pub struct FixedKey<const N: usize> {
@@ -27,10 +29,6 @@ impl<const N: usize> FixedKey<N> {
         let mut key = Self::default();
         key.set_bytes(bytes);
         key
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        Self::from_bytes(s.as_bytes())
     }
 
     pub fn set_bytes(&mut self, bytes: &[u8]) {
@@ -110,5 +108,13 @@ impl<const N: usize> fmt::Debug for FixedKey<N> {
 impl<const N: usize> fmt::Display for FixedKey<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", String::from_utf8_lossy(self.as_bytes()))
+    }
+}
+
+impl<const N: usize> FromStr for FixedKey<N> {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from_bytes(s.as_bytes()))
     }
 }

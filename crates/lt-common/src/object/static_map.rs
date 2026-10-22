@@ -94,7 +94,7 @@ fn read_dict_recursive<const N: usize>(
             m.path == curr_path
                 || m.path
                     .strip_prefix(&curr_path)
-                    .map_or(false, |s| s.starts_with('*'))
+                    .is_some_and(|s| s.starts_with('*'))
         });
 
         if let Some(m) = exact_match {
