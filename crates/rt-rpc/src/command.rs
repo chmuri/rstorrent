@@ -87,8 +87,10 @@ impl CommandStack {
     }
 }
 
+type PrepareCallback = Box<dyn FnOnce(&mut PreparsedCommands)>;
+
 pub struct PreparsedCommands {
-    prepare: Option<Box<dyn FnOnce(&mut PreparsedCommands)>>,
+    prepare: Option<PrepareCallback>,
     items: Vec<Object>,
 }
 
@@ -164,7 +166,7 @@ pub fn parse_command_object(input: &str) -> Result<Object, RpcError> {
     let rest = &trimmed[eq_pos + 1..];
 
     // Delimiters for command object: ';', '\n', '\r'
-    if let Some(pos) = rest.find(|c| c == ';' || c == '\n' || c == '\r') {
+    if let Some(pos) = rest.find([';', '\n', '\r']) {
         let suffix = &rest[pos..];
         if !suffix.trim().is_empty()
             || suffix.contains(';')

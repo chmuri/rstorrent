@@ -33,9 +33,7 @@ impl JsonRpc {
 
     pub fn process(&self, in_buffer: &str, map: &CommandMap, trusted: bool) -> String {
         if in_buffer.len() as u64 > self.size_limit {
-            return format!(
-                r#"{{"error":{{"code":-32000,"message":"response size exceeds maximum RPC limit"}},"id":null,"jsonrpc":"2.0"}}"#
-            );
+            return r#"{"error":{"code":-32000,"message":"response size exceeds maximum RPC limit"},"id":null,"jsonrpc":"2.0"}"#.to_string();
         }
 
         let parsed: Value = match serde_json::from_str(in_buffer) {
