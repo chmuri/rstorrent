@@ -143,18 +143,17 @@ pub fn parse_command_file(
     let reader = BufReader::new(file);
 
     let mut current_line = String::new();
-    let mut line_number = 0;
 
-    for line_res in reader.lines() {
-        line_number += 1;
+    for (index, line_res) in reader.lines().enumerate() {
+        let line_number = index + 1;
         let line = line_res.map_err(|e| {
             RpcError::InputError(format!("Read error at line {}: {}", line_number, e))
         })?;
 
         let trimmed_end = line.trim_end_matches(['\r', '\n']);
-        if trimmed_end.ends_with('\\') {
+        if let Some(continued) = trimmed_end.strip_suffix('\\') {
             // Line continuation
-            current_line.push_str(&trimmed_end[..trimmed_end.len() - 1]);
+            current_line.push_str(continued);
             continue;
         } else {
             current_line.push_str(trimmed_end);

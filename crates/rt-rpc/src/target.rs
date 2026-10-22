@@ -1,8 +1,9 @@
 use lt_common::HashString;
 use lt_net::SocketAddress;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Target {
+    #[default]
     None,
     Download(HashString),
     File(HashString, u32),
@@ -10,12 +11,6 @@ pub enum Target {
     Peer(HashString, SocketAddress),
     Tracker(HashString, u32),
     Pair(Box<Target>, Box<Target>),
-}
-
-impl Default for Target {
-    fn default() -> Self {
-        Target::None
-    }
 }
 
 impl Target {

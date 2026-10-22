@@ -41,7 +41,7 @@ pub fn parse_is_delim_func(c: char) -> bool {
 }
 
 pub fn parse_skip_wspace(s: &str) -> &str {
-    s.trim_start_matches(|c| c == ' ' || c == '\t')
+    s.trim_start_matches([' ', '\t'])
 }
 
 pub fn parse_string<F>(s: &str, delim: F) -> Result<(String, &str), RpcError>
@@ -90,8 +90,8 @@ where
         let mut escaped = false;
         let mut end_pos = s.len();
 
-        let mut iter = s.char_indices();
-        while let Some((idx, c)) = iter.next() {
+        let iter = s.char_indices();
+        for (idx, c) in iter {
             if escaped {
                 dest.push(c);
                 escaped = false;
@@ -129,14 +129,26 @@ fn value_fits_shifted(value: i64, shift: u32) -> bool {
     value <= (i64::MAX >> shift) && value >= (i64::MIN >> shift)
 }
 
+/// Error returned by the `*_nothrow` parsing helpers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseError;
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid numeric value")
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 /// Parses an integer value adhering to rtorrent's exact C++ strtoll rules.
 /// Returns `Ok((parsed_value, byte_offset_into_src))`.
-pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usize), ()> {
+pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usize), ParseError> {
     if unit <= 0 {
-        return Err(());
+        return Err(ParseError);
     }
     if base != 0 && base != 8 && base != 10 && base != 16 {
-        return Err(());
+        return Err(ParseError);
     }
 
     let src_bytes = src.as_bytes();
@@ -145,21 +157,21 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
         idx += 1;
     }
     if idx >= src_bytes.len() {
-        return Err(());
+        return Err(ParseError);
     }
 
     let after_spaces = idx;
 
     if src_bytes[idx] == b'+' {
-        return Err(());
+        return Err(ParseError);
     }
 
     let is_negative = if src_bytes[idx] == b'-' {
         if base == 8 || base == 16 {
-            return Err(());
+            return Err(ParseError);
         }
         if idx + 1 < src_bytes.len() && src_bytes[idx + 1] == b'0' {
-            return Err(());
+            return Err(ParseError);
         }
         idx += 1;
         true
@@ -168,7 +180,7 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
     };
 
     if idx >= src_bytes.len() {
-        return Err(());
+        return Err(ParseError);
     }
 
     if base == 10
@@ -176,7 +188,7 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
         && idx + 1 < src_bytes.len()
         && src_bytes[idx + 1].is_ascii_digit()
     {
-        return Err(());
+        return Err(ParseError);
     }
 
     // Determine actual radix
@@ -229,7 +241,7 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
 
         num = num * (radix as i128) + digit;
         if num > i64::MAX as i128 + 1 {
-            return Err(());
+            return Err(ParseError);
         }
         parsed_any_digits = true;
         current_pos += 1;
@@ -253,18 +265,18 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
             } else if remaining.eq_ignore_ascii_case("false") {
                 return Ok((0, after_spaces + 5));
             }
-            return Err(());
+            return Err(ParseError);
         }
     } else {
         if is_negative {
             let neg = -num;
             if neg < i64::MIN as i128 {
-                return Err(());
+                return Err(ParseError);
             }
             neg as i64
         } else {
             if num > i64::MAX as i128 {
-                return Err(());
+                return Err(ParseError);
             }
             num as i64
         }
@@ -278,21 +290,21 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
             }
             b'k' | b'K' => {
                 if !value_fits_shifted(value, 10) {
-                    return Err(());
+                    return Err(ParseError);
                 }
                 value <<= 10;
                 current_pos += 1;
             }
             b'm' | b'M' => {
                 if !value_fits_shifted(value, 20) {
-                    return Err(());
+                    return Err(ParseError);
                 }
                 value <<= 20;
                 current_pos += 1;
             }
             b'g' | b'G' => {
                 if !value_fits_shifted(value, 30) {
-                    return Err(());
+                    return Err(ParseError);
                 }
                 value <<= 30;
                 current_pos += 1;
@@ -300,7 +312,7 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
             _ => {
                 let (val, ovf) = value.overflowing_mul(unit);
                 if ovf {
-                    return Err(());
+                    return Err(ParseError);
                 }
                 value = val;
             }
@@ -308,7 +320,7 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
     } else {
         let (val, ovf) = value.overflowing_mul(unit);
         if ovf {
-            return Err(());
+            return Err(ParseError);
         }
         value = val;
     }
@@ -316,13 +328,13 @@ pub fn parse_value_nothrow(src: &str, base: i32, unit: i64) -> Result<(i64, usiz
     Ok((value, current_pos))
 }
 
-pub fn parse_whole_value_nothrow(src: &str, base: i32, unit: i64) -> Result<i64, ()> {
+pub fn parse_whole_value_nothrow(src: &str, base: i32, unit: i64) -> Result<i64, ParseError> {
     let (val, end_idx) = parse_value_nothrow(src, base, unit)?;
     let rest = &src[end_idx..];
     if rest.chars().all(|c| c == ' ' || c == '\t') {
         Ok(val)
     } else {
-        Err(())
+        Err(ParseError)
     }
 }
 
@@ -344,8 +356,7 @@ where
         return Ok((Object::create_empty(), trimmed));
     }
 
-    if trimmed.starts_with('{') {
-        let after_brace = &trimmed[1..];
+    if let Some(after_brace) = trimmed.strip_prefix('{') {
         let (list, rest) = parse_list(after_brace, parse_is_delim_block, depth + 1)?;
         let rest_trimmed = parse_skip_wspace(rest);
         if !rest_trimmed.starts_with('}') {
@@ -444,9 +455,9 @@ where
     let (first_obj, rest) = parse_object(current, delim, depth)?;
     let after_first = parse_skip_wspace(rest);
 
-    if after_first.starts_with(',') {
+    if let Some(after_comma) = after_first.strip_prefix(',') {
         let mut list = vec![first_obj];
-        let (more, final_rest) = parse_list(&after_first[1..], delim, depth)?;
+        let (more, final_rest) = parse_list(after_comma, delim, depth)?;
         list.extend(more);
         Ok((Object::create_list_with(list), final_rest))
     } else {
@@ -454,7 +465,7 @@ where
     }
 }
 
-pub fn convert_to_value_nothrow(src: &Object, base: i32, unit: i64) -> Result<i64, ()> {
+pub fn convert_to_value_nothrow(src: &Object, base: i32, unit: i64) -> Result<i64, ParseError> {
     let unpacked = if let Ok(list) = src.as_list() {
         if list.len() == 1 {
             &list[0]
@@ -473,7 +484,7 @@ pub fn convert_to_value_nothrow(src: &Object, base: i32, unit: i64) -> Result<i6
         return parse_whole_value_nothrow(s, base, unit);
     }
 
-    Err(())
+    Err(ParseError)
 }
 
 pub fn convert_to_value(src: &Object, base: i32, unit: i64) -> Result<i64, RpcError> {

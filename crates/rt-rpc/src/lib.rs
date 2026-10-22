@@ -29,7 +29,7 @@ pub use parse::{
     parse_is_delim_command, parse_is_delim_default, parse_is_delim_func, parse_is_delim_list,
     parse_is_escape, parse_is_quote, parse_is_seperator, parse_is_space, parse_list, parse_object,
     parse_skip_wspace, parse_string, parse_value_nothrow, parse_whole_list, parse_whole_string,
-    parse_whole_value, parse_whole_value_nothrow,
+    parse_whole_value, parse_whole_value_nothrow, ParseError,
 };
 pub use parse_commands::{
     parse_command, parse_command_execute, parse_command_file, parse_command_multiple,

@@ -74,7 +74,7 @@ fn test_dsl_commands() {
         |_target, obj| {
             if let Ok(list) = obj.as_list() {
                 let a = list
-                    .get(0)
+                    .first()
                     .and_then(|x| rt_rpc::convert_to_value(x, 0, 1).ok())
                     .unwrap_or(0);
                 let b = list

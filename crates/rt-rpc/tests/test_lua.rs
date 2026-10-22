@@ -51,7 +51,7 @@ fn test_lua_rtorrent_call() {
             "test_add",
             |_target, obj| {
                 let list = obj.as_list()?;
-                let a = list.get(0).and_then(|o| o.as_value().ok()).unwrap_or(0);
+                let a = list.first().and_then(|o| o.as_value().ok()).unwrap_or(0);
                 let b = list.get(1).and_then(|o| o.as_value().ok()).unwrap_or(0);
                 Ok(Object::from(a + b))
             },
