@@ -429,10 +429,10 @@ impl DownloadStorer {
             if let Ok(meta) = fs::symlink_metadata(target) {
                 if meta.is_dir() {
                     remove_staged_files(&[torrent_tmp, libtorrent_tmp, rtorrent_tmp]);
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        format!("Session destination is a directory: {}", target),
-                    ));
+                    return Err(Error::other(format!(
+                        "Session destination is a directory: {}",
+                        target
+                    )));
                 }
             }
         }

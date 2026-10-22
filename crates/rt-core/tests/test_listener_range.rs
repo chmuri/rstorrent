@@ -29,17 +29,19 @@ async fn listener_port_range_selects_an_available_port() {
 
     let listener = PeerListenerConfig::new(0).with_port_range(first, last, true);
     let runtime = NetworkRuntime::spawn_with_listener_config(
-        list,
-        peer_id,
-        0,
-        shutdown_rx,
-        None,
-        lt_net::config::NetworkConfig::new(),
-        lt_dht::controller::DhtLifecycleConfig {
-            mode: lt_dht::controller::DhtMode::Off,
-            ..Default::default()
+        rt_core::network_runtime::NetworkRuntimeConfig {
+            download_list: list,
+            our_peer_id: peer_id,
+            listen_port: 0,
+            shutdown_rx,
+            dht_cache_path: None,
+            network_config: lt_net::config::NetworkConfig::new(),
+            dht_config: lt_dht::controller::DhtLifecycleConfig {
+                mode: lt_dht::controller::DhtMode::Off,
+                ..Default::default()
+            },
+            listener_config: listener,
         },
-        listener,
     );
 
     let deadline = Instant::now() + Duration::from_secs(3);

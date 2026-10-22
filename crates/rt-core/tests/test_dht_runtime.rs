@@ -20,11 +20,13 @@ async fn runtime_starts_dht_on_override_port() {
     let peer_id = HashString::new([0xab; 20]);
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-    let mut dht_config = DhtLifecycleConfig::default();
-    dht_config.mode = DhtMode::On;
-    dht_config.port_override = port;
-    dht_config.refresh_interval = Duration::from_secs(60);
-    dht_config.bootstrap_retry_interval = Duration::from_secs(60);
+    let dht_config = DhtLifecycleConfig {
+        mode: DhtMode::On,
+        port_override: port,
+        refresh_interval: Duration::from_secs(60),
+        bootstrap_retry_interval: Duration::from_secs(60),
+        ..Default::default()
+    };
 
     let runtime = NetworkRuntime::spawn_with_network_config_and_dht(
         list,
@@ -81,9 +83,11 @@ async fn runtime_off_mode_does_not_bind_dht() {
     let peer_id = HashString::new([0xac; 20]);
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-    let mut dht_config = DhtLifecycleConfig::default();
-    dht_config.mode = DhtMode::Off;
-    dht_config.port_override = port;
+    let dht_config = DhtLifecycleConfig {
+        mode: DhtMode::Off,
+        port_override: port,
+        ..Default::default()
+    };
 
     let runtime = NetworkRuntime::spawn_with_network_config_and_dht(
         list,
@@ -107,9 +111,8 @@ async fn runtime_off_mode_does_not_bind_dht() {
     let mut buffer = [0u8; 2048];
     let received =
         tokio::time::timeout(Duration::from_millis(300), socket.recv_from(&mut buffer)).await;
-    match received {
-        Ok(Ok(_)) => panic!("DHT answered even though mode is off"),
-        Ok(Err(_)) | Err(_) => {}
+    if let Ok(Ok(_)) = received {
+        panic!("DHT answered even though mode is off")
     }
 
     let _ = shutdown_tx.send(true);

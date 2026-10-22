@@ -61,7 +61,7 @@ pub fn register_throttle_commands(
                 .parse::<i64>()
                 .map_err(|e| RpcError::InputError(format!("Invalid integer: {}", e)))?;
 
-            if kb < 0 || kb > MAX_RATE_KB {
+            if !(0..=MAX_RATE_KB).contains(&kb) {
                 return Err(RpcError::InputError(format!(
                     "Value {} out of range for throttle.global_down.max_rate.set_kb",
                     kb
@@ -88,7 +88,7 @@ pub fn register_throttle_commands(
                 .parse::<i64>()
                 .map_err(|e| RpcError::InputError(format!("Invalid integer: {}", e)))?;
 
-            if bytes < 0 || bytes > MAX_RATE_BYTES {
+            if !(0..=MAX_RATE_BYTES).contains(&bytes) {
                 return Err(RpcError::InputError(format!(
                     "Value {} out of range for throttle.global_down.max_rate.set",
                     bytes
@@ -128,7 +128,7 @@ pub fn register_throttle_commands(
                 .parse::<i64>()
                 .map_err(|e| RpcError::InputError(format!("Invalid integer: {}", e)))?;
 
-            if kb < 0 || kb > MAX_RATE_KB {
+            if !(0..=MAX_RATE_KB).contains(&kb) {
                 return Err(RpcError::InputError(format!(
                     "Value {} out of range for throttle.global_up.max_rate.set_kb",
                     kb
@@ -155,7 +155,7 @@ pub fn register_throttle_commands(
                 .parse::<i64>()
                 .map_err(|e| RpcError::InputError(format!("Invalid integer: {}", e)))?;
 
-            if bytes < 0 || bytes > MAX_RATE_BYTES {
+            if !(0..=MAX_RATE_BYTES).contains(&bytes) {
                 return Err(RpcError::InputError(format!(
                     "Value {} out of range for throttle.global_up.max_rate.set",
                     bytes
@@ -202,7 +202,7 @@ pub fn register_throttle_commands(
                 .parse::<i64>()
                 .map_err(|e| RpcError::InputError(format!("Invalid integer: {}", e)))?;
 
-            if kb < 0 || kb > MAX_RATE_KB {
+            if !(0..=MAX_RATE_KB).contains(&kb) {
                 return Err(RpcError::InputError(format!(
                     "Value {} out of range for throttle.down",
                     kb
@@ -237,7 +237,7 @@ pub fn register_throttle_commands(
                 .parse::<i64>()
                 .map_err(|e| RpcError::InputError(format!("Invalid integer: {}", e)))?;
 
-            if kb < 0 || kb > MAX_RATE_KB {
+            if !(0..=MAX_RATE_KB).contains(&kb) {
                 return Err(RpcError::InputError(format!(
                     "Value {} out of range for throttle.up",
                     kb

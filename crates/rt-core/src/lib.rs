@@ -19,6 +19,7 @@ pub use commands::{
     system::{register_system_commands, resolve_path, resolve_path_or_throw},
     throttle::ThrottleManager,
     tracker::{checked_port_value, DhtConfig},
+    CommandRegistry,
 };
 pub use download::Download;
 pub use download_factory::DownloadFactory;

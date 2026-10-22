@@ -88,16 +88,17 @@ async fn accepts_inbound_handshake_and_registers_peer() {
     let poll_deadline = Instant::now() + Duration::from_secs(2);
     let mut registered = false;
     while Instant::now() < poll_deadline {
-        let guard = engine.lock().unwrap();
-        if guard
-            .connection_list()
-            .find_by_id(&remote_peer_id)
-            .is_some()
-        {
+        let found = {
+            let guard = engine.lock().unwrap();
+            guard
+                .connection_list()
+                .find_by_id(&remote_peer_id)
+                .is_some()
+        };
+        if found {
             registered = true;
             break;
         }
-        drop(guard);
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(registered, "inbound peer was not registered");
