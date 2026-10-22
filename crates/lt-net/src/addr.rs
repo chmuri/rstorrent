@@ -14,18 +14,13 @@ pub enum AddressFamily {
     Unix,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum SocketAddress {
+    #[default]
     Unspec,
     Inet(SocketAddrV4),
     Inet6(SocketAddrV6),
     Unix(PathBuf),
-}
-
-impl Default for SocketAddress {
-    fn default() -> Self {
-        SocketAddress::Unspec
-    }
 }
 
 impl SocketAddress {
@@ -430,10 +425,8 @@ impl SocketAddress {
         }
 
         // First attempt direct numeric parsing
-        if let Ok((opt, _)) = Self::lookup_numeric(address_str, family) {
-            if let Some(sa) = opt {
-                return Ok(sa);
-            }
+        if let Ok((Some(sa), _)) = Self::lookup_numeric(address_str, family) {
+            return Ok(sa);
         }
 
         // Try parsing full socket addr (with port)
@@ -451,12 +444,11 @@ impl SocketAddress {
 
         // Fallback to std::net::ToSocketAddrs for DNS / system resolution
         use std::net::ToSocketAddrs;
-        let host_port = if address_str.contains(':')
+        let host_port = if (address_str.contains(':')
             && !address_str.contains("::")
-            && !address_str.starts_with('[')
+            && !address_str.starts_with('['))
+            || (address_str.starts_with('[') && address_str.contains("]:"))
         {
-            address_str.to_string()
-        } else if address_str.starts_with('[') && address_str.contains("]:") {
             address_str.to_string()
         } else {
             format!("{}:0", address_str)
@@ -601,7 +593,7 @@ impl AddressList {
     }
 
     pub fn parse_address_compact(&mut self, data: &[u8]) {
-        for chunk in data.chunks_exact(6) {
+        for chunk in data.as_chunks::<6>().0 {
             let ip = Ipv4Addr::new(chunk[0], chunk[1], chunk[2], chunk[3]);
             let port = u16::from_be_bytes([chunk[4], chunk[5]]);
             self.0.push(SocketAddress::new_inet(ip, port));
@@ -609,7 +601,7 @@ impl AddressList {
     }
 
     pub fn parse_address_compact_ipv6(&mut self, data: &[u8]) {
-        for chunk in data.chunks_exact(18) {
+        for chunk in data.as_chunks::<18>().0 {
             let mut ip_bytes = [0u8; 16];
             ip_bytes.copy_from_slice(&chunk[0..16]);
             let ip = Ipv6Addr::from(ip_bytes);
