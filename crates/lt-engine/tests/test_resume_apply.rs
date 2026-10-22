@@ -6,7 +6,7 @@ use lt_storage::file::Priority;
 use lt_storage::resume::{ResumeData, MTIME_RECHECK};
 
 fn metadata() -> TorrentMetadata {
-    let piece_hash = sha1_hash(&vec![0x33u8; 8]);
+    let piece_hash = sha1_hash(&[0x33u8; 8]);
     let mut path = lt_common::path::Path::new();
     path.push("payload.bin");
 

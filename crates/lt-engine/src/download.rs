@@ -1533,10 +1533,7 @@ impl Download {
 
         let mut completed = false;
         let offer = {
-            let seeding = match self.initial_seeding.as_mut() {
-                Some(seeding) => seeding,
-                None => return None,
-            };
+            let seeding = self.initial_seeding.as_mut()?;
 
             let mut offer = None;
             loop {
@@ -2506,14 +2503,18 @@ impl Download {
         };
 
         let pieces = self.delegator.delegate(
-            peer_num,
-            &peer_bf,
-            is_seeder,
-            None,
+            crate::delegator::DelegatePeer {
+                peer_id: peer_num,
+                peer_bf: &peer_bf,
+                is_seeder,
+                affinity: None,
+            },
+            &mut crate::delegator::DelegateCtx {
+                chunk_selector: &mut self.chunk_selector,
+                stats: &self.chunk_statistics,
+                peer_cache: &mut peer_cache,
+            },
             max_pieces,
-            &mut self.chunk_selector,
-            &self.chunk_statistics,
-            &mut peer_cache,
             chunk_size_fn,
         );
 
@@ -2631,7 +2632,7 @@ impl Download {
         let jobs = self.queue_hash_jobs(&selected_pieces);
         let ordered: Vec<u32> = jobs.iter().map(|job| job.index).collect();
 
-        Ok(PreparedRecheck::Pass(RecheckContext {
+        Ok(PreparedRecheck::Pass(Box::new(RecheckContext {
             metadata: self.metadata.clone(),
             save_directory: self.save_directory.clone(),
             target_files: Arc::clone(&self.target_files),
@@ -2643,7 +2644,7 @@ impl Download {
             ordered,
             previous_state,
             cancel,
-        }))
+        })))
     }
 
     pub fn finish_recheck(
@@ -2653,7 +2654,7 @@ impl Download {
     ) -> Result<HashResult, String> {
         let ctx = match prepared {
             PreparedRecheck::Immediate(res) => return Ok(res),
-            PreparedRecheck::Pass(ctx) => ctx,
+            PreparedRecheck::Pass(ctx) => *ctx,
         };
 
         let result = match result {
@@ -2871,10 +2872,11 @@ impl Download {
         self.file_list.mark_completed(piece_index);
         let _ = self.delegator.transfers_mut().erase(piece_index);
 
-        if self.is_seeder() && self.state != DownloadState::Seeding {
-            if self.transition_to(DownloadState::Seeding) {
-                self.tracker_controller.send_completed_event();
-            }
+        if self.is_seeder()
+            && self.state != DownloadState::Seeding
+            && self.transition_to(DownloadState::Seeding)
+        {
+            self.tracker_controller.send_completed_event();
         }
     }
 
@@ -2922,7 +2924,9 @@ impl RecheckContext {
         let hashes: Vec<[u8; 20]> = self
             .metadata
             .pieces
-            .chunks_exact(20)
+            .as_chunks::<20>()
+            .0
+            .iter()
             .map(|chunk| {
                 let mut hash = [0u8; 20];
                 hash.copy_from_slice(chunk);
@@ -3043,7 +3047,7 @@ impl RecheckContext {
 #[derive(Clone)]
 pub enum PreparedRecheck {
     Immediate(HashResult),
-    Pass(RecheckContext),
+    Pass(Box<RecheckContext>),
 }
 
 impl PreparedRecheck {

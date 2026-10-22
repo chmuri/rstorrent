@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -68,7 +68,7 @@ fn target_files(metadata: &TorrentMetadata) -> Vec<TargetFileInfo> {
         .collect()
 }
 
-fn write_pieces(metadata: &TorrentMetadata, root: &PathBuf) {
+fn write_pieces(metadata: &TorrentMetadata, root: &Path) {
     let files = target_files(metadata);
     let piece_length = metadata.piece_length;
     let payload: Vec<u8> = (0..metadata.total_size as usize)

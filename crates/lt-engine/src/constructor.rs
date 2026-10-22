@@ -107,7 +107,7 @@ impl DownloadConstructor {
         } else {
             let pl = Self::get_int(info_obj, "piece length")
                 .ok_or(ConstructorError::InvalidPieceLength(0))?;
-            if pl < 1024 || pl > (512 * 1024 * 1024) {
+            if !(1024..=(512 * 1024 * 1024)).contains(&pl) {
                 return Err(ConstructorError::InvalidPieceLength(pl));
             }
             pl as u32
