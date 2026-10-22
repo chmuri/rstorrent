@@ -43,8 +43,10 @@ async fn test_http_max_file_size_exceeded() {
         }
     });
 
-    let mut config = HttpConfig::default();
-    config.max_file_size = 50; // Limit to 50 bytes
+    let config = HttpConfig {
+        max_file_size: 50, // Limit to 50 bytes
+        ..Default::default()
+    };
     let client = HttpClient::with_config(config).unwrap();
 
     let url = format!("http://{}/bigfile", addr);

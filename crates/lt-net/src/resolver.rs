@@ -223,10 +223,11 @@ impl DnsResolver {
             if let Some(end_bracket) = target.find(']') {
                 let host = &target[1..end_bracket];
                 let remainder = &target[end_bracket + 1..];
-                if remainder.starts_with(':') {
-                    if let Ok(port) = remainder[1..].parse::<u16>() {
-                        return (host, port);
-                    }
+                if let Some(port) = remainder
+                    .strip_prefix(':')
+                    .and_then(|value| value.parse::<u16>().ok())
+                {
+                    return (host, port);
                 }
                 return (host, 0);
             }

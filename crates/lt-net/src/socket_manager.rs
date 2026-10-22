@@ -319,11 +319,7 @@ impl SocketManager {
         let max_open = inner.max_size;
         let allocated =
             calculate_min_generic(max_open) + calculate_reserved(max_open) + ALLOCATION_HEADROOM;
-        if allocated >= max_open {
-            0
-        } else {
-            max_open - allocated
-        }
+        max_open.saturating_sub(allocated)
     }
 
     pub fn can_open_socket(&self, category: SocketCategory) -> bool {
