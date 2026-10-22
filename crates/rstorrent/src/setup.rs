@@ -140,13 +140,7 @@ pub fn find_config_file(no_rc: bool) -> Option<PathBuf> {
         PathBuf::from("/etc/rstorrent/rstorrent.rc"),
         PathBuf::from("/etc/rtorrent/rtorrent.rc"),
     ];
-    for p in system_candidates {
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    None
+    system_candidates.into_iter().find(|p| p.exists())
 }
 
 /// Sets up default views according to rtorrent main.cc

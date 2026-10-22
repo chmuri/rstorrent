@@ -91,16 +91,15 @@ async fn test_cli_positional_magnet_loading() {
         "Torrent from CLI positional args not found in DownloadList"
     );
 
-    let dl_arc = dl_opt.unwrap();
-    let dl = dl_arc.read().unwrap();
-    assert_eq!(
-        dl.metadata().name,
-        "Black Panther (2018) [BluRay] [1080p] [YTS] [YIFY]"
-    );
-    assert!(dl.is_active());
-
-    drop(dl);
-    drop(dl_arc);
+    {
+        let dl_arc = dl_opt.unwrap();
+        let dl = dl_arc.read().unwrap();
+        assert_eq!(
+            dl.metadata().name,
+            "Black Panther (2018) [BluRay] [1080p] [YTS] [YIFY]"
+        );
+        assert!(dl.is_active());
+    }
     let _ = control.shutdown().await;
     let _ = std::fs::remove_dir_all(&root);
 }

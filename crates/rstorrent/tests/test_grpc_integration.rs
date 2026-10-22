@@ -208,10 +208,7 @@ async fn test_grpc_daemon_integration() {
         .await
         .expect("sequential get failed")
         .into_inner();
-    assert_eq!(
-        sequential_get.result.as_ref().and_then(&output_int),
-        Some(1)
-    );
+    assert_eq!(sequential_get.result.as_ref().and_then(output_int), Some(1));
 
     // Erasing must also drop the view entry (no phantom rows in d.multicall2).
     let erase = command_client
@@ -256,7 +253,7 @@ async fn test_grpc_daemon_integration() {
         .await
         .expect("false failed")
         .into_inner();
-    assert_eq!(false_cmd.result.as_ref().and_then(&output_int), Some(0));
+    assert_eq!(false_cmd.result.as_ref().and_then(output_int), Some(0));
 
     // Cleanup
     let _ = control.shutdown().await;
