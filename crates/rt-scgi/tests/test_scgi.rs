@@ -147,31 +147,29 @@ async fn test_scgi_tcp_xmlrpc_and_jsonrpc() {
         .await
         .unwrap();
     // Retrieve actual bound addr
-    let port = match &server {
-        _ => {
-            // Let's spawn server task
-            let (addr_tx, addr_rx) = tokio::sync::oneshot::channel();
-            tokio::spawn(async move {
-                let listener = match server {
-                    rt_scgi::ScgiServer {
-                        listener: rt_scgi::ScgiListener::Tcp(l),
-                        ..
-                    } => l,
-                    _ => unreachable!(),
-                };
-                let addr = listener.local_addr().unwrap();
-                addr_tx.send(addr).unwrap();
-                loop {
-                    if let Ok((stream, _)) = listener.accept().await {
-                        let h = Arc::clone(&handler);
-                        tokio::spawn(async move {
-                            let _ = h.handle_stream(stream).await;
-                        });
-                    }
+    let port = {
+        // Let's spawn server task
+        let (addr_tx, addr_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let listener = match server {
+                rt_scgi::ScgiServer {
+                    listener: rt_scgi::ScgiListener::Tcp(l),
+                    ..
+                } => l,
+                _ => unreachable!(),
+            };
+            let addr = listener.local_addr().unwrap();
+            addr_tx.send(addr).unwrap();
+            loop {
+                if let Ok((stream, _)) = listener.accept().await {
+                    let h = Arc::clone(&handler);
+                    tokio::spawn(async move {
+                        let _ = h.handle_stream(stream).await;
+                    });
                 }
-            });
-            addr_rx.await.unwrap()
-        }
+            }
+        });
+        addr_rx.await.unwrap()
     };
 
     // 1. XML-RPC over TCP
