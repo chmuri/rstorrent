@@ -428,7 +428,7 @@ fn candidate_ports(first: u16, last: u16, random: bool) -> Vec<u16> {
     if first == 0 || first > last {
         return Vec::new();
     }
-    let count = (last as u32 - first as u32 + 1) as u32;
+    let count = last as u32 - first as u32 + 1;
     let start = if random {
         let mut bytes = [0u8; 2];
         if getrandom::fill(&mut bytes).is_ok() {
@@ -918,6 +918,30 @@ async fn accept_loop(
     debug!("Peer accept loop stopped");
 }
 
+/// Configuration for [`NetworkRuntime::spawn_with_listener_config`].
+pub struct NetworkRuntimeConfig {
+    pub download_list: Arc<RwLock<DownloadList>>,
+    pub our_peer_id: HashString,
+    pub listen_port: u16,
+    pub shutdown_rx: watch::Receiver<bool>,
+    pub dht_cache_path: Option<std::path::PathBuf>,
+    pub network_config: NetworkConfig,
+    pub dht_config: DhtLifecycleConfig,
+    pub listener_config: PeerListenerConfig,
+}
+
+struct SpawnParams {
+    download_list: Arc<RwLock<DownloadList>>,
+    our_peer_id: HashString,
+    listen_port: u16,
+    shutdown_rx: watch::Receiver<bool>,
+    dht_cache_path: Option<std::path::PathBuf>,
+    initial_policy: EncryptionPolicy,
+    live_config: Option<NetworkConfig>,
+    dht_config: DhtLifecycleConfig,
+    listener_config: PeerListenerConfig,
+}
+
 impl NetworkRuntime {
     /// Spawns the listener, DHT and supervisor tasks that monitor active
     /// torrents in `download_list` and start/stop their
@@ -938,17 +962,17 @@ impl NetworkRuntime {
         shutdown_rx: watch::Receiver<bool>,
         dht_cache_path: Option<std::path::PathBuf>,
     ) -> NetworkRuntimeHandle {
-        Self::spawn_internal(
+        Self::spawn_internal(SpawnParams {
             download_list,
             our_peer_id,
             listen_port,
             shutdown_rx,
             dht_cache_path,
-            EncryptionPolicy::allow(),
-            None,
-            DhtLifecycleConfig::default(),
-            PeerListenerConfig::new(listen_port),
-        )
+            initial_policy: EncryptionPolicy::allow(),
+            live_config: None,
+            dht_config: DhtLifecycleConfig::default(),
+            listener_config: PeerListenerConfig::new(listen_port),
+        })
     }
 
     /// Like [`NetworkRuntime::spawn`], but enforces an explicit encryption
@@ -961,17 +985,17 @@ impl NetworkRuntime {
         dht_cache_path: Option<std::path::PathBuf>,
         policy: EncryptionPolicy,
     ) -> NetworkRuntimeHandle {
-        Self::spawn_internal(
+        Self::spawn_internal(SpawnParams {
             download_list,
             our_peer_id,
             listen_port,
             shutdown_rx,
             dht_cache_path,
-            policy,
-            None,
-            DhtLifecycleConfig::default(),
-            PeerListenerConfig::new(listen_port),
-        )
+            initial_policy: policy,
+            live_config: None,
+            dht_config: DhtLifecycleConfig::default(),
+            listener_config: PeerListenerConfig::new(listen_port),
+        })
     }
 
     /// Like [`NetworkRuntime::spawn`], but reads the handshake/stream modes
@@ -1008,43 +1032,44 @@ impl NetworkRuntime {
     ) -> NetworkRuntimeHandle {
         let policy = EncryptionPolicy::from(network_config.encryption_modes());
         let listener_config = PeerListenerConfig::from_network_config(listen_port, &network_config);
-        Self::spawn_internal(
+        Self::spawn_internal(SpawnParams {
             download_list,
             our_peer_id,
             listen_port,
             shutdown_rx,
             dht_cache_path,
-            policy,
-            Some(network_config),
+            initial_policy: policy,
+            live_config: Some(network_config),
             dht_config,
             listener_config,
-        )
+        })
     }
 
     /// Full-control variant with an explicit listener configuration
     /// (port range, bind addresses/devices, backlog and connection limits).
-    pub fn spawn_with_listener_config(
-        download_list: Arc<RwLock<DownloadList>>,
-        our_peer_id: HashString,
-        listen_port: u16,
-        shutdown_rx: watch::Receiver<bool>,
-        dht_cache_path: Option<std::path::PathBuf>,
-        network_config: NetworkConfig,
-        dht_config: DhtLifecycleConfig,
-        listener_config: PeerListenerConfig,
-    ) -> NetworkRuntimeHandle {
-        let policy = EncryptionPolicy::from(network_config.encryption_modes());
-        Self::spawn_internal(
+    pub fn spawn_with_listener_config(config: NetworkRuntimeConfig) -> NetworkRuntimeHandle {
+        let NetworkRuntimeConfig {
             download_list,
             our_peer_id,
             listen_port,
             shutdown_rx,
             dht_cache_path,
-            policy,
-            Some(network_config),
+            network_config,
             dht_config,
             listener_config,
-        )
+        } = config;
+        let policy = EncryptionPolicy::from(network_config.encryption_modes());
+        Self::spawn_internal(SpawnParams {
+            download_list,
+            our_peer_id,
+            listen_port,
+            shutdown_rx,
+            dht_cache_path,
+            initial_policy: policy,
+            live_config: Some(network_config),
+            dht_config,
+            listener_config,
+        })
     }
 
     /// Like [`NetworkRuntime::spawn`], but with explicit DHT lifecycle
@@ -1057,30 +1082,31 @@ impl NetworkRuntime {
         dht_cache_path: Option<std::path::PathBuf>,
         dht_config: DhtLifecycleConfig,
     ) -> NetworkRuntimeHandle {
-        Self::spawn_internal(
+        Self::spawn_internal(SpawnParams {
             download_list,
             our_peer_id,
             listen_port,
             shutdown_rx,
             dht_cache_path,
-            EncryptionPolicy::allow(),
-            None,
+            initial_policy: EncryptionPolicy::allow(),
+            live_config: None,
             dht_config,
-            PeerListenerConfig::new(listen_port),
-        )
+            listener_config: PeerListenerConfig::new(listen_port),
+        })
     }
 
-    fn spawn_internal(
-        download_list: Arc<RwLock<DownloadList>>,
-        our_peer_id: HashString,
-        listen_port: u16,
-        mut shutdown_rx: watch::Receiver<bool>,
-        dht_cache_path: Option<std::path::PathBuf>,
-        initial_policy: EncryptionPolicy,
-        live_config: Option<NetworkConfig>,
-        mut dht_config: DhtLifecycleConfig,
-        listener_config: PeerListenerConfig,
-    ) -> NetworkRuntimeHandle {
+    fn spawn_internal(params: SpawnParams) -> NetworkRuntimeHandle {
+        let SpawnParams {
+            download_list,
+            our_peer_id,
+            listen_port,
+            mut shutdown_rx,
+            dht_cache_path,
+            initial_policy,
+            live_config,
+            mut dht_config,
+            listener_config,
+        } = params;
         let encryption_policy = Arc::new(Mutex::new(initial_policy));
         reset_listener_statistics();
 
@@ -1381,7 +1407,7 @@ impl NetworkRuntime {
                     }
 
                     if is_active {
-                        if !active_coordinators.contains_key(&hash) {
+                        active_coordinators.entry(hash).or_insert_with(|| {
                             debug!(hash = %hash.to_hex(), "Spawning network coordinator for torrent");
                             let coordinator = DownloadNetworkCoordinator::new_with_shared_policy(
                                 engine_dl,
@@ -1393,8 +1419,8 @@ impl NetworkRuntime {
                             let pool = coordinator.peer_pool();
                             peer_pools.lock().unwrap().insert(hash, Arc::clone(&pool));
                             let stop_tx = coordinator.spawn();
-                            active_coordinators.insert(hash, (stop_tx, pool));
-                        }
+                            (stop_tx, pool)
+                        });
                     } else if let Some((stop_tx, _)) = active_coordinators.remove(&hash) {
                         debug!(hash = %hash.to_hex(), "Stopping network coordinator for torrent");
                         let _ = stop_tx.send(true);

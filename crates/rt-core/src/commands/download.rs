@@ -215,7 +215,7 @@ fn free_diskspace_for(dl: &Download) -> u64 {
     let directory = dl.directory();
     let path = if directory.is_empty() { "." } else { directory };
     nix::sys::statvfs::statvfs(path)
-        .map(|stat| stat.blocks_available() as u64 * stat.fragment_size() as u64)
+        .map(|stat| stat.blocks_available() * stat.fragment_size())
         .unwrap_or(0)
 }
 
@@ -923,7 +923,7 @@ pub fn register_download_commands(
             let hash = *dl.read().unwrap().info_hash();
             let store = cs_keys.read().unwrap();
             let mut keys: Vec<String> = Vec::new();
-            for (key, _) in store.iter() {
+            for key in store.keys() {
                 if key.0 == hash {
                     keys.push(key.1.clone());
                 }
@@ -1876,7 +1876,10 @@ fn register_download_extended_commands(
         let ratio = if done == 0 {
             0
         } else {
-            dl.uploaded_bytes().saturating_mul(1000) / done
+            dl.uploaded_bytes()
+                .saturating_mul(1000)
+                .checked_div(done)
+                .unwrap_or(0)
         };
         Object::from(ratio as i64)
     })?;

@@ -481,10 +481,8 @@ fn parse_string_list(obj: &Object) -> Result<Vec<String>, RpcError> {
         // A RPC call normally wraps the argument list once more (`[[...]]`);
         // unwrap that single nested list so both `call_command(..., list)` and
         // `call_command(..., x)` behave the same.
-        if list.len() == 1 {
-            if list[0].as_list().is_ok() {
-                return parse_string_list(&list[0]);
-            }
+        if list.len() == 1 && list[0].as_list().is_ok() {
+            return parse_string_list(&list[0]);
         }
         return list.iter().map(convert_to_string).collect();
     }
@@ -992,7 +990,8 @@ fn register_system_extended_commands(map: &mut CommandMap) -> Result<(), RpcErro
     // worker's `FileManager`. `global_file_manager_stats` never spawns a
     // worker just to read statistics, so before the first file operation the
     // value is zero. These commands are read-only: no `.set` variant exists.
-    let file_counters: [(&str, fn(&FileManagerStats) -> u64, &str); 4] = [
+    type FileCounter = (&'static str, fn(&FileManagerStats) -> u64, &'static str);
+    let file_counters: [FileCounter; 4] = [
         (
             "system.files.opened_counter",
             |stats: &FileManagerStats| stats.files_opened,

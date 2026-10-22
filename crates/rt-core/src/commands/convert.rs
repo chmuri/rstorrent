@@ -88,8 +88,10 @@ fn format_throttle(value: i64) -> String {
     }
 }
 
+type ConvertCommand = (&'static str, fn(i64) -> String);
+
 pub fn register_convert_commands(map: &mut CommandMap) -> Result<(), RpcError> {
-    let commands: [(&str, fn(i64) -> String); 18] = [
+    let commands: [ConvertCommand; 18] = [
         ("convert.gm_time", |v| format_time(v, false, false)),
         ("convert.gm_date", |v| format_time(v, false, true)),
         ("convert.time", |v| format_time(v, true, false)),

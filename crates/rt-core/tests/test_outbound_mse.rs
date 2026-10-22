@@ -163,10 +163,10 @@ async fn outbound_require_never_downgrades() {
         let _ = first.read_exact(&mut key).await;
         drop(first);
 
-        match tokio::time::timeout(Duration::from_millis(800), listener.accept()).await {
-            Ok(Ok(_)) => false,
-            _ => true,
-        }
+        !matches!(
+            tokio::time::timeout(Duration::from_millis(800), listener.accept()).await,
+            Ok(Ok(_))
+        )
     });
 
     let (_download, engine) = active_engine();

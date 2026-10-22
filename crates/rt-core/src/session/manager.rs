@@ -238,8 +238,7 @@ impl SessionManager {
 
     pub fn stop(&mut self) -> io::Result<()> {
         if !self.active {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "SessionManager::stop() called while not active.",
             ));
         }
@@ -269,8 +268,7 @@ impl SessionManager {
         }
 
         if !self.active {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "SessionManager::save_streams() called while not active.",
             ));
         }
@@ -297,8 +295,7 @@ impl SessionManager {
         }
 
         if !self.active {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "SessionManager::commit() called while not active.",
             ));
         }
@@ -391,8 +388,7 @@ impl SessionManager {
         }
 
         if !self.active {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "SessionManager::remove_session_files() called while not active.",
             ));
         }

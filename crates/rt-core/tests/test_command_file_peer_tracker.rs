@@ -229,10 +229,7 @@ fn peer_commands_inspect_and_disconnect() {
     );
 
     assert!(call(&fixture.map, "p.disconnect", &target, vec![]).is_ok());
-    assert_eq!(
-        call(&fixture.map, "p.is_encrypted", &target, vec![]).is_err(),
-        true
-    );
+    assert!(call(&fixture.map, "p.is_encrypted", &target, vec![]).is_err());
 }
 
 fn command_names(map: &CommandMap) -> Vec<String> {
@@ -1204,7 +1201,8 @@ fn namespace_commands_reject_wrong_targets_and_missing_values() {
         );
     }
 
-    for name in ["f.priority.set"] {
+    {
+        let name = "f.priority.set";
         assert!(
             call(&fixture.map, name, &file_target, vec![]).is_err(),
             "{name} accepted a missing value"

@@ -1090,7 +1090,7 @@ pub fn register_network_commands(
         "network.listen.backlog",
         |c| c.listen_backlog() as i64,
         |c, v| {
-            if v < 1 || v > 65536 {
+            if !(1..=65536).contains(&v) {
                 return Err("Listen backlog must be between 1 and 65536.".to_string());
             }
             c.set_listen_backlog(v as i32).map_err(|e| e.to_string())

@@ -45,17 +45,33 @@ use lt_net::config::NetworkConfig;
 use rt_rpc::{CommandMap, ObjectStorage, RpcError};
 use std::sync::{Arc, RwLock};
 
+/// Shared command-layer services needed during builtin registration.
+pub struct CommandRegistry {
+    pub storage: Arc<RwLock<ObjectStorage>>,
+    pub ip_manager: Arc<RwLock<IpTableManager>>,
+    pub download_list: Arc<RwLock<DownloadList>>,
+    pub view_manager: Arc<RwLock<ViewManager>>,
+    pub group_manager: Arc<RwLock<ChokeGroupManager>>,
+    pub throttle_manager: Arc<RwLock<ThrottleManager>>,
+    pub dht_config: Arc<RwLock<DhtConfig>>,
+    pub network_config: NetworkConfig,
+}
+
 pub fn initialize_builtin_commands(
     map: &mut CommandMap,
-    storage: Arc<RwLock<ObjectStorage>>,
-    ip_manager: Arc<RwLock<IpTableManager>>,
-    download_list: Arc<RwLock<DownloadList>>,
-    view_manager: Arc<RwLock<ViewManager>>,
-    group_manager: Arc<RwLock<ChokeGroupManager>>,
-    throttle_manager: Arc<RwLock<ThrottleManager>>,
-    dht_config: Arc<RwLock<DhtConfig>>,
-    network_config: NetworkConfig,
+    registry: CommandRegistry,
 ) -> Result<(), RpcError> {
+    let CommandRegistry {
+        storage,
+        ip_manager,
+        download_list,
+        view_manager,
+        group_manager,
+        throttle_manager,
+        dht_config,
+        network_config,
+    } = registry;
+
     register_string_commands(map)?;
     register_convert_commands(map)?;
     register_ratio_commands(map)?;

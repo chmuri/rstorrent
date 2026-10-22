@@ -206,8 +206,7 @@ impl Manager {
             return Ok(());
         }
         if !session.is_active() {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "d.save_resume: session manager is not active.",
             ));
         }
@@ -224,8 +223,7 @@ impl Manager {
             return Ok(());
         }
         if !session.is_active() {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "d.save_full_session: session manager is not active.",
             ));
         }

@@ -130,9 +130,10 @@ impl ChokeGroupManager {
         }
 
         let index = self.resource.push_group(name.clone());
-        let mut group = ChokeGroup::default();
-        group.name = name;
-        self.groups.push(group);
+        self.groups.push(ChokeGroup {
+            name,
+            ..Default::default()
+        });
         self.sync_group(index);
         index
     }
@@ -164,9 +165,10 @@ impl ChokeGroupManager {
             }
 
             let index = self.resource.push_group(name.clone());
-            let mut group = ChokeGroup::default();
-            group.name = name;
-            self.groups.push(group);
+            self.groups.push(ChokeGroup {
+                name,
+                ..Default::default()
+            });
             self.sync_group(index);
         }
         &mut self.groups[idx]

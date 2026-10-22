@@ -26,9 +26,11 @@ async fn runtime_publishes_dht_controller_to_commands() {
     let peer_id = HashString::new([0xef; 20]);
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-    let mut dht_config = DhtLifecycleConfig::default();
-    dht_config.mode = DhtMode::On;
-    dht_config.port_override = port;
+    let dht_config = DhtLifecycleConfig {
+        mode: DhtMode::On,
+        port_override: port,
+        ..Default::default()
+    };
 
     let runtime = NetworkRuntime::spawn_with_network_config_and_dht(
         list,

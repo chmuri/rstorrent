@@ -7,12 +7,12 @@ use lt_common::Object;
 use lt_net::config::NetworkConfig;
 use rt_core::commands::download::register_download_session_commands;
 use rt_core::commands::groups::ChokeGroupManager;
-use rt_core::commands::initialize_builtin_commands;
 use rt_core::commands::ip::IpTableManager;
 use rt_core::commands::scheduler::register_scheduler_commands;
 use rt_core::commands::session::register_session_commands;
 use rt_core::commands::throttle::ThrottleManager;
 use rt_core::commands::tracker::DhtConfig;
+use rt_core::commands::{initialize_builtin_commands, CommandRegistry};
 use rt_core::network_runtime::{DhtLifecycleConfig, DhtMode};
 use rt_core::session::SessionManager;
 use rt_core::{DownloadFactory, DownloadList, Manager as CoreManager, ViewManager};
@@ -135,14 +135,16 @@ impl Control {
 
             initialize_builtin_commands(
                 &mut map,
-                Arc::clone(&self.object_storage),
-                Arc::clone(&self.ip_manager),
-                Arc::clone(&self.download_list),
-                Arc::clone(&self.view_manager),
-                Arc::clone(&self.group_manager),
-                Arc::clone(&self.throttle_manager),
-                Arc::clone(&self.dht_config),
-                self.network_config.clone(),
+                CommandRegistry {
+                    storage: Arc::clone(&self.object_storage),
+                    ip_manager: Arc::clone(&self.ip_manager),
+                    download_list: Arc::clone(&self.download_list),
+                    view_manager: Arc::clone(&self.view_manager),
+                    group_manager: Arc::clone(&self.group_manager),
+                    throttle_manager: Arc::clone(&self.throttle_manager),
+                    dht_config: Arc::clone(&self.dht_config),
+                    network_config: self.network_config.clone(),
+                },
             )
             .map_err(|e| format!("Failed to initialize commands: {}", e))?;
 

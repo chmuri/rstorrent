@@ -169,11 +169,12 @@ mod tests {
 
     #[test]
     fn ratio_thresholds_avoid_division_by_zero() {
-        let mut config = RatioConfig::default();
-        config.enabled = true;
-        config.min = 200;
-        config.max = 300;
-        config.upload = 100;
+        let config = RatioConfig {
+            enabled: true,
+            min: 200,
+            max: 300,
+            upload: 100,
+        };
 
         assert!(!ratio_reached(10, 0, &config));
         assert!(ratio_reached(100, 0, &config));

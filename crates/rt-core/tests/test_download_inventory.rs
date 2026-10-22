@@ -633,15 +633,13 @@ fn new_getters_and_setters_round_trip() {
     // The standalone registration has no session-manager handle, so these
     // must fail loudly instead of pretending a resume/session was saved.
     let save_resume = call(&map, "d.save_resume", &target, vec![])
-        .err()
-        .expect("d.save_resume should fail without a session manager");
+        .expect_err("d.save_resume should fail without a session manager");
     assert!(
         save_resume.to_string().contains("session"),
         "unexpected error: {save_resume}"
     );
     let save_full = call(&map, "d.save_full_session", &target, vec![])
-        .err()
-        .expect("d.save_full_session should fail without a session manager");
+        .expect_err("d.save_full_session should fail without a session manager");
     assert!(
         save_full.to_string().contains("session"),
         "unexpected error: {save_full}"
@@ -1590,7 +1588,7 @@ fn test_load_raw_start_and_data_uri() {
         .unwrap();
     let mut object2 = Object::create_map();
     object2.insert_key("info", info2).unwrap();
-    let b64_2 = BASE64_STANDARD.encode(&lt_common::object::bencode::encode(&object2).unwrap());
+    let b64_2 = BASE64_STANDARD.encode(lt_common::object::bencode::encode(&object2).unwrap());
     let data_uri_2 = format!("data:applications/x-bittorrent;base64,{b64_2}");
 
     let args2 = Object::create_list_with(vec![

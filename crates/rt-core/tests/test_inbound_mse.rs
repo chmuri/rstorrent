@@ -81,12 +81,17 @@ async fn accepts_mse_handshake_and_registers_peer() {
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut registered = None;
     while Instant::now() < deadline {
-        let guard = engine.lock().unwrap();
-        if let Some(peer) = guard.connection_list().find_by_id(&remote_peer_id) {
-            registered = Some((peer.is_encrypted, peer.is_obfuscated));
+        let found = {
+            let guard = engine.lock().unwrap();
+            guard
+                .connection_list()
+                .find_by_id(&remote_peer_id)
+                .map(|peer| (peer.is_encrypted, peer.is_obfuscated))
+        };
+        if let Some(flags) = found {
+            registered = Some(flags);
             break;
         }
-        drop(guard);
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
@@ -144,12 +149,17 @@ async fn registers_plaintext_mse_stream_as_obfuscated() {
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut registered = None;
     while Instant::now() < deadline {
-        let guard = engine.lock().unwrap();
-        if let Some(peer) = guard.connection_list().find_by_id(&remote_peer_id) {
-            registered = Some((peer.is_encrypted, peer.is_obfuscated));
+        let found = {
+            let guard = engine.lock().unwrap();
+            guard
+                .connection_list()
+                .find_by_id(&remote_peer_id)
+                .map(|peer| (peer.is_encrypted, peer.is_obfuscated))
+        };
+        if let Some(flags) = found {
+            registered = Some(flags);
             break;
         }
-        drop(guard);
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 

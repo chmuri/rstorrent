@@ -349,9 +349,7 @@ pub fn resume_extras(
         .files
         .iter()
         .map(|file| -> Option<u64> {
-            let Some(bitfield) = resume.bitfield.as_ref() else {
-                return None;
-            };
+            let bitfield = resume.bitfield.as_ref()?;
             if file.length == 0 || metadata.piece_length == 0 {
                 return Some(0);
             }
