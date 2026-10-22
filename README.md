@@ -238,7 +238,7 @@ network.scgi.open_local = /session/rtorrent.sock
 cargo test --workspace
 
 # Run static checks
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ---

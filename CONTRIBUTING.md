@@ -25,7 +25,7 @@ The codebase is organized as a Cargo workspace with 14 crates:
 3. Make your changes adhering to idiomatic Rust standards:
    - Ensure `cargo check --workspace` compiles cleanly with zero warnings.
    - Run `cargo fmt --check` before submitting.
-   - Run `cargo clippy --workspace --all-targets` to verify lints.
+   - Run `cargo clippy --workspace --all-targets -- -D warnings`; the CI gate treats every clippy diagnostic as an error.
 
 4. Add tests for any new features or bug fixes. Every crate has integration tests in its `tests/` directory.
 

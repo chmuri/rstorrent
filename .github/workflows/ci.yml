@@ -23,9 +23,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy (advisory)
-    # Existing clippy warnings are reported but do not block the build yet.
-    continue-on-error: true
+    name: clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -38,7 +36,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: test (${{ matrix.os }})
