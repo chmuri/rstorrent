@@ -378,12 +378,10 @@ impl DhtServer {
                 ..
             } => {
                 if router.token_valid(&token, from_sa) {
-                    if let Some(ip) = from_sa.ip() {
-                        if let std::net::IpAddr::V4(v4) = ip {
-                            let tracker = router.get_tracker(&info_hash, true);
-                            if let Some(t) = tracker {
-                                t.add_peer(u32::from(v4), port, 0);
-                            }
+                    if let Some(std::net::IpAddr::V4(v4)) = from_sa.ip() {
+                        let tracker = router.get_tracker(&info_hash, true);
+                        if let Some(t) = tracker {
+                            t.add_peer(u32::from(v4), port, 0);
                         }
                     }
                 }

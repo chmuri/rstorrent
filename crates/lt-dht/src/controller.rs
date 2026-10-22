@@ -173,8 +173,10 @@ pub struct DhtController {
 
 impl DhtController {
     pub fn new(own_id: HashString, port: u16) -> Self {
-        let mut config = DhtLifecycleConfig::default();
-        config.port_override = port;
+        let config = DhtLifecycleConfig {
+            port_override: port,
+            ..Default::default()
+        };
         Self::with_config(own_id, port, config)
     }
 

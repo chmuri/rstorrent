@@ -182,10 +182,11 @@ impl DhtRouter {
         }
 
         loop {
-            let bucket_idx = match self.buckets.iter().position(|b| b.is_in_range(&id)) {
-                Some(idx) => idx,
-                None => 0,
-            };
+            let bucket_idx = self
+                .buckets
+                .iter()
+                .position(|b| b.is_in_range(&id))
+                .unwrap_or_default();
 
             if !self.buckets[bucket_idx].is_full() {
                 self.buckets[bucket_idx].add_node(node);
@@ -225,7 +226,7 @@ impl DhtRouter {
             .flat_map(|bucket| bucket.nodes.iter().cloned())
             .collect();
 
-        nodes.sort_by(|a, b| xor_distance(&a.id, target).cmp(&xor_distance(&b.id, target)));
+        nodes.sort_by_key(|a| xor_distance(&a.id, target));
         nodes.truncate(max);
         nodes
     }
