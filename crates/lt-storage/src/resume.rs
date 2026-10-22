@@ -154,7 +154,7 @@ impl ResumeData {
                     // The tail byte is padded, so the on-disk length must match
                     // the torrent exactly. A mismatch invalidates the saved
                     // progress, not the rest of the resume file.
-                    let expected_bytes = (bits + 7) / 8;
+                    let expected_bytes = bits.div_ceil(8);
                     if bytes.len() != expected_bytes {
                         return None;
                     }
@@ -361,10 +361,7 @@ impl ResumeExtras {
         }
 
         if !self.trackers.is_empty() {
-            let mut trackers = object
-                .get_key_map(b"trackers")
-                .map(|trackers| trackers.clone())
-                .unwrap_or_default();
+            let mut trackers = object.get_key_map(b"trackers").cloned().unwrap_or_default();
 
             for tracker in &self.trackers {
                 let mut entry = Object::create_map();

@@ -82,13 +82,13 @@ mod tests {
         assert!(chunk.is_writable());
         assert!(!chunk.is_exec());
 
-        // pages touched: (5000 + 100 + ps - 1) / ps
-        let expected_pages = (5000 + 100 + ps - 1) / ps;
+        // pages touched: ceil((5000 + 100) / ps)
+        let expected_pages = (5000usize + 100).div_ceil(ps);
         assert_eq!(chunk.pages_touched(0, 5000), expected_pages);
 
         // size_aligned
-        let total = 100 + 5000;
-        let expected_aligned = ((total + ps - 1) / ps) * ps;
+        let total = 100usize + 5000;
+        let expected_aligned = total.div_ceil(ps) * ps;
         assert_eq!(chunk.size_aligned(), expected_aligned);
 
         // align_pair: offset becomes page-aligned (0), len becomes len + (offset % ps) = 1000 + 300 = 1300
@@ -358,10 +358,10 @@ mod tests {
         assert!(!itr.is_empty());
         assert_eq!(itr.current_slice(), &[20, 30]); // part 0 from pos 1 to 3
 
-        assert!(itr.next());
+        assert!(itr.advance());
         assert_eq!(itr.current_slice(), &[40, 50]); // part 1 from pos 3 to 5
 
-        assert!(!itr.next());
+        assert!(!itr.advance());
     }
 
     #[test]
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(results.len(), 5);
 
         for i in 0..5 {
-            let expected_hash = HashString::new(lt_crypto::sha1::sha1_hash(&vec![i as u8; 100]));
+            let expected_hash = HashString::new(lt_crypto::sha1::sha1_hash(&[i as u8; 100]));
             assert_eq!(results.get(&i), Some(&expected_hash));
         }
     }

@@ -193,7 +193,7 @@ impl FileManager {
     }
 
     pub fn set_max_open_files(&mut self, max: usize) {
-        if max < 4 || max > (1 << 16) {
+        if !(4..=(1 << 16)).contains(&max) {
             panic!("Max open files must be between 4 and 65536");
         }
         self.max_open_files = max;

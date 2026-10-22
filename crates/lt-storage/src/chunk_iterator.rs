@@ -68,7 +68,7 @@ impl<'a> ChunkIterator<'a> {
         }
     }
 
-    pub fn next(&mut self) -> bool {
+    pub fn advance(&mut self) -> bool {
         if self.part_idx >= self.chunk.parts().len() {
             return false;
         }

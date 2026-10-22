@@ -261,7 +261,7 @@ impl Drop for MappedMemory {
                 }
             } else {
                 unsafe {
-                    let _ = Box::from_raw(std::slice::from_raw_parts_mut(self.ptr, self.len));
+                    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(self.ptr, self.len));
                 }
             }
             self.ptr = ptr::null_mut();

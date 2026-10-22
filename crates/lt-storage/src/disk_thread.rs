@@ -459,6 +459,17 @@ fn mismatched_reply(expected: u64, actual: u64) -> StorageError {
     ))
 }
 
+/// One bounded read of a torrent piece slice.
+struct ReadRange<'a> {
+    root: &'a Path,
+    files: &'a [TargetFileInfo],
+    piece_length: u32,
+    piece_index: u32,
+    block_offset: u32,
+    length: u32,
+    hashing: bool,
+}
+
 /// Handle to the dedicated disk worker thread.
 pub struct DiskThread {
     tx: SyncSender<DiskCommand>,
@@ -1240,15 +1251,15 @@ impl DiskWorker {
                 length,
                 reply,
             } => {
-                let result = self.read_range(
-                    &root,
-                    files.as_slice(),
+                let result = self.read_range(ReadRange {
+                    root: &root,
+                    files: files.as_slice(),
                     piece_length,
                     piece_index,
                     block_offset,
                     length,
-                    false,
-                );
+                    hashing: false,
+                });
                 if result.is_ok() {
                     self.stats.reads_completed.fetch_add(1, Ordering::AcqRel);
                 }
@@ -1324,20 +1335,14 @@ impl DiskWorker {
                 false
             }
             DiskCommand::Close { id, reply } => {
-                let result = self.sync_all().and_then(|()| {
-                    self.close_all();
-                    Ok(())
-                });
+                let result = self.sync_all().map(|()| self.close_all());
                 let _ = reply.send(DiskReply::Close { id, result });
                 false
             }
             DiskCommand::Shutdown { id, reply } => {
                 // Every write accepted before this command has already been
                 // executed because the request channel is FIFO.
-                let result = self.sync_all().and_then(|()| {
-                    self.close_all();
-                    Ok(())
-                });
+                let result = self.sync_all().map(|()| self.close_all());
                 let _ = reply.send(DiskReply::Shutdown { id, result });
                 true
             }
@@ -1523,16 +1528,16 @@ impl DiskWorker {
         Ok(())
     }
 
-    fn read_range(
-        &mut self,
-        root: &Path,
-        files: &[TargetFileInfo],
-        piece_length: u32,
-        piece_index: u32,
-        block_offset: u32,
-        length: u32,
-        hashing: bool,
-    ) -> Result<Vec<u8>, StorageError> {
+    fn read_range(&mut self, request: ReadRange<'_>) -> Result<Vec<u8>, StorageError> {
+        let ReadRange {
+            root,
+            files,
+            piece_length,
+            piece_index,
+            block_offset,
+            length,
+            hashing,
+        } = request;
         if block_offset as u64 + length as u64 > piece_length as u64 {
             return Err(StorageError::InvalidRange {
                 offset: (piece_index as u64).saturating_mul(piece_length as u64),
@@ -1602,8 +1607,15 @@ impl DiskWorker {
         let mut offset = 0u32;
         while offset < piece_size {
             let chunk = (piece_size - offset).min(HASH_READ_CHUNK as u32);
-            let part =
-                self.read_range(root, files, piece_length, piece_index, offset, chunk, true)?;
+            let part = self.read_range(ReadRange {
+                root,
+                files,
+                piece_length,
+                piece_index,
+                block_offset: offset,
+                length: chunk,
+                hashing: true,
+            })?;
             data[offset as usize..offset as usize + chunk as usize].copy_from_slice(&part);
             offset += chunk;
         }

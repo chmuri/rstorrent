@@ -189,7 +189,7 @@ impl File {
         }
         let cs = chunk_size as u64;
         let first = (self.offset / cs) as u32;
-        let last = ((self.offset + self.size_bytes + cs - 1) / cs) as u32;
+        let last = (self.offset + self.size_bytes).div_ceil(cs) as u32;
         self.range = (first, last);
     }
 
