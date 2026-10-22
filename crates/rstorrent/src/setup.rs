@@ -11,6 +11,12 @@ use thiserror::Error;
 /// `schedule = session_save,1200,1200,((session.save))` entry.
 pub const DEFAULT_SESSION_COMMIT_INTERVAL_SECS: u64 = 1200;
 
+/// Default resume-only checkpoint interval for active downloads.
+///
+/// Bounds the progress lost on a crash to roughly this window without paying
+/// the full session commit cost (torrent files included) every time.
+pub const DEFAULT_SESSION_CHECKPOINT_INTERVAL_SECS: u64 = 300;
+
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum SetupError {
     #[error("Invalid number of arguments.")]
@@ -186,6 +192,21 @@ pub fn setup_session_commit_schedule(sched: &mut CommandScheduler, interval: Dur
     );
 }
 
+/// Registers the resume-only checkpoint task.
+///
+/// Runs `session.checkpoint`, which rewrites `<hash>.rtorrent` and the resume
+/// file for every active download but does not re-encode torrent files.
+pub fn setup_session_checkpoint_schedule(sched: &mut CommandScheduler, interval: Duration) {
+    let seconds = interval.as_secs().max(1);
+    let seconds = seconds.to_string();
+    let _ = sched.schedule(
+        "session_checkpoint",
+        &seconds,
+        &seconds,
+        Object::from("session.checkpoint="),
+    );
+}
+
 /// Sets up default recurring schedule tasks.
 pub fn setup_default_schedule(sched: &mut CommandScheduler) {
     setup_default_schedule_with_interval(
@@ -201,6 +222,10 @@ pub fn setup_default_schedule(sched: &mut CommandScheduler) {
 /// scheduler details.
 pub fn setup_default_schedule_with_interval(sched: &mut CommandScheduler, interval: Duration) {
     setup_session_commit_schedule(sched, interval);
+    setup_session_checkpoint_schedule(
+        sched,
+        Duration::from_secs(DEFAULT_SESSION_CHECKPOINT_INTERVAL_SECS),
+    );
     let _ = sched.schedule(
         "low_diskspace",
         "5",
@@ -212,6 +237,71 @@ pub fn setup_default_schedule_with_interval(sched: &mut CommandScheduler, interv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_config(label: &str, body: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "rstorrent_setup_{}_{}.rc",
+            label,
+            std::process::id()
+        ));
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    #[test]
+    fn config_comments_accept_known_commands_and_ignore_plain_comments() {
+        let path = write_config(
+            "valid",
+            "# a plain comment\n# do:log.add_output=stdout,net\n# do:log.open_file=log,file\n",
+        );
+        assert!(parse_config_file_comments(path.to_str().unwrap()).is_ok());
+
+        // Missing files are silently skipped.
+        assert!(parse_config_file_comments("/nonexistent/rstorrent.rc").is_ok());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn config_comments_reject_malformed_entries() {
+        let path = write_config("invalid_eq", "# do:log.add_output\n");
+        assert_eq!(
+            parse_config_file_comments(path.to_str().unwrap()),
+            Err(SetupError::InvalidCommand(
+                "# do:log.add_output".to_string()
+            ))
+        );
+
+        let path = write_config("arg_count", "# do:log.add_output=one\n");
+        assert_eq!(
+            parse_config_file_comments(path.to_str().unwrap()),
+            Err(SetupError::InvalidArgCount)
+        );
+
+        let path = write_config("open_file_args", "# do:log.open_file=one\n");
+        assert_eq!(
+            parse_config_file_comments(path.to_str().unwrap()),
+            Err(SetupError::InvalidArgCount)
+        );
+
+        let path = write_config("unknown_log", "# do:log.unknown=x\n");
+        assert_eq!(
+            parse_config_file_comments(path.to_str().unwrap()),
+            Err(SetupError::UnknownLogCommand("log.unknown".to_string()))
+        );
+
+        let path = write_config("unknown_cmd", "# do:session.save=x\n");
+        assert_eq!(
+            parse_config_file_comments(path.to_str().unwrap()),
+            Err(SetupError::UnknownCommand(
+                "# do:session.save=x".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn find_config_file_honours_no_rc() {
+        assert!(find_config_file(true).is_none());
+    }
 
     #[test]
     fn default_schedule_uses_legacy_session_interval() {
@@ -228,6 +318,25 @@ mod tests {
             Duration::from_secs(DEFAULT_SESSION_COMMIT_INTERVAL_SECS)
         );
         assert!(item.command().as_str().unwrap().contains("session.save"));
+    }
+
+    #[test]
+    fn default_schedule_adds_resume_checkpoint() {
+        let mut scheduler = CommandScheduler::new();
+        setup_default_schedule(&mut scheduler);
+
+        let item = scheduler
+            .find("session_checkpoint")
+            .expect("session_checkpoint");
+        assert_eq!(
+            item.interval(),
+            Duration::from_secs(DEFAULT_SESSION_CHECKPOINT_INTERVAL_SECS)
+        );
+        assert!(item
+            .command()
+            .as_str()
+            .unwrap()
+            .contains("session.checkpoint"));
     }
 
     #[test]

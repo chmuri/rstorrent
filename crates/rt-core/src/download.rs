@@ -339,8 +339,18 @@ impl Download {
     }
 
     pub fn apply_resume(&mut self, resume: &ResumeData) -> Result<usize, String> {
+        self.apply_resume_with_uncertain(resume, &[])
+    }
+
+    /// Applies resume data, re-queuing pieces whose data was not fsynced when
+    /// the snapshot was written.
+    pub fn apply_resume_with_uncertain(
+        &mut self,
+        resume: &ResumeData,
+        uncertain: &[u32],
+    ) -> Result<usize, String> {
         let mut engine = self.download.lock().unwrap();
-        let result = engine.apply_resume(resume);
+        let result = engine.apply_resume_with_uncertain(resume, uncertain);
         match &result {
             Ok(_) => {
                 // Trust only what the engine accepted. Pieces that resume
@@ -355,6 +365,11 @@ impl Download {
             }
         }
         result
+    }
+
+    /// Pieces completed from writes that have not been fsynced yet.
+    pub fn uncertain_pieces(&self) -> Vec<u32> {
+        self.download.lock().unwrap().uncertain_pieces()
     }
 
     /// Rehashes the download, returning a diagnostic when it is not legal.
@@ -613,17 +628,39 @@ impl Download {
     }
 
     pub fn uploaded_bytes(&self) -> u64 {
-        if self.is_hash_checking() {
-            return 0;
-        }
         self.download.lock().unwrap().uploaded_bytes()
     }
 
     pub fn downloaded_bytes(&self) -> u64 {
-        if self.is_hash_checking() {
-            return 0;
-        }
         self.download.lock().unwrap().downloaded_bytes()
+    }
+
+    /// Restores the persisted session transfer counters.
+    pub fn set_downloaded_bytes(&mut self, value: u64) {
+        self.download.lock().unwrap().set_downloaded_bytes(value);
+    }
+
+    pub fn set_uploaded_bytes(&mut self, value: u64) {
+        self.download.lock().unwrap().set_uploaded_bytes(value);
+    }
+
+    /// Payload bytes covered by verified pieces.
+    ///
+    /// While a hash pass runs, the engine bitfield is being rewritten, so
+    /// progress is derived from the number of pieces checked so far. This is
+    /// what the UI must use for percentages: `downloaded_bytes` is a session
+    /// transfer counter and restarts from zero.
+    pub fn completed_bytes(&self) -> u64 {
+        let piece_length = self.metadata.piece_length as u64;
+        let total_size = self.metadata.total_size;
+
+        if self.is_hash_checking() {
+            return (self.chunks_hashed() as u64)
+                .saturating_mul(piece_length)
+                .min(total_size);
+        }
+
+        self.download.lock().unwrap().completed_bytes()
     }
 
     /// Opens the download. Idempotent; emits no events itself.
@@ -804,5 +841,143 @@ mod tests {
 
         assert_eq!(counter, download.state_counter());
         assert!(download.is_stopped());
+    }
+
+    #[test]
+    fn metadata_and_lifecycle_accessors_round_trip() {
+        let mut download = Download::from_metadata(metadata("accessors"));
+
+        download.set_sequential(true);
+        assert!(download.is_sequential());
+
+        download.set_last_active(7);
+        assert_eq!(download.last_active(), 7);
+
+        assert_eq!(download.connection_seed(), "leech");
+        download.set_connection_seed("seed").unwrap();
+        assert_eq!(download.connection_seed(), "seed");
+        download.set_connection_seed("initial_seed").unwrap();
+        assert_eq!(download.connection_seed(), "initial_seed");
+        assert!(download.set_connection_seed("invalid").is_err());
+
+        assert!(download.accepting_seeders());
+        download.set_accepting_seeders(false);
+        assert!(!download.accepting_seeders());
+
+        download.set_priority(1);
+        assert_eq!(download.priority(), 1);
+        download.set_resume_flags(5);
+        assert_eq!(download.resume_flags(), 5);
+        download.set_group(3);
+        assert_eq!(download.group(), 3);
+        download.set_throttle_name("fast");
+        assert_eq!(download.throttle_name(), "fast");
+        download.set_message("hello");
+        assert_eq!(download.message(), "hello");
+
+        download.set_bencode(Object::create_map());
+        assert!(download.bencode().is_some());
+        assert!(download.bencode_mut().is_some());
+
+        download.set_state_changed(11);
+        assert_eq!(download.state_changed(), 11);
+        download.set_state_counter(12);
+        assert_eq!(download.state_counter(), 12);
+        download.set_load_date(13);
+        assert_eq!(download.load_date(), 13);
+        download.set_timestamp_started(14);
+        assert_eq!(download.timestamp_started(), 14);
+        download.set_timestamp_finished(15);
+        assert_eq!(download.timestamp_finished(), 15);
+
+        download.set_erasing(true);
+        assert!(download.is_erasing());
+        download.set_erasing(false);
+
+        download.set_hash_failed(true);
+        assert!(download.is_hash_failed());
+        download.set_hash_failed(false);
+
+        assert_eq!(download.state_name(), "Stopped");
+        assert!(download.is_stopped());
+        assert!(!download.is_error());
+        assert!(!download.is_downloading());
+
+        download.open().unwrap();
+        download.start();
+        assert!(download.is_downloading());
+        assert!(!download.is_seeding());
+
+        download.pause();
+        assert!(download.is_paused());
+
+        download.resume();
+        download.stop();
+        download.close();
+        assert!(!download.is_open());
+
+        download.close_directly();
+        download.erase();
+    }
+
+    #[test]
+    fn hash_helpers_cover_closed_open_and_checking_states() {
+        let mut download = Download::from_metadata(metadata("hash_helpers"));
+
+        assert!(download.try_check_hash().is_err());
+        assert!(!download.is_hash_checked());
+
+        download.open().unwrap();
+        // No payload directory is configured, so the pass completes without
+        // trusting any piece.
+        let _ = download.try_check_hash();
+        let _ = download.try_check_hash_final();
+        download.check_hash();
+        download.check_hash_final();
+
+        assert!(download.recheck_pending_pieces().is_ok());
+
+        download.set_hash_checking(true);
+        assert_eq!(download.state_name(), "Checking");
+        assert_eq!(download.state_changed(), 0);
+        assert_eq!(download.state_counter(), 0);
+        assert_eq!(download.load_date(), 0);
+        assert!(!download.is_done());
+        assert!(!download.is_initial_seeding());
+        assert!(download.try_check_hash().is_err());
+        download.set_hash_checking(false);
+    }
+
+    #[test]
+    fn resume_errors_and_start_guards_are_reported() {
+        let mut download = Download::from_metadata(metadata("guards"));
+        download.open().unwrap();
+        download.set_open(false);
+        assert!(!download.is_open());
+        download.set_open(true);
+        assert!(download.is_open());
+
+        // A bitfield for a different piece count is rejected.
+        let bad = ResumeData {
+            bitfield: Some(lt_common::bitfield::Bitfield::new(99)),
+            ..ResumeData::new()
+        };
+        assert!(download.apply_resume(&bad).is_err());
+
+        // Sticky flags short-circuit start without touching the engine.
+        download.set_hash_failed(true);
+        assert!(download.try_start().is_err());
+        download.set_hash_failed(false);
+
+        download.set_erasing(true);
+        assert!(download.try_start().is_err());
+        download.set_erasing(false);
+
+        // Closing the engine behind the wrapper makes the hash pass fail and
+        // records the failure instead of panicking.
+        download.engine_download().lock().unwrap().close().unwrap();
+        assert!(download.try_check_hash().is_err());
+        assert!(download.is_hash_failed());
+        download.open().unwrap();
     }
 }

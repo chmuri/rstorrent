@@ -221,16 +221,7 @@ fn free_diskspace_for(dl: &Download) -> u64 {
 
 /// Bytes represented by fully completed pieces, clamped to the torrent size.
 fn completed_bytes_for(dl: &Download) -> u64 {
-    let piece_len = dl.metadata().piece_length as u64;
-    if dl.is_hash_checking() {
-        (dl.chunks_hashed() as u64)
-            .saturating_mul(piece_len)
-            .min(dl.metadata().total_size)
-    } else {
-        (dl.download().completed_chunks() as u64)
-            .saturating_mul(piece_len)
-            .min(dl.metadata().total_size)
-    }
+    dl.completed_bytes()
 }
 
 /// Evaluates a legacy view/filter command against one download.
@@ -1536,8 +1527,12 @@ fn apply_load_command(
                 .unwrap_or_else(|| ".".to_string())
         };
         dl_arc.write().unwrap().set_directory(default_dir);
-        dl_arc.write().unwrap().queue_recheck_if_files_exist();
     }
+
+    // Verify any payload that was already on disk, even when the directory was
+    // set before the torrent was added (e.g. by `d.directory.set` or a config
+    // option). Fresh downloads find no files and queue nothing.
+    dl_arc.write().unwrap().queue_recheck_if_files_exist();
 
     let hash = *dl_arc.read().unwrap().info_hash();
     vm.write()

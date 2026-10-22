@@ -111,7 +111,8 @@ impl Manager {
 
         let resume = download.to_resume_data();
         let mut resume_obj = resume.to_object();
-        crate::session::resume_extras(&resume, download.metadata()).write_into(&mut resume_obj);
+        crate::session::resume_extras(&resume, download.metadata(), &download.uncertain_pieces())
+            .write_into(&mut resume_obj);
         let rtorrent_bytes = lt_common::object::bencode::encode(&rtorrent_obj)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
         let resume_bytes = lt_common::object::bencode::encode(&resume_obj)

@@ -270,6 +270,10 @@ pub struct ResumeExtras {
     /// Per-file `completed` chunk counts. `None` preserves a missing key.
     pub file_completed_chunks: Vec<Option<u64>>,
     pub trackers: Vec<TrackerResumeSettings>,
+    /// Pieces marked complete whose data was not fsynced before this snapshot
+    /// was written. Restoring clients must re-hash them instead of trusting
+    /// the persisted bitfield.
+    pub uncertain_pieces: Vec<u32>,
 }
 
 impl ResumeExtras {
@@ -308,6 +312,18 @@ impl ResumeExtras {
                         .unwrap_or(0),
                 });
             }
+        }
+
+        if let Ok(pieces) = object.get_key_list(b"uncertain_pieces") {
+            for piece in pieces {
+                if let Ok(index) = piece.as_value() {
+                    if (0..=u32::MAX as i64).contains(&index) {
+                        extras.uncertain_pieces.push(index as u32);
+                    }
+                }
+            }
+            extras.uncertain_pieces.sort_unstable();
+            extras.uncertain_pieces.dedup();
         }
 
         extras
@@ -364,6 +380,14 @@ impl ResumeExtras {
             }
 
             let _ = object.insert_key(b"trackers", Object::from(trackers));
+        }
+
+        if !self.uncertain_pieces.is_empty() {
+            let mut list = Object::create_list();
+            for piece in &self.uncertain_pieces {
+                let _ = list.insert_back(Object::create_value(*piece as i64));
+            }
+            let _ = object.insert_key(b"uncertain_pieces", list);
         }
     }
 }

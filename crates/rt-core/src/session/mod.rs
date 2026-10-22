@@ -136,6 +136,21 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> Rtorr
         }
     }
 
+    // Session transfer counters. Without these the UI reports zero downloaded
+    // and uploaded bytes after a restart even though the bitfield resumes.
+    if let Ok(value) = object.get_key_value("total_downloaded") {
+        download.set_downloaded_bytes(value.max(0) as u64);
+    }
+    if let Ok(value) = object.get_key_value("total_uploaded") {
+        download.set_uploaded_bytes(value.max(0) as u64);
+    }
+    if let Ok(value) = object.get_key_value("state_changed") {
+        download.set_state_changed(value.max(0) as u64);
+    }
+    if let Ok(value) = object.get_key_value("state_counter") {
+        download.set_state_counter(value.max(0) as u64);
+    }
+
     RtorrentSessionState {
         was_active: object
             .get_key_value("state")
@@ -178,10 +193,13 @@ pub fn load_resume_for_download(
 
     let mut resume = ResumeData::from_object_with_piece_count(&object, metadata.num_pieces)
         .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))?;
+    // Optional extension: pieces the previous process completed but had not
+    // fsynced. They must be re-hashed instead of trusted.
+    let uncertain = ResumeExtras::from_object(&object).uncertain_pieces;
 
     let validation = prepare_resume_data(&mut resume, &metadata, &directory);
     let completed_chunks = download
-        .apply_resume(&resume)
+        .apply_resume_with_uncertain(&resume, &uncertain)
         .map_err(|err| Error::new(ErrorKind::InvalidData, err))?;
 
     Ok(ResumeApplyOutcome {
@@ -322,7 +340,11 @@ fn clear_file_range(
 /// clients also read the per-file `completed` counter. Computing it here keeps
 /// the saved file readable by both implementations without adding state to
 /// `ResumeData` itself.
-pub fn resume_extras(resume: &ResumeData, metadata: &TorrentMetadata) -> ResumeExtras {
+pub fn resume_extras(
+    resume: &ResumeData,
+    metadata: &TorrentMetadata,
+    uncertain_pieces: &[u32],
+) -> ResumeExtras {
     let file_completed_chunks = metadata
         .files
         .iter()
@@ -352,6 +374,7 @@ pub fn resume_extras(resume: &ResumeData, metadata: &TorrentMetadata) -> ResumeE
     ResumeExtras {
         file_completed_chunks,
         trackers: Vec::new(),
+        uncertain_pieces: uncertain_pieces.to_vec(),
     }
 }
 

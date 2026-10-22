@@ -69,11 +69,20 @@ fn verified_piece_is_written_by_disk_thread() {
 
     assert!(download.is_seeder(), "disk write never completed");
     assert_eq!(download.pending_disk_writes(), 0);
+    assert_eq!(
+        download.uncertain_pieces(),
+        vec![0],
+        "a completed write is not durable until it is synced"
+    );
 
     let written = std::fs::read(root.join("payload.bin")).unwrap();
     assert_eq!(written, payload);
 
     download.flush_disk().expect("flush should succeed");
+    assert!(
+        download.uncertain_pieces().is_empty(),
+        "fsync must make the piece trustworthy"
+    );
     thread.shutdown();
     let _ = std::fs::remove_dir_all(&root);
 }

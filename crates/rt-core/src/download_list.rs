@@ -1,5 +1,6 @@
 use crate::download::Download;
 use lt_common::hash_string::HashString;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 pub type DownloadEventListener = Arc<dyn Fn(&str, &Arc<RwLock<Download>>) + Send + Sync>;
@@ -189,19 +190,24 @@ impl DownloadList {
             self.open(download);
         }
 
-        let (was_active, was_done, pending_recheck) = {
+        let (was_active, was_done, pending_recheck, already_checking) = {
             let guard = download.read().unwrap();
             (
                 guard.is_active(),
                 guard.is_done(),
                 guard.has_pending_hash_pieces(),
+                guard.is_hash_checking(),
             )
         };
 
         if pending_recheck {
-            // Resume validation deferred these pieces. Mirror the legacy
-            // `hash_queue` event before the synchronous pass.
-            self.emit("event.download.hash_queued", download);
+            if already_checking {
+                // A verification pass is already running; starting twice must
+                // not queue a second one.
+                return;
+            }
+            self.begin_hash_check(download, was_active, was_done);
+            return;
         }
 
         {
@@ -209,36 +215,20 @@ impl DownloadList {
             d_guard.start();
         }
 
-        let (is_active, is_done, hash_failed, hash_checked) = {
+        let (is_active, _is_done) = {
             let guard = download.read().unwrap();
-            (
-                guard.is_active(),
-                guard.is_done(),
-                guard.is_hash_failed(),
-                guard.is_hash_checked(),
-            )
+            (guard.is_active(), guard.is_done())
         };
 
         if !was_active && is_active {
             self.emit("event.download.resumed", download);
-        }
-
-        if pending_recheck {
-            if hash_failed || !hash_checked {
-                self.emit("event.download.hash_failed", download);
-            } else {
-                self.emit("event.download.hash_done", download);
-                if is_done && !was_done {
-                    self.emit("event.download.finished", download);
-                }
-            }
         }
     }
 
     /// Strict start used by `d.try_start`: a closed download is rejected
     /// without emitting any event.
     pub fn try_start(&self, download: &Arc<RwLock<Download>>) -> Result<(), String> {
-        let (was_active, was_done, hash_failed, erasing, pending_recheck) = {
+        let (was_active, was_done, hash_failed, erasing, pending_recheck, already_checking) = {
             let guard = download.read().unwrap();
             (
                 guard.is_active(),
@@ -246,6 +236,7 @@ impl DownloadList {
                 guard.is_hash_failed(),
                 guard.is_erasing(),
                 guard.has_pending_hash_pieces(),
+                guard.is_hash_checking(),
             )
         };
         if hash_failed {
@@ -256,7 +247,13 @@ impl DownloadList {
         }
 
         if pending_recheck {
-            self.emit("event.download.hash_queued", download);
+            if already_checking {
+                // Verification is already running; the transfer starts when it
+                // finishes.
+                return Ok(());
+            }
+            self.begin_hash_check(download, was_active, was_done);
+            return Ok(());
         }
 
         let start_result = {
@@ -264,32 +261,53 @@ impl DownloadList {
             d_guard.try_start()
         };
 
-        let (is_active, is_done, hash_failed, hash_checked) = {
+        let (is_active, _is_done) = {
             let guard = download.read().unwrap();
-            (
-                guard.is_active(),
-                guard.is_done(),
-                guard.is_hash_failed(),
-                guard.is_hash_checked(),
-            )
+            (guard.is_active(), guard.is_done())
         };
 
         if start_result.is_ok() && !was_active && is_active {
             self.emit("event.download.resumed", download);
         }
 
-        if pending_recheck {
-            if hash_failed || !hash_checked {
-                self.emit("event.download.hash_failed", download);
-            } else {
-                self.emit("event.download.hash_done", download);
-                if is_done && !was_done {
-                    self.emit("event.download.finished", download);
-                }
+        start_result
+    }
+
+    /// Starts an asynchronous recheck of the pieces queued by resume
+    /// validation or by [`Download::queue_recheck_if_files_exist`].
+    ///
+    /// The hash pass itself runs on a worker thread with the engine lock
+    /// released, so the UI can render `HASHING n/m` progress instead of
+    /// freezing. Events are emitted from the worker using a snapshot of the
+    /// listeners taken before the thread starts.
+    fn begin_hash_check(&self, download: &Arc<RwLock<Download>>, was_active: bool, was_done: bool) {
+        {
+            let mut guard = download.write().unwrap();
+            if guard.is_hash_checking() {
+                return;
             }
+            guard.set_hash_checking(true);
+            guard.set_hash_checked(false);
+            guard.set_hash_failed(false);
         }
 
-        start_result
+        self.emit("event.download.hash_queued", download);
+
+        let listeners = self.listeners.clone();
+        let worker_download = Arc::clone(download);
+        let spawn_result = std::thread::Builder::new()
+            .name("hash-check".to_string())
+            .spawn(move || run_hash_check_worker(worker_download, listeners, was_active, was_done));
+
+        if let Err(err) = spawn_result {
+            tracing::error!(error = %err, "Could not spawn hash check worker");
+            let mut guard = download.write().unwrap();
+            guard.set_hash_checking(false);
+            guard.set_hash_checked(false);
+            guard.set_hash_failed(true);
+            drop(guard);
+            self.emit("event.download.hash_failed", download);
+        }
     }
 
     /// Pauses an active download, emitting `paused` only on a transition.
@@ -437,6 +455,90 @@ impl DownloadList {
         if is_done && !was_done {
             self.emit("event.download.finished", download);
         }
+    }
+}
+
+/// Dispatches one lifecycle event to a snapshot of listeners.
+fn emit_to(listeners: &[DownloadEventListener], event: &str, download: &Arc<RwLock<Download>>) {
+    for listener in listeners {
+        listener(event, download);
+    }
+}
+
+/// Runs a deferred hash pass outside the engine lock.
+///
+/// `prepare_recheck` and `finish_recheck` bracket the pass under short-lived
+/// locks; the piece verification itself runs with the engine unlocked so
+/// readers keep making progress.
+fn run_hash_check_worker(
+    download: Arc<RwLock<Download>>,
+    listeners: Vec<DownloadEventListener>,
+    was_active: bool,
+    was_done: bool,
+) {
+    let engine = download.read().unwrap().engine_download();
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    let prepared = {
+        let mut eng = engine.lock().unwrap();
+        let pending = eng.take_pending_hash_pieces();
+        let selected = if pending.is_empty() {
+            None
+        } else {
+            Some(pending)
+        };
+        eng.prepare_recheck(selected.as_deref(), Arc::clone(&cancel))
+    };
+
+    let (hash_checked, hash_failed, is_active, is_done) = match prepared {
+        Ok(prep) => {
+            let result = prep.execute();
+            let mut eng = engine.lock().unwrap();
+            match eng.finish_recheck(prep, result) {
+                Ok(_) => {
+                    let checked = eng.is_hash_checked();
+                    let failed = eng.is_hash_failed();
+                    if checked {
+                        // The transfer was held back while verifying.
+                        let _ = eng.try_start();
+                    }
+                    (
+                        checked,
+                        failed || !checked,
+                        eng.state().is_active(),
+                        eng.is_done(),
+                    )
+                }
+                Err(err) => {
+                    tracing::warn!(error = %err, "Hash check could not be applied");
+                    (false, true, false, eng.is_done())
+                }
+            }
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "Hash check could not be prepared");
+            (false, true, false, false)
+        }
+    };
+
+    {
+        let mut guard = download.write().unwrap();
+        guard.set_hash_checking(false);
+        guard.set_hash_checked(hash_checked);
+        guard.set_hash_failed(hash_failed);
+    }
+
+    if hash_failed || !hash_checked {
+        emit_to(&listeners, "event.download.hash_failed", &download);
+        return;
+    }
+
+    emit_to(&listeners, "event.download.hash_done", &download);
+    if !was_active && is_active {
+        emit_to(&listeners, "event.download.resumed", &download);
+    }
+    if is_done && !was_done {
+        emit_to(&listeners, "event.download.finished", &download);
     }
 }
 

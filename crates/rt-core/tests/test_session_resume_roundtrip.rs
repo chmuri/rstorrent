@@ -185,6 +185,56 @@ fn save_restart_load_round_trips_bitfield_priorities_and_mtimes() {
 }
 
 #[test]
+fn active_download_restores_progress_and_totals() {
+    let fixture = Fixture::new();
+    fixture.create_payload_files();
+    let manager = start_manager(&fixture);
+
+    let download = manager
+        .load_torrent_object(torrent_object(), false)
+        .expect("torrent should load");
+
+    {
+        let mut download = download.write().unwrap();
+        download.set_directory(fixture.data.to_str().unwrap());
+        download.open().unwrap();
+        {
+            let mut engine = download.download_mut();
+            engine.chunk_selector_mut().mark_completed(0);
+            // Simulate a real transfer history that must survive the restart.
+            engine.set_downloaded_bytes(16384);
+            engine.set_uploaded_bytes(4096);
+        }
+        download.start();
+    }
+
+    manager.commit().expect("session save should succeed");
+    manager.shutdown().expect("initial shutdown");
+
+    let restored_manager = start_manager(&fixture);
+    assert_eq!(restored_manager.restore_session().unwrap(), 1);
+
+    let restored = restored_manager.download_list().read().unwrap().all()[0].clone();
+    let guard = restored.read().unwrap();
+
+    // The completed piece is trusted: resume mtimes match and no recheck was
+    // queued for it.
+    assert!(!guard.has_pending_hash_pieces());
+    let engine = guard.download();
+    assert!(engine.chunk_selector().completed().get(0));
+    assert!(!engine.chunk_selector().completed().get(1));
+    assert_eq!(engine.completed_chunks(), 1);
+    drop(engine);
+
+    assert_eq!(guard.completed_bytes(), 16384);
+    assert_eq!(guard.downloaded_bytes(), 16384);
+    assert_eq!(guard.uploaded_bytes(), 4096);
+    drop(guard);
+
+    restored_manager.shutdown().expect("restored shutdown");
+}
+
+#[test]
 fn changed_file_only_clears_its_own_pieces() {
     let fixture = Fixture::new();
     let manager = create_and_save(&fixture);
@@ -424,4 +474,67 @@ fn rejected_resume_data_does_not_emit_resumed_event() {
     drop(events);
 
     restored_manager.shutdown().expect("restored shutdown");
+}
+
+#[test]
+fn uncertain_pieces_from_resume_extras_are_rechecked() {
+    use lt_common::bitfield::Bitfield;
+    use lt_storage::resume::{ResumeData, ResumeExtras};
+
+    let fixture = Fixture::new();
+    fixture.create_payload_files();
+
+    let manager = start_manager(&fixture);
+    let download = manager
+        .load_torrent_object(torrent_object(), false)
+        .expect("torrent should load");
+    download
+        .write()
+        .unwrap()
+        .set_directory(fixture.data.to_str().unwrap());
+
+    let mut bitfield = Bitfield::new(2);
+    bitfield.set(0);
+    bitfield.set(1);
+
+    let resume = ResumeData {
+        bitfield: Some(bitfield),
+        file_priorities: vec![Priority::Normal, Priority::Normal],
+        file_mtimes: vec![MTIME_A, MTIME_B],
+        completed_bytes: 32768,
+    };
+
+    // Piece 1 was written but not fsynced when the snapshot was taken.
+    let mut object = resume.to_object();
+    ResumeExtras {
+        uncertain_pieces: vec![1],
+        ..ResumeExtras::default()
+    }
+    .write_into(&mut object);
+
+    let path = fixture.session.join("uncertain.resume");
+    fs::write(
+        &path,
+        lt_common::object::bencode::encode(&object).expect("resume should encode"),
+    )
+    .unwrap();
+
+    let mut download = download.write().unwrap();
+    let outcome = rt_core::session::load_resume_for_download(path.to_str().unwrap(), &mut download)
+        .expect("resume should load");
+
+    assert_eq!(
+        outcome.completed_chunks, 1,
+        "uncertain piece must be dropped"
+    );
+    {
+        let engine = download.download();
+        assert!(engine.chunk_selector().completed().get(0));
+        assert!(!engine.chunk_selector().completed().get(1));
+    }
+    assert_eq!(download.pending_hash_pieces(), vec![1]);
+    assert!(!download.is_hash_checked());
+
+    drop(download);
+    manager.shutdown().expect("shutdown");
 }

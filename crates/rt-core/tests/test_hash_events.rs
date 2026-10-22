@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use lt_common::bitfield::Bitfield;
 use lt_common::hash_string::HashString;
@@ -12,6 +13,15 @@ use rt_core::download::Download;
 use rt_core::download_list::DownloadList;
 
 const BYTES: &[u8] = b"AAAAAAAABBBBBBBBCCCCCCCC";
+
+/// Polls `predicate` until it holds or the test times out.
+fn wait_until<F: Fn() -> bool>(label: &str, predicate: F) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !predicate() {
+        assert!(Instant::now() < deadline, "timed out waiting for {label}");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
 
 fn torrent_path(value: &str) -> TorrentPath {
     let mut path = TorrentPath::new();
@@ -278,6 +288,16 @@ fn resume_pending_recheck_gates_hash_checked_until_start() {
     drop(guard);
 
     list.start(&download);
+
+    // Hashing is asynchronous: the download must report HASHING before the
+    // pass settles, so the UI has something to render.
+    {
+        let guard = download.read().unwrap();
+        assert!(guard.is_hash_checking());
+    }
+    wait_until("hash check to settle", || {
+        !download.read().unwrap().is_hash_checking()
+    });
 
     let guard = download.read().unwrap();
     assert!(guard.is_hash_checked());

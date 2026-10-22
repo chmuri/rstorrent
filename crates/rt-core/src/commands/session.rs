@@ -228,5 +228,45 @@ pub fn register_session_commands(
         "Commit all downloads to the session directory.",
     )?;
 
+    // Resume-only checkpoint: rewrites the sidecar and resume file for every
+    // active download without re-encoding its `.torrent`. Used by the periodic
+    // `session_checkpoint` schedule so a crash loses at most one interval of
+    // progress.
+    let s_checkpoint = Arc::clone(&session);
+    let checkpoint_list = Arc::clone(&download_list);
+    map.insert_func(
+        "session.checkpoint",
+        move |_target, _obj| {
+            let session = s_checkpoint.lock().unwrap();
+            if !session.is_used() || !session.is_active() {
+                return Ok(Object::create_empty());
+            }
+
+            for download in checkpoint_list.read().unwrap().all() {
+                let guard = download.read().unwrap();
+                // A hash pass rewrites the bitfield; persisting it mid-pass
+                // would store a half-verified state.
+                if guard.is_hash_checking() || guard.is_erasing() {
+                    continue;
+                }
+                let entry = match Manager::build_commit_entry(&guard) {
+                    Ok(entry) => entry,
+                    Err(err) => {
+                        tracing::error!(error = %err, "Could not serialize checkpoint entry");
+                        continue;
+                    }
+                };
+                if let Err(err) = session.save_resume(&entry) {
+                    tracing::warn!(error = %err, "Could not write checkpoint entry");
+                }
+            }
+
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "",
+        "Checkpoint resume data for active downloads.",
+    )?;
+
     Ok(())
 }

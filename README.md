@@ -125,6 +125,15 @@ metadata as soon as it is fetched; while metadata is still missing the original
 magnet URI is kept in the `.rtorrent` sidecar so the placeholder can be
 recreated.
 
+Progress is checkpointed while the daemon runs (every 300 seconds by default,
+plus on stop/pause, on hash completion and on shutdown), so a crash or a forced
+exit loses at most a few minutes of transfer. Payload already on disk is
+verified in the background after a restart: the status shows `HASHING n/m`
+while pieces are checked, and the progress column reports verified bytes rather
+than the session transfer counter. Pieces written but not yet fsynced are
+recorded in the resume file and re-verified after a crash instead of being
+trusted.
+
 ---
 
 ## Releases & Packages

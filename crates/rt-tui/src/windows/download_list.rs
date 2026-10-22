@@ -2,6 +2,40 @@ use crate::display::{Canvas, Window, EXTENT_FULL, FLAG_ACTIVE};
 use rt_core::{View, ViewManager};
 use std::sync::{Arc, RwLock};
 
+/// Percentage of payload bytes covered by verified pieces.
+///
+/// Uses completed bytes rather than the session transfer counter, which is
+/// restored independently and restarts at zero.
+pub fn progress_percent(completed: u64, total: u64) -> u64 {
+    if total == 0 {
+        0
+    } else {
+        completed.saturating_mul(100).saturating_div(total).min(100)
+    }
+}
+
+/// Status label shared by the compact and full layouts.
+pub fn status_label(
+    is_open: bool,
+    is_active: bool,
+    is_done: bool,
+    is_hash_checking: bool,
+    chunks_hashed: u32,
+    num_pieces: usize,
+) -> String {
+    if is_hash_checking {
+        format!("HASHING {}/{}", chunks_hashed, num_pieces)
+    } else if !is_open {
+        "CLOSED".to_string()
+    } else if !is_active {
+        "STOPPED".to_string()
+    } else if is_done {
+        "COMPLETED".to_string()
+    } else {
+        "ACTIVE".to_string()
+    }
+}
+
 pub struct WindowDownloadList {
     pub flags: u32,
     pub view: Option<Arc<RwLock<View>>>,
@@ -106,23 +140,19 @@ impl WindowDownloadList {
                 let size_mb = dl_guard.metadata().total_size as f64 / (1024.0 * 1024.0);
                 let down_mb = dl_guard.downloaded_bytes() as f64 / (1024.0 * 1024.0);
                 let up_mb = dl_guard.uploaded_bytes() as f64 / (1024.0 * 1024.0);
-                let percent = if dl_guard.metadata().total_size > 0 {
-                    (dl_guard.downloaded_bytes() * 100) / dl_guard.metadata().total_size
-                } else {
-                    0
-                };
+                let percent =
+                    progress_percent(dl_guard.completed_bytes(), dl_guard.metadata().total_size);
                 let rate_down_kb = (dl_guard.download().rate_down() as f64) / 1024.0;
                 let rate_up_kb = (dl_guard.download().rate_up() as f64) / 1024.0;
 
-                let status_str = if !dl_guard.is_open() {
-                    "CLOSED"
-                } else if !dl_guard.is_active() {
-                    "STOPPED"
-                } else if dl_guard.is_done() {
-                    "COMPLETED"
-                } else {
-                    "ACTIVE"
-                };
+                let status_str = status_label(
+                    dl_guard.is_open(),
+                    dl_guard.is_active(),
+                    dl_guard.is_done(),
+                    dl_guard.is_hash_checking(),
+                    dl_guard.chunks_hashed(),
+                    dl_guard.metadata().num_pieces,
+                );
                 let line = format!("{} {:<64}| {:<10} | {:7.1} MB | {:7.1} MB | {:3}% | {:6.1} KB | {:6.1} KB | {:7.1} MB | --d --:-- |  0.00 |",
                     mark, name, status_str, down_mb, size_mb, percent, rate_up_kb, rate_down_kb, up_mb);
                 canvas.print_at(0, y, &line);
@@ -139,13 +169,10 @@ impl WindowDownloadList {
                 let dl_guard = dl.read().unwrap();
                 let name = dl_guard.name();
                 let total_size_mb = dl_guard.metadata().total_size as f64 / (1024.0 * 1024.0);
-                let down_mb = dl_guard.downloaded_bytes() as f64 / (1024.0 * 1024.0);
+                let done_mb = dl_guard.completed_bytes() as f64 / (1024.0 * 1024.0);
                 let up_mb = dl_guard.uploaded_bytes() as f64 / (1024.0 * 1024.0);
-                let percent = if dl_guard.metadata().total_size > 0 {
-                    (dl_guard.downloaded_bytes() * 100) / dl_guard.metadata().total_size
-                } else {
-                    0
-                };
+                let percent =
+                    progress_percent(dl_guard.completed_bytes(), dl_guard.metadata().total_size);
                 let rate_down_kb = (dl_guard.download().rate_down() as f64) / 1024.0;
                 let rate_up_kb = (dl_guard.download().rate_up() as f64) / 1024.0;
 
@@ -153,10 +180,10 @@ impl WindowDownloadList {
                 canvas.print_at(0, y, &format!("{} {}", mark, name));
                 y += 1;
 
-                // Line 2: Rates & Size (clear percentage, zero confusing 'done' strings)
+                // Line 2: verified progress, rates and uploaded total.
                 let size_str = format!(
                     "{:8.1} / {:8.1} MB [{:>3}%]",
-                    down_mb, total_size_mb, percent
+                    done_mb, total_size_mb, percent
                 );
                 let ratio = if dl_guard.downloaded_bytes() > 0 {
                     (dl_guard.uploaded_bytes() as f64) / (dl_guard.downloaded_bytes() as f64)
@@ -167,15 +194,26 @@ impl WindowDownloadList {
                     0,
                     y,
                     &format!(
-                        "{} {} Rate: {:5.1} / {:5.1} KB Uploaded: {:7.1} MB           [   R: {:4.2}]",
-                        mark, size_str, rate_down_kb, rate_up_kb, up_mb, ratio
+                        "{} {} Rate: {:5.1} / {:5.1} KB Uploaded: {:7.1} MB Downloaded: {:7.1} MB [   R: {:4.2}]",
+                        mark, size_str, rate_down_kb, rate_up_kb, up_mb,
+                        dl_guard.downloaded_bytes() as f64 / (1024.0 * 1024.0), ratio
                     ),
                 );
                 y += 1;
 
                 // Line 3: Clear Status and active peer count
                 let peers_count = dl_guard.download().connection_list().size();
-                let status_str = if !dl_guard.is_open() {
+                let label = status_label(
+                    dl_guard.is_open(),
+                    dl_guard.is_active(),
+                    dl_guard.is_done(),
+                    dl_guard.is_hash_checking(),
+                    dl_guard.chunks_hashed(),
+                    dl_guard.metadata().num_pieces,
+                );
+                let status_str = if label == "HASHING" || label.starts_with("HASHING ") {
+                    format!("[{}] Peers: {}", label, peers_count)
+                } else if !dl_guard.is_open() {
                     "[CLOSED]".to_string()
                 } else if !dl_guard.is_active() {
                     "[STOPPED]".to_string()
@@ -184,7 +222,7 @@ impl WindowDownloadList {
                 } else if peers_count > 0 {
                     format!("[DOWNLOADING] Peers: {}", peers_count)
                 } else {
-                    format!("[CONNECTING]  Peers: 0")
+                    "[CONNECTING]  Peers: 0".to_string()
                 };
                 canvas.print_at(0, y, &format!("{} {}", mark, status_str));
                 y += 1;
