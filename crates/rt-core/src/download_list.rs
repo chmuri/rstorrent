@@ -273,6 +273,30 @@ impl DownloadList {
         start_result
     }
 
+    /// Starts the deferred verification of an existing payload that was
+    /// discovered when a magnet download received its metadata.
+    ///
+    /// Returns `true` when a worker was started. A paused or stopped download
+    /// keeps its queued pieces and hashes them on the next `start`.
+    pub fn begin_metadata_recheck(&self, download: &Arc<RwLock<Download>>) -> bool {
+        let (was_active, was_done, pending_recheck, already_checking) = {
+            let guard = download.read().unwrap();
+            (
+                guard.is_active(),
+                guard.is_done(),
+                guard.has_pending_hash_pieces(),
+                guard.is_hash_checking(),
+            )
+        };
+
+        if !pending_recheck || already_checking || !was_active {
+            return false;
+        }
+
+        self.begin_hash_check(download, was_active, was_done);
+        true
+    }
+
     /// Starts an asynchronous recheck of the pieces queued by resume
     /// validation or by [`Download::queue_recheck_if_files_exist`].
     ///

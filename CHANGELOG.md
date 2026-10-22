@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Magnet links verify an existing payload (`lt-engine`, `rt-core`)**: once
+  `ut_metadata` delivers the info dictionary, a payload that is already in the
+  target directory is hashed asynchronously (`HASHING`) instead of being
+  downloaded again from zero. A complete file starts seeding, a partial file
+  keeps its verified pieces and resumes only the rest. Peer requests and
+  in-flight blocks are held back while the pass owns the data. Fresh magnet
+  links, `.torrent` files and restored sessions keep their previous behaviour.
+
 ## [0.12.0] - 2026-10-22
 
 Resume-durability and progress-accuracy release. Progress survives restarts and

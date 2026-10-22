@@ -1320,16 +1320,34 @@ impl NetworkRuntime {
                     // coordinator applies the fetched metadata to the engine
                     // download, so the command-layer snapshot must follow.
                     // Persist immediately once the static torrent can be built.
-                    let metadata_updated = if dl_arc.read().unwrap().is_metadata_download() {
-                        dl_arc.write().unwrap().sync_metadata_from_engine()
-                    } else {
-                        false
+                    let (metadata_updated, metadata_recheck_pending) = {
+                        let needs_sync = {
+                            let dl = dl_arc.read().unwrap();
+                            dl.is_metadata_download() || dl.metadata_recheck_pending()
+                        };
+                        if !needs_sync {
+                            (false, false)
+                        } else {
+                            let mut dl = dl_arc.write().unwrap();
+                            let metadata_updated = if dl.is_metadata_download() {
+                                dl.sync_metadata_from_engine()
+                            } else {
+                                false
+                            };
+                            let recheck_pending = dl.take_metadata_recheck_pending();
+                            (metadata_updated, recheck_pending)
+                        }
                     };
                     if metadata_updated {
                         download_list
                             .read()
                             .unwrap()
                             .notify_metadata_updated(dl_arc);
+                    }
+                    if metadata_recheck_pending {
+                        // Metadata is only known now. Verify an existing
+                        // payload asynchronously instead of overwriting it.
+                        download_list.read().unwrap().begin_metadata_recheck(dl_arc);
                     }
 
                     let (hash, is_active, _is_done, engine_dl, raw_info) = {
