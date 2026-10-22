@@ -5,6 +5,9 @@ use crate::state::{TrackerEvent, TrackerFlags};
 use crate::tracker::Tracker;
 use crate::udp_router::RandomEngine;
 
+pub type TrackerAddressCallback = Box<dyn FnMut(usize, &AddressList) -> u32 + Send + Sync>;
+pub type TrackerErrorCallback = Box<dyn FnMut(usize, &str) + Send + Sync>;
+
 pub struct TrackerList {
     pub trackers: Vec<Tracker>,
     pub numwant: i32,
@@ -15,10 +18,10 @@ pub struct TrackerList {
 
     pub on_tracker_enabled: Option<Box<dyn FnMut(usize) + Send + Sync>>,
     pub on_tracker_disabled: Option<Box<dyn FnMut(usize) + Send + Sync>>,
-    pub on_success: Option<Box<dyn FnMut(usize, &AddressList) -> u32 + Send + Sync>>,
-    pub on_failure: Option<Box<dyn FnMut(usize, &str) + Send + Sync>>,
+    pub on_success: Option<TrackerAddressCallback>,
+    pub on_failure: Option<TrackerErrorCallback>,
     pub on_scrape_success: Option<Box<dyn FnMut(usize) + Send + Sync>>,
-    pub on_scrape_failure: Option<Box<dyn FnMut(usize, &str) + Send + Sync>>,
+    pub on_scrape_failure: Option<TrackerErrorCallback>,
 }
 
 impl Default for TrackerList {
@@ -207,10 +210,7 @@ impl TrackerList {
             }
         }
 
-        let mut pref_idx = match preferred {
-            Some(idx) => idx,
-            None => return None,
-        };
+        let mut pref_idx = preferred?;
 
         let pref_state = self.trackers[pref_idx].state();
         if pref_state.counters.failed_counter == 0 {

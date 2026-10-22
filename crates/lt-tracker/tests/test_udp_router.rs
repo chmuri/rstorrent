@@ -8,7 +8,8 @@ fn test_random_engine_state() {
     // responses forged for a different tracker, so one observed id must not give up
     // the ids that follow it. That rules out any engine whose state is small enough
     // to search.
-    assert!(RandomEngine::STATE_BITS >= 256);
+    let state_bits = RandomEngine::STATE_BITS;
+    assert!(state_bits >= 256);
 }
 
 #[test]

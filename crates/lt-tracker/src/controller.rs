@@ -32,10 +32,13 @@ pub struct TrackerController {
     last_scrape_error: Option<String>,
 
     pub on_timeout: Option<Box<dyn FnMut() + Send + Sync>>,
-    pub on_success: Option<Box<dyn FnMut(&AddressList) -> u32 + Send + Sync>>,
-    pub on_failure: Option<Box<dyn FnMut(&str) + Send + Sync>>,
-    pub on_scrape_failure: Option<Box<dyn FnMut(&str) + Send + Sync>>,
+    pub on_success: Option<ControllerSuccessCallback>,
+    pub on_failure: Option<ControllerErrorCallback>,
+    pub on_scrape_failure: Option<ControllerErrorCallback>,
 }
+
+type ControllerSuccessCallback = Box<dyn FnMut(&AddressList) -> u32 + Send + Sync>;
+type ControllerErrorCallback = Box<dyn FnMut(&str) + Send + Sync>;
 
 impl TrackerController {
     pub const MASK_SEND: ControllerFlags = ControllerFlags::from_bits_truncate(

@@ -124,19 +124,34 @@ pub fn url_encode_bytes(bytes: &[u8]) -> String {
     encoded
 }
 
-pub fn build_announce_url(
-    base_url: &str,
-    info_hash: &[u8; 20],
-    peer_id: &[u8; 20],
-    port: u16,
-    uploaded: u64,
-    downloaded: u64,
-    left: u64,
-    numwant: i32,
-    event: Option<&str>,
-    key: u32,
-    compact: bool,
-) -> String {
+pub struct AnnounceQuery<'a> {
+    pub base_url: &'a str,
+    pub info_hash: &'a [u8; 20],
+    pub peer_id: &'a [u8; 20],
+    pub port: u16,
+    pub uploaded: u64,
+    pub downloaded: u64,
+    pub left: u64,
+    pub numwant: i32,
+    pub event: Option<&'a str>,
+    pub key: u32,
+    pub compact: bool,
+}
+
+pub fn build_announce_url(query: AnnounceQuery<'_>) -> String {
+    let AnnounceQuery {
+        base_url,
+        info_hash,
+        peer_id,
+        port,
+        uploaded,
+        downloaded,
+        left,
+        numwant,
+        event,
+        key,
+        compact,
+    } = query;
     let mut url = String::from(base_url);
     url.push(if base_url.contains('?') { '&' } else { '?' });
 
