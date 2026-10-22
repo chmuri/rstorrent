@@ -1,4 +1,5 @@
 use lt_common::hash_string::HashString;
+use lt_common::option_strings::{option_find_string, OptionEnum};
 use lt_common::Object;
 use lt_engine::constructor::TorrentMetadata;
 use lt_engine::download::{Download as EngineDownload, DownloadState};
@@ -7,6 +8,16 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub const DEFAULT_RESUME_FLAGS: u32 = !0;
+
+/// Normalises a connection-type argument and validates it against the shared
+/// rtorrent option table (`leech`, `seed`, `initial_seed`, `metadata`).
+fn normalise_connection_type(value: &str) -> Result<String, String> {
+    let value = value.trim().to_ascii_lowercase();
+    if option_find_string(OptionEnum::ConnectionType, &value).is_none() {
+        return Err(format!("invalid connection type '{value}'"));
+    }
+    Ok(value)
+}
 
 pub struct Download {
     download: Arc<Mutex<EngineDownload>>,
@@ -26,6 +37,7 @@ pub struct Download {
     hash_checked: bool,
     erasing: bool,
     is_open: bool,
+    connection_leech: String,
     connection_seed: String,
     accepting_seeders: bool,
     chunks_hashed: Arc<AtomicU32>,
@@ -56,6 +68,7 @@ impl Download {
             hash_checked: false,
             erasing: false,
             is_open: false,
+            connection_leech: "leech".to_string(),
             connection_seed: "leech".to_string(),
             accepting_seeders: true,
             chunks_hashed,
@@ -279,7 +292,25 @@ impl Download {
         self.download.lock().unwrap().is_initial_seeding()
     }
 
-    /// Preferred connection type: `leech`, `seed` or `initial_seed`.
+    /// Preferred connection type while leeching: `leech`, `seed`,
+    /// `initial_seed` or `metadata`.
+    pub fn connection_leech(&self) -> &str {
+        &self.connection_leech
+    }
+
+    /// Selects the connection type used while leeching.
+    ///
+    /// This is an independent variable from [`Self::connection_seed`]:
+    /// rtorrent stores them separately (`rtorrent:connection_leech` and
+    /// `rtorrent:connection_seed`) and choosing one must not rewrite the
+    /// other.
+    pub fn set_connection_leech(&mut self, value: &str) -> Result<(), String> {
+        self.connection_leech = normalise_connection_type(value)?;
+        Ok(())
+    }
+
+    /// Preferred connection type while seeding: `leech`, `seed`,
+    /// `initial_seed` or `metadata`.
     pub fn connection_seed(&self) -> &str {
         &self.connection_seed
     }
@@ -289,10 +320,7 @@ impl Download {
     /// Switching to `initial_seed` while already seeding enables BEP 16
     /// immediately; switching away disables it.
     pub fn set_connection_seed(&mut self, value: &str) -> Result<(), String> {
-        let value = value.trim().to_ascii_lowercase();
-        if !matches!(value.as_str(), "leech" | "seed" | "initial_seed") {
-            return Err(format!("invalid connection seed type '{value}'"));
-        }
+        let value = normalise_connection_type(value)?;
 
         self.connection_seed = value;
         let active = self.is_active();
@@ -1003,5 +1031,53 @@ mod tests {
         assert!(download.try_check_hash().is_err());
         assert!(download.is_hash_failed());
         download.open().unwrap();
+    }
+
+    #[test]
+    fn connection_leech_defaults_independently_of_connection_seed() {
+        let mut download = Download::from_metadata(metadata("connection-types"));
+
+        assert_eq!(download.connection_leech(), "leech");
+        assert_eq!(download.connection_seed(), "leech");
+
+        download.set_connection_seed("seed").unwrap();
+        assert_eq!(download.connection_seed(), "seed");
+        assert_eq!(
+            download.connection_leech(),
+            "leech",
+            "seed preference must not overwrite the leech preference"
+        );
+
+        download.set_connection_leech("initial_seed").unwrap();
+        assert_eq!(download.connection_leech(), "initial_seed");
+        assert_eq!(
+            download.connection_seed(),
+            "seed",
+            "leech preference must not overwrite the seed preference"
+        );
+    }
+
+    #[test]
+    fn connection_type_setters_share_option_table_validation() {
+        let mut download = Download::from_metadata(metadata("connection-validation"));
+
+        for value in ["leech", "seed", "initial_seed", "metadata"] {
+            download
+                .set_connection_leech(value)
+                .unwrap_or_else(|err| panic!("leech {value}: {err}"));
+            assert_eq!(download.connection_leech(), value);
+            download
+                .set_connection_seed(value)
+                .unwrap_or_else(|err| panic!("seed {value}: {err}"));
+            assert_eq!(download.connection_seed(), value);
+        }
+
+        assert!(download.set_connection_leech("bogus").is_err());
+        assert!(download.set_connection_seed("bogus").is_err());
+        assert_eq!(download.connection_leech(), "metadata");
+        assert_eq!(download.connection_seed(), "metadata");
+
+        download.set_connection_leech(" SEED ").unwrap();
+        assert_eq!(download.connection_leech(), "seed");
     }
 }
