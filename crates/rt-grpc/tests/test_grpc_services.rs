@@ -69,7 +69,7 @@ async fn test_grpc_command_and_system_service() {
         .into_inner();
 
     assert!(!ver_resp.version.is_empty());
-    assert_eq!(ver_resp.api_version, "0.10.0");
+    assert_eq!(ver_resp.api_version, lt_common::version::VERSION);
 
     // 2. Test CommandService::Execute
     let mut command_client = CommandServiceClient::new(channel.clone());

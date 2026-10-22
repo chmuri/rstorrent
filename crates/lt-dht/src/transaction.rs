@@ -67,6 +67,13 @@ impl KrpcMessage {
             KrpcMessage::Query(q) => {
                 root.insert_key("y", Object::create_string(b"q".to_vec()))
                     .unwrap();
+                root.insert_key(
+                    "v",
+                    Object::create_string(
+                        lt_common::version::DHT_CLIENT_VERSION.as_bytes().to_vec(),
+                    ),
+                )
+                .unwrap();
                 let mut args = Object::create_map();
 
                 match q {
@@ -352,5 +359,24 @@ impl KrpcMessage {
         let mut id = HashString::default();
         id.as_mut_slice().copy_from_slice(bytes);
         Ok(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queries_advertise_the_client_version() {
+        let query = KrpcMessage::Query(KrpcQuery::Ping {
+            id: HashString::new([7u8; 20]),
+        });
+        let bytes = query.encode(b"aa").expect("query should encode");
+        let object = lt_common::object::bencode::decode(&bytes).expect("query should decode");
+
+        assert_eq!(
+            object.get_key_string("v").expect("v key"),
+            lt_common::version::DHT_CLIENT_VERSION.as_bytes()
+        );
     }
 }

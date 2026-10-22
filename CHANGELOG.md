@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-22
+
+Resume-durability and progress-accuracy release. Progress survives restarts and
+crashes, verification is visible instead of blocking, and the client now reports
+its real version to trackers, DHT nodes and RPC clients.
+
+### Added
+
+- **Periodic resume checkpoints (`rstorrent`, `rt-core`)**: a `session_checkpoint`
+  schedule writes `<hash>.rtorrent` and the resume file for active downloads
+  every 300 seconds (`session.checkpoint`), in addition to the existing
+  1200-second full `session.save`. Stopping or pausing a download and finishing
+  a hash pass also checkpoint immediately, and the forced double-`^Q` exit
+  performs a bounded best-effort checkpoint before terminating.
+- **Visible, non-blocking verification (`rt-core`, `rt-tui`)**: hashing an
+  existing payload now runs on a worker thread with the engine lock released.
+  The download reports `Checking`, the list shows `HASHING n/m`, and the
+  transfer starts only after the pass completes.
+- **Durable resume (`lt-storage`, `lt-engine`, `rt-core`)**: pieces marked
+  complete from a disk write that has not been fsynced are saved as an optional
+  `uncertain_pieces` resume extra. On restore those pieces are removed from the
+  persisted bitfield and re-hashed instead of being trusted, so an OS crash
+  cannot resurrect page-cache-only data. `flush_disk` clears the list after a
+  successful fsync, and the key is omitted when every piece is durable.
+
+### Changed
+
+- **Progress percentages use verified bytes (`rt-tui`)**: list and details
+  percentages, ETA and the "x / y MB" indicator derive from completed pieces
+  instead of the session transfer counter. The transfer total remains visible
+  as `Downloaded`.
+- **Startup order (`rstorrent`)**: session entries are restored before CLI
+  positional torrents are loaded, so loading a torrent that already has saved
+  progress no longer commits an empty resume over it.
+- **Version identity (`lt-common`)**: peer ID, tracker User-Agent, DHT `v`,
+  BEP 10 extended-handshake `v`, `system.client_version` and the gRPC
+  `api_version` are derived from the crate version instead of hard-coded
+  strings. The peer ID prefix is now `-RS0120-` (was `-RS0100-`), trackers see
+  `rstorrent/0.12.0`, and DHT nodes receive `RS0.12.0`.
+
+### Fixed
+
+- **Resume showed 0% after restart (`rt-core`)**: `total_downloaded`,
+  `total_uploaded`, `state_changed` and `state_counter` are read back from the
+  `.rtorrent` sidecar.
+- **Statistics reset during hashing (`rt-core`)**: `downloaded_bytes` and
+  `uploaded_bytes` no longer report zero while a hash pass runs.
+- **Recheck skipped when a directory was already set (`rt-core`, `rstorrent`)**:
+  existing payload is queued for verification regardless of whether the
+  directory came from a default, a sidecar, or `d.directory.set`.
+
 ## [0.11.0] - 2026-10-21
 
 Full rTorrent keyboard-shortcut parity release. The main download list, the
@@ -293,7 +344,9 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.10.4...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.12.0
+[0.11.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.11.0
 [0.10.4]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.4
 [0.10.3]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.3
 [0.10.2]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.2

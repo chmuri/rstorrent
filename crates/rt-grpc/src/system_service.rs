@@ -60,7 +60,7 @@ impl SystemService for SystemServiceImpl {
         let uptime = self.ctx.start_time.elapsed().as_secs();
         Ok(Response::new(VersionResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            api_version: "0.10.0".to_string(),
+            api_version: lt_common::version::VERSION.to_string(),
             build_target: std::env::consts::ARCH.to_string(),
             uptime_seconds: uptime,
         }))

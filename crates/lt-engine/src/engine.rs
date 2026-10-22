@@ -23,10 +23,8 @@ pub struct EngineManager {
 
 impl EngineManager {
     pub fn new(listen_port: u16) -> Self {
-        // Generate client Peer ID with standard prefix '-RS0100-'
-        let mut id_bytes = [0u8; 20];
-        id_bytes[0..8].copy_from_slice(b"-RS0100-");
-        let _ = getrandom::fill(&mut id_bytes[8..20]);
+        // Peer ID prefix is derived from the crate version (see lt_common::version).
+        let id_bytes = lt_common::version::new_peer_id();
 
         Self {
             peer_id: HashString::new(id_bytes),

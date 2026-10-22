@@ -168,7 +168,7 @@ pub async fn announce_http_detailed(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
-        .user_agent("rstorrent/0.10.0")
+        .user_agent(lt_net::http::DEFAULT_USER_AGENT)
         .build()?;
 
     let resp = client.get(&announce_url).send().await?;
@@ -477,7 +477,7 @@ pub async fn scrape_http(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
-        .user_agent("rstorrent/0.10.0")
+        .user_agent(lt_net::http::DEFAULT_USER_AGENT)
         .build()?;
 
     let response = client.get(&scrape_url).send().await?;

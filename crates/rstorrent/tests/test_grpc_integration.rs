@@ -50,7 +50,7 @@ async fn test_grpc_daemon_integration() {
         .into_inner();
 
     assert!(version_resp.version.contains(env!("CARGO_PKG_VERSION")));
-    assert_eq!(version_resp.api_version, "0.10.0");
+    assert_eq!(version_resp.api_version, lt_common::version::VERSION);
 
     // Test CommandService
     let mut command_client = CommandServiceClient::connect(channel_url)
