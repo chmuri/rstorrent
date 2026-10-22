@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Per-download connection variables (`rt-core`)**: `d.connection_leech` reads
+  and writes its own preference instead of aliasing `d.connection_seed`, so
+  setting one no longer rewrites the other. Both setters validate against the
+  shared connection-type option table (`leech`, `seed`, `initial_seed`,
+  `metadata`).
+- **Numbered custom variables (`rt-core`)**: `d.custom1`..`d.custom5` store to
+  independent `rtorrent:customN` slots, matching rtorrent. They are no longer
+  visible through `d.custom`, `d.custom.keys` or `d.custom.items`, and writes to
+  the generic `d.custom` map no longer shadow them.
 - **Magnet links verify an existing payload (`lt-engine`, `rt-core`)**: once
   `ut_metadata` delivers the info dictionary, a payload that is already in the
   target directory is hashed asynchronously (`HASHING`) instead of being

@@ -970,13 +970,7 @@ pub fn register_download_commands(
     // Register the extended surface before snapshotting the command map so
     // d.multicall/d.multicall2 can dispatch every download getter.
     let overrides: DownloadOverridesStore = Arc::new(RwLock::new(DownloadOverrides::default()));
-    register_download_extended_commands(
-        map,
-        &download_list,
-        &view_manager,
-        &custom_store,
-        &overrides,
-    )?;
+    register_download_extended_commands(map, &download_list, &view_manager, &overrides)?;
 
     // d.multicall2: view_name, commands...
     let vm_mc = Arc::clone(&view_manager);
@@ -1762,7 +1756,6 @@ fn register_download_extended_commands(
     map: &mut CommandMap,
     download_list: &Arc<RwLock<DownloadList>>,
     view_manager: &Arc<RwLock<ViewManager>>,
-    custom_store: &Arc<RwLock<HashMap<(lt_common::HashString, String), String>>>,
     overrides: &DownloadOverridesStore,
 ) -> Result<(), RpcError> {
     // The group manager is registered before this module by
@@ -2471,11 +2464,12 @@ fn register_download_extended_commands(
         },
     )?;
     add_getter(map, download_list, "d.connection_leech", |dl| {
-        Object::from(dl.connection_seed().to_string())
+        Object::from(dl.connection_leech().to_string())
     })?;
     add_setter(map, download_list, "d.connection_leech.set", |dl, obj| {
         let value = to_str(obj)?;
-        dl.set_connection_seed(&value).map_err(RpcError::InputError)
+        dl.set_connection_leech(&value)
+            .map_err(RpcError::InputError)
     })?;
     add_getter(map, download_list, "d.peers_connected", |dl| {
         let count = if dl.is_hash_checking() {
@@ -3213,31 +3207,34 @@ fn register_download_extended_commands(
         Ok(())
     })?;
 
-    // custom1..custom5 use the same custom store as d.custom.
+    // `d.custom1`..`d.custom5` are independent `rtorrent:customN` variables in
+    // rtorrent, not entries in the `rtorrent:custom` map used by `d.custom`.
+    let numbered_custom_store: Arc<RwLock<HashMap<(lt_common::HashString, usize), String>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+
     for index in 1..=5 {
         let key = format!("custom{index}");
-        let store = Arc::clone(custom_store);
-        let key_get = key.clone();
+        let store = Arc::clone(&numbered_custom_store);
         let list_get = Arc::clone(download_list);
         map.insert_func(
             &format!("d.{key}"),
             move |target, _obj| {
                 let dl = get_download(target, &list_get)?;
                 let hash = *dl.read().unwrap().info_hash();
-                let store = store.read().unwrap();
                 let value = store
-                    .get(&(hash, key_get.clone()))
+                    .read()
+                    .unwrap()
+                    .get(&(hash, index))
                     .cloned()
                     .unwrap_or_default();
                 Ok(Object::from(value))
             },
             FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
             "",
-            "Get a custom download field.",
+            "Get a numbered custom download field.",
         )?;
 
-        let store = Arc::clone(custom_store);
-        let key_set = key.clone();
+        let store = Arc::clone(&numbered_custom_store);
         let list_set = Arc::clone(download_list);
         map.insert_func(
             &format!("d.{key}.set"),
@@ -3245,15 +3242,12 @@ fn register_download_extended_commands(
                 let dl = get_download(target, &list_set)?;
                 let hash = *dl.read().unwrap().info_hash();
                 let value = to_str(obj)?;
-                store
-                    .write()
-                    .unwrap()
-                    .insert((hash, key_set.clone()), value);
+                store.write().unwrap().insert((hash, index), value);
                 Ok(Object::create_empty())
             },
             FLAG_PUBLIC_RPC,
             "<value>",
-            "Set a custom download field.",
+            "Set a numbered custom download field.",
         )?;
     }
 
