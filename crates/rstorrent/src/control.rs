@@ -795,7 +795,7 @@ impl Control {
 
     pub fn inc_tick(&self) -> u64 {
         let t = self.tick.fetch_add(1, Ordering::SeqCst);
-        if t % 20 == 0 {
+        if t.is_multiple_of(20) {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

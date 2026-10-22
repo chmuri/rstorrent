@@ -65,44 +65,48 @@ async fn test_full_lifecycle_and_rpc() {
     assert!(control.initialize(&cli).is_ok());
 
     // Verify initialized options via CommandMap
-    let map = control.command_map.read().unwrap();
+    {
+        let map = control.command_map.read().unwrap();
 
-    // Check throttle rates configured via CLI / RC
-    let up_rate = map
-        .call_command(
-            "throttle.global_up.max_rate",
-            &Object::create_empty(),
-            &Target::None,
-            false,
-        )
-        .unwrap();
-    assert_eq!(250 * 1024, up_rate.as_value().unwrap());
+        // Check throttle rates configured via CLI / RC
+        let up_rate = map
+            .call_command(
+                "throttle.global_up.max_rate",
+                &Object::create_empty(),
+                &Target::None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(250 * 1024, up_rate.as_value().unwrap());
 
-    let down_rate = map
-        .call_command(
-            "throttle.global_down.max_rate",
-            &Object::create_empty(),
-            &Target::None,
-            false,
-        )
-        .unwrap();
-    assert_eq!(1000 * 1024, down_rate.as_value().unwrap());
+        let down_rate = map
+            .call_command(
+                "throttle.global_down.max_rate",
+                &Object::create_empty(),
+                &Target::None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(1000 * 1024, down_rate.as_value().unwrap());
 
-    let max_uploads = map
-        .call_command(
-            "choke_group.up.max",
-            &Object::create_empty(),
-            &Target::None,
-            false,
-        )
-        .unwrap();
-    assert_eq!(50, max_uploads.as_value().unwrap());
+        let max_uploads = map
+            .call_command(
+                "choke_group.up.max",
+                &Object::create_empty(),
+                &Target::None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(50, max_uploads.as_value().unwrap());
+    }
 
     // Verify views are present
-    let vm = control.view_manager.read().unwrap();
-    assert!(vm.find("main").is_some());
-    assert!(vm.find("complete").is_some());
-    assert!(vm.find("seeding").is_some());
+    {
+        let vm = control.view_manager.read().unwrap();
+        assert!(vm.find("main").is_some());
+        assert!(vm.find("complete").is_some());
+        assert!(vm.find("seeding").is_some());
+    }
 
     // Verify session directory lockfile exists
     assert!(std::path::Path::new(&format!("{}/rtorrent.lock", session_dir.path)).exists());
