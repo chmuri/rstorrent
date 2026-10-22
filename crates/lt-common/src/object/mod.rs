@@ -461,8 +461,7 @@ impl Object {
         let key = k.as_ref();
         let map = self.as_map_mut()?;
         let key_str = String::from_utf8_lossy(key).into_owned();
-        map.get_mut(key)
-            .ok_or_else(|| BencodeError::KeyNotFound(key_str))
+        map.get_mut(key).ok_or(BencodeError::KeyNotFound(key_str))
     }
 
     pub fn get_key_value(&self, k: impl AsRef<[u8]>) -> Result<i64, BencodeError> {
