@@ -315,15 +315,11 @@ impl ChunkList {
         let node = &self.nodes[idx];
 
         // Check blocking conflicts
-        if is_writable_req && node.blocking > 0 {
-            if is_nonblock {
-                return ChunkHandle::from_error(libc::EAGAIN);
-            }
+        if is_writable_req && node.blocking > 0 && is_nonblock {
+            return ChunkHandle::from_error(libc::EAGAIN);
         }
-        if is_blocking_req && node.writable > 0 {
-            if is_nonblock {
-                return ChunkHandle::from_error(libc::EAGAIN);
-            }
+        if is_blocking_req && node.writable > 0 && is_nonblock {
+            return ChunkHandle::from_error(libc::EAGAIN);
         }
 
         let prot = Prot::READ
@@ -343,27 +339,16 @@ impl ChunkList {
                 }
             }
 
-            let res = if flags.contains(GetFlags::GET_HASHING) {
-                if let Some(ref f) = self.slot_create_hashing_chunk {
-                    f(index, prot)
-                } else if let Some(ref f) = self.slot_create_chunk {
-                    f(index, prot)
-                } else {
-                    Err(StorageError::InvalidChunk)
-                }
-            } else if flags.contains(GetFlags::GET_NOT_HASHING) {
-                if let Some(ref f) = self.slot_create_chunk {
-                    f(index, prot)
-                } else {
-                    Err(StorageError::InvalidChunk)
-                }
+            let creator = if flags.contains(GetFlags::GET_HASHING) {
+                self.slot_create_hashing_chunk
+                    .as_ref()
+                    .or(self.slot_create_chunk.as_ref())
             } else {
-                if let Some(ref f) = self.slot_create_chunk {
-                    f(index, prot)
-                } else {
-                    Err(StorageError::InvalidChunk)
-                }
+                self.slot_create_chunk.as_ref()
             };
+            let res = creator
+                .ok_or(StorageError::InvalidChunk)
+                .and_then(|create| create(index, prot));
 
             match res {
                 Ok(chunk) => {
@@ -386,10 +371,8 @@ impl ChunkList {
                 .unwrap_or(false);
 
             if !is_currently_writable {
-                if self.nodes[idx].blocking > 0 {
-                    if is_nonblock {
-                        return ChunkHandle::from_error(libc::EAGAIN);
-                    }
+                if self.nodes[idx].blocking > 0 && is_nonblock {
+                    return ChunkHandle::from_error(libc::EAGAIN);
                 }
                 if let Some(ref f) = self.slot_create_chunk {
                     match f(index, prot) {

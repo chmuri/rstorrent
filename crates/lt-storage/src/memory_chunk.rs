@@ -118,7 +118,7 @@ impl MemoryChunk {
             return 0;
         }
         let ps = Self::page_size();
-        (length + self.page_align_offset(offset) + ps - 1) / ps
+        (length + self.page_align_offset(offset)).div_ceil(ps)
     }
 
     pub fn size_aligned(&self) -> usize {
@@ -127,7 +127,7 @@ impl MemoryChunk {
             return 0;
         }
         let ps = Self::page_size();
-        ((total + ps - 1) / ps) * ps
+        total.div_ceil(ps) * ps
     }
 
     pub fn clear(&mut self) {

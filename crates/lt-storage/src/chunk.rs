@@ -178,7 +178,7 @@ impl Chunk {
     pub fn sync(&self, flags: SyncFlags) -> Result<bool, StorageError> {
         let mut success = true;
         for part in &self.parts {
-            if let Err(_) = part.chunk().sync(0, part.chunk().size(), flags) {
+            if part.chunk().sync(0, part.chunk().size(), flags).is_err() {
                 success = false;
             }
         }

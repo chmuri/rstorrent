@@ -78,6 +78,9 @@ pub fn write_piece_to_disk(
 
         let mut f = OpenOptions::new()
             .create(true)
+            // Writes seek to `file_offset`; truncating would destroy earlier
+            // segments of the same multi-file piece.
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&full_path)?;

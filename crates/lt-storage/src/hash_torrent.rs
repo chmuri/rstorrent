@@ -406,7 +406,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
-        let payload = vec![0xAAu8; 16];
+        let payload = [0xAAu8; 16];
         let files = Arc::new(vec![TargetFileInfo {
             path: PathBuf::from("/data.bin"),
             length: 16,
@@ -445,7 +445,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
-        let payload = vec![0x11u8; 16];
+        let payload = [0x11u8; 16];
         let files = Arc::new(vec![TargetFileInfo {
             path: PathBuf::from("/cancel.bin"),
             length: 16,
