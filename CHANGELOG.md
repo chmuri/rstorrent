@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-22
+
+Payload-verification and rTorrent-parity release. Magnet links no longer
+re-download data that already exists on disk, per-download variables match
+rtorrent semantics, and the workspace passes clippy with warnings denied.
+
 ### Changed
 
 - **Clippy gate (`CI`, workspace)**: `cargo clippy --workspace --all-targets -- -D
   warnings` now blocks merges. The workspace is clippy-clean without new lint
   suppressions; oversized internal APIs were regrouped into parameter structs
   and the fallible `*_nothrow` parsers now return a typed `ParseError`.
+- **Version identity (`lt-common`)**: the client now presents `0.13.0` to peers,
+  trackers and RPC clients. The peer ID prefix is `-RS0130-`, the tracker
+  User-Agent is `rstorrent/0.13.0`, the DHT `v` is `RS0.13.0`, and the BEP 10
+  handshake, `system.client_version` and gRPC `api_version` report the same
+  version.
 
 ### Fixed
 
@@ -370,7 +381,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.13.0
 [0.12.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.12.0
 [0.11.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.11.0
 [0.10.4]: https://github.com/chmuri/rstorrent/releases/tag/v0.10.4
