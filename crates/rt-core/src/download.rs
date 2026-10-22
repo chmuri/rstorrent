@@ -31,6 +31,10 @@ pub struct Download {
     chunks_hashed: Arc<AtomicU32>,
     hash_checking: Arc<AtomicBool>,
     last_active: u64,
+    /// Set when magnet metadata became available and an existing payload must
+    /// be verified. Consumed once by the network supervisor so the check runs
+    /// even if another caller (e.g. `session.save`) synced the metadata first.
+    metadata_recheck_pending: bool,
 }
 
 impl Download {
@@ -57,6 +61,7 @@ impl Download {
             chunks_hashed,
             hash_checking: Arc::new(AtomicBool::new(false)),
             last_active: 0,
+            metadata_recheck_pending: false,
         }
     }
 
@@ -105,7 +110,7 @@ impl Download {
             return false;
         }
 
-        let (metadata, info_bytes) = {
+        let (metadata, info_bytes, recheck_pending) = {
             let mut engine = self.download.lock().unwrap();
             if engine.is_metadata_download() {
                 return false;
@@ -115,13 +120,21 @@ impl Download {
             let info_bytes = lt_engine::network::download_info_bytes(&engine);
             // Once the real file layout is known, an already present payload
             // (e.g. an ISO downloaded earlier) must be verified before it is
-            // used for seeding.
-            let _ = engine.queue_recheck_if_files_exist();
-            (metadata, info_bytes)
+            // used for seeding. Do not re-queue while a pass already owns the
+            // pieces.
+            let recheck_pending = if engine.is_checking() || engine.has_pending_hash_pieces() {
+                true
+            } else {
+                engine.queue_recheck_if_files_exist()
+            };
+            (metadata, info_bytes, recheck_pending)
         };
 
         self.metadata = metadata;
         self.hash_checked = false;
+        if recheck_pending {
+            self.metadata_recheck_pending = true;
+        }
 
         if self.bencode.is_none() {
             if let Some(bytes) = info_bytes {
@@ -441,6 +454,17 @@ impl Download {
             return false;
         }
         self.download.lock().unwrap().has_pending_hash_pieces()
+    }
+
+    /// Takes the pending flag set when magnet metadata revealed an existing
+    /// payload that still needs verification.
+    pub fn take_metadata_recheck_pending(&mut self) -> bool {
+        std::mem::take(&mut self.metadata_recheck_pending)
+    }
+
+    /// Whether a deferred metadata recheck still has to be consumed.
+    pub fn metadata_recheck_pending(&self) -> bool {
+        self.metadata_recheck_pending
     }
 
     /// Takes the pieces queued by resume validation for an explicit recheck.

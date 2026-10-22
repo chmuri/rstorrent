@@ -1300,6 +1300,12 @@ impl Download {
         self.hash_failed_pieces.clear();
         self.pending_hash_pieces.clear();
 
+        // A magnet download may have been added for a payload that is already
+        // on disk (for example an ISO downloaded earlier). Metadata is the
+        // first point at which the file layout is known, so queue those pieces
+        // for verification before any peer can overwrite them.
+        let _ = self.queue_recheck_if_files_exist();
+
         if !tracker_list.is_empty() {
             self.tracker_controller = TrackerController::new(tracker_list);
         }
@@ -1377,6 +1383,15 @@ impl Download {
 
     pub fn is_checking(&self) -> bool {
         self.state.is_checking()
+    }
+
+    /// True while a queued or running verification owns the on-disk data.
+    ///
+    /// Peer requests and incoming blocks must be discarded until the pass is
+    /// over, otherwise a peer could overwrite bytes that are about to be
+    /// hashed (or are being hashed).
+    fn verification_owns_data(&self) -> bool {
+        self.state.is_checking() || !self.pending_hash_pieces.is_empty()
     }
 
     /// True once a hash pass has completed without being cancelled and no
@@ -2462,6 +2477,12 @@ impl Download {
     }
 
     pub fn delegate_for_peer(&mut self, peer_id: &HashString, max_pieces: usize) -> Vec<Piece> {
+        // A queued or running verification owns the on-disk data. Handing out
+        // new requests now could overwrite bytes that are about to be hashed.
+        if self.verification_owns_data() {
+            return Vec::new();
+        }
+
         let (peer_bf, is_seeder) = match self.connection_list.find_by_id(peer_id) {
             Some(p) => (p.bitfield.clone(), p.is_seeder()),
             None => return Vec::new(),
@@ -2712,6 +2733,16 @@ impl Download {
         block_offset: u32,
         data: &[u8],
     ) -> Result<bool, String> {
+        // Blocks that were already in flight can arrive after metadata queued
+        // a recheck or after the pass switched the download to `Checking`.
+        // Never write them while the files are being verified; drop the
+        // partial transfer so it is requested again once the pass is over.
+        if self.verification_owns_data() {
+            self.piece_data_cache.remove(&piece_index);
+            let _ = self.delegator.transfers_mut().erase(piece_index);
+            return Ok(false);
+        }
+
         self.downloaded_bytes = self.downloaded_bytes.saturating_add(data.len() as u64);
         self.rate_down.insert(data.len() as u64);
 
