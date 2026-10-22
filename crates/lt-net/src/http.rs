@@ -10,7 +10,7 @@ use crate::error::NetError;
 
 pub const DEFAULT_MAX_FILE_SIZE: usize = 15 * 1024 * 1024; // 15 MiB
 pub const DEFAULT_TIMEOUT_SECS: u64 = 30;
-pub const DEFAULT_USER_AGENT: &str = "rstorrent/0.10.0 (Rust; Linux)";
+pub const DEFAULT_USER_AGENT: &str = lt_common::version::USER_AGENT_FULL;
 
 #[derive(Clone, Debug)]
 pub struct HttpConfig {

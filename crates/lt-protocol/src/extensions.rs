@@ -172,8 +172,15 @@ impl ProtocolExtension {
         }
         root.insert_key("m", m).unwrap();
         root.insert_key("reqq", Object::create_value(500)).unwrap();
-        root.insert_key("v", Object::create_string(b"rstorrent 0.10.0".to_vec()))
-            .unwrap();
+        root.insert_key(
+            "v",
+            Object::create_string(
+                lt_common::version::EXTENDED_HANDSHAKE_VERSION
+                    .as_bytes()
+                    .to_vec(),
+            ),
+        )
+        .unwrap();
         if let Some(size) = metadata_size {
             root.insert_key("metadata_size", Object::create_value(size as i64))
                 .unwrap();
@@ -371,8 +378,15 @@ pub fn extension_handshake_payload(
     }
     root.insert_key("m", m).unwrap();
     root.insert_key("reqq", Object::create_value(500)).unwrap();
-    root.insert_key("v", Object::create_string(b"rstorrent 0.10.0".to_vec()))
-        .unwrap();
+    root.insert_key(
+        "v",
+        Object::create_string(
+            lt_common::version::EXTENDED_HANDSHAKE_VERSION
+                .as_bytes()
+                .to_vec(),
+        ),
+    )
+    .unwrap();
     if let Some(size) = metadata_size {
         root.insert_key("metadata_size", Object::create_value(size as i64))
             .unwrap();

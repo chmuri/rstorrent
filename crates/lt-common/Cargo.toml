@@ -14,3 +14,4 @@ bitflags.workspace = true
 flate2.workspace = true
 base64.workspace = true
 sha1.workspace = true
+getrandom.workspace = true

@@ -114,7 +114,7 @@ async fn test_scgi_socket_flood_xmlrpc() {
         assert!(resp_str.contains("Status: 200 OK"));
         assert!(resp_str.contains("Content-Type: text/xml"));
         assert!(resp_str.contains("<methodResponse>"));
-        assert!(resp_str.contains("<string>0.10.0</string>"));
+        assert!(resp_str.contains(&format!("<string>{}</string>", lt_common::version::VERSION)));
     }
 
     // A normal close after the pipelined requests must be clean.

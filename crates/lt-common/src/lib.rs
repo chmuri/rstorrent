@@ -11,6 +11,7 @@ pub mod path;
 pub mod ranges;
 pub mod rate;
 pub mod uri;
+pub mod version;
 
 pub use bitfield::Bitfield;
 pub use collections::{PartialQueue, QueueBuckets, UnorderedVector};
