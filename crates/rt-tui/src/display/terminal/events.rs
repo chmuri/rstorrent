@@ -233,20 +233,15 @@ fn clamp_coordinate(value: u16, axis_len: u32) -> u16 {
 }
 
 /// How to treat a resize event when the queue already contains one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResizePolicy {
     /// Replace the previously queued resize with the newest one. Resize storms
     /// therefore occupy at most one slot in the queue.
+    #[default]
     Coalesce,
     /// Keep resize events as separate entries; they are dropped normally when
     /// the queue is full.
     Drop,
-}
-
-impl Default for ResizePolicy {
-    fn default() -> Self {
-        Self::Coalesce
-    }
 }
 
 /// Configuration for [`EventQueue`].

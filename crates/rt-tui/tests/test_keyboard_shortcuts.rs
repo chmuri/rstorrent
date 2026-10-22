@@ -242,7 +242,7 @@ fn prompt_shortcuts_and_edit_keys() {
     f.ui.handle_key(0x1B);
 
     // f and F open the filter prompt.
-    for key in [b'f', b'F'] {
+    for key in *b"fF" {
         f.ui.handle_key(key as i32);
         assert_eq!(f.ui.input_mode, InputPromptMode::Filter);
         f.ui.handle_key(0x1B);
@@ -438,7 +438,7 @@ fn details_tabs_and_back_navigation() {
     }
 
     // Numeric limit keys keep the current tab and view.
-    for key in [b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8'] {
+    for key in *b"12345678" {
         f.ui.handle_key(key as i32);
         assert_eq!(
             f.ui.window_details.lock().unwrap().current_tab,
@@ -606,7 +606,7 @@ fn secondary_view_navigation_and_refresh() {
     assert_eq!(f.ui.active_screen, ActiveScreen::DownloadList);
 
     // Esc returns from every secondary view.
-    for key in [b'i', b'u', b'o', b'p', b'l'] {
+    for key in *b"iuopl" {
         f.ui.handle_key(key as i32);
         assert_ne!(f.ui.active_screen, ActiveScreen::DownloadList);
         f.ui.handle_key(0x1B);

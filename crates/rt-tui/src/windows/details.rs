@@ -307,11 +307,7 @@ impl Window for WindowDownloadDetails {
                     let downloaded = engine.downloaded_bytes();
                     let uploaded = engine.uploaded_bytes();
                     let total_size = meta.total_size;
-                    let percent = if total_size > 0 {
-                        (completed * 100) / total_size
-                    } else {
-                        0
-                    };
+                    let percent = (completed * 100).checked_div(total_size).unwrap_or(0);
                     let ratio = if downloaded > 0 {
                         uploaded as f64 / downloaded as f64
                     } else {
@@ -463,11 +459,9 @@ impl Window for WindowDownloadDetails {
                     if files.is_empty() {
                         let size_mb = meta.total_size as f64 / (1024.0 * 1024.0);
                         let comp_mb = completed_bytes as f64 / (1024.0 * 1024.0);
-                        let percent = if meta.total_size > 0 {
-                            (completed_bytes * 100) / meta.total_size
-                        } else {
-                            0
-                        };
+                        let percent = (completed_bytes * 100)
+                            .checked_div(meta.total_size)
+                            .unwrap_or(0);
                         self.cached_files = CachedFilesState {
                             single_file_fallback: Some((
                                 size_mb,
@@ -600,11 +594,9 @@ impl Window for WindowDownloadDetails {
                     let total_pieces = meta.pieces.len();
                     let completed_pieces = engine.completed_chunks();
                     let active_transfers = engine.delegator().transfers().len();
-                    let percent = if total_pieces > 0 {
-                        (completed_pieces * 100) / total_pieces
-                    } else {
-                        0
-                    };
+                    let percent = (completed_pieces * 100)
+                        .checked_div(total_pieces)
+                        .unwrap_or(0);
                     self.cached_chunks = CachedChunksState {
                         total_pieces,
                         piece_length_kb: meta.piece_length as f64 / 1024.0,
@@ -621,11 +613,7 @@ impl Window for WindowDownloadDetails {
                         let piece_idx = block_list.index();
                         let finished = block_list.finished();
                         let total = block_list.len();
-                        let percent = if total > 0 {
-                            (finished * 100) / total
-                        } else {
-                            0
-                        };
+                        let percent = (finished * 100).checked_div(total).unwrap_or(0);
                         rows.push(CachedTransferDetailRow {
                             piece_idx,
                             finished,

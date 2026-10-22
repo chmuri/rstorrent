@@ -676,8 +676,12 @@ impl PeerListWindow {
     fn apply_sort(&mut self) {
         match self.sort_mode {
             PeerSort::ConnectionOrder => {}
-            PeerSort::RateDown => self.peers.sort_by(|a, b| b.rate_down.cmp(&a.rate_down)),
-            PeerSort::RateUp => self.peers.sort_by(|a, b| b.rate_up.cmp(&a.rate_up)),
+            PeerSort::RateDown => self
+                .peers
+                .sort_by_key(|peer| std::cmp::Reverse(peer.rate_down)),
+            PeerSort::RateUp => self
+                .peers
+                .sort_by_key(|peer| std::cmp::Reverse(peer.rate_up)),
             PeerSort::Address => self.peers.sort_by(|a, b| a.address.cmp(&b.address)),
         }
     }

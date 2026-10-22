@@ -207,8 +207,7 @@ impl PathInput {
         let pos = char_boundary_floor(&text, self.inner.pos());
         let start = text[..pos]
             .char_indices()
-            .filter(|(_, ch)| ch.is_whitespace())
-            .last()
+            .rfind(|(_, ch)| ch.is_whitespace())
             .map(|(index, ch)| index + ch.len_utf8())
             .unwrap_or(0);
         let prefix = &text[start..pos];
