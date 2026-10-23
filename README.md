@@ -8,16 +8,16 @@
 
 ## About
 
-`rstorrent` is a modern, high-performance, and memory-safe BitTorrent client and engine written from scratch in pure Rust. It represents a complete re-implementation and architectural evolution of the legendary [rTorrent](https://github.com/rakshasa/rtorrent) and [libtorrent](https://github.com/rakshasa/libtorrent) C++ codebase.
+`rstorrent` is a modern, high-performance, and memory-safe BitTorrent client and engine written from scratch in pure Rust. It is designed as an rTorrent-compatible alternative with a modular workspace, a Tokio-based engine, and a terminal-first runtime.
 
-It provides 100% behavioral parity with rTorrent's RPC and SCGI protocol, enabling seamless drop-in compatibility with frontends like [Flood](https://github.com/jesec/flood) and [ruTorrent](https://github.com/Novik/ruTorrent), alongside modern push-streaming gRPC, asynchronous disk I/O, and an interactive, highly responsive Ratatui-based TUI with real-time peer transfer tracking.
+The project contains active implementations for core BitTorrent functionality, an SCGI server, XML-RPC/JSON-RPC command handling, and a native gRPC service layer. However, this is still an evolving codebase: compatibility with the full rTorrent command surface, frontend integrations, and every ecosystem feature is not yet complete and should be treated as work in progress rather than full parity.
 
 ---
 
 ## Key Features
 
 - **Pure Rust & Memory Safe**: Zero segmentation faults, robust error handling, and structured concurrency built on [Tokio](https://tokio.rs).
-- **Full BitTorrent Protocol Support**:
+- **BitTorrent Protocol Support**:
   - **BEP 3**: Core BitTorrent Protocol.
   - **BEP 6**: Fast Extension (`Allowed Fast`, `Suggest`, `Have All`, `Have None`, `Reject Request`).
   - **BEP 9**: Extension for Peers to Send Metadata Files (`ut_metadata`, magnet links).
@@ -28,17 +28,15 @@ It provides 100% behavioral parity with rTorrent's RPC and SCGI protocol, enabli
   - **MSE / PE**: Message Stream Encryption / Protocol Encryption (RC4 + Diffie-Hellman 768-bit).
   - **Mainline DHT**: Kademlia Distributed Hash Table with bootstrap and caching.
 - **SCGI & RPC Compatibility**:
-  - Standard SCGI server over TCP (`0.0.0.0:5000`) and UNIX Domain Sockets (`/session/rtorrent.sock`).
-  - XML-RPC and JSON-RPC dialects, supporting `d.multicall2`, commands, filtering, and events.
-  - Works out-of-the-box with **Flood**, **ruTorrent**, scripts, and automation tools.
+  - SCGI listener and parser code are present in the workspace (`rt-scgi`, `rt-rpc`).
+  - XML-RPC and JSON-RPC processing exists for command routing and compatibility layers.
+  - Intended compatibility with tooling such as **Flood**, **ruTorrent**, and custom scripts is real, but command coverage and full ecosystem parity are still being expanded.
 - **Interactive TUI & Daemon Mode**:
   - Rich Terminal User Interface powered by [Ratatui](https://github.com/ratatui/ratatui) and [Crossterm](https://github.com/crossterm-rs/crossterm).
   - Headless daemon mode (`--daemon`) for servers and Docker containers.
 - **Native gRPC API**:
-  - Tonic-based `rtorrent.v1` services (`TorrentService`, `SystemService`,
-    `CommandService`) over TCP or Unix sockets.
-  - Server-streaming `StreamEvents` and `StreamStats` for push-based frontends
-    (Flood's `rstorrent` connector uses them).
+  - Tonic-based `rtorrent.v1` services exist in [`crates/rt-grpc`](crates/rt-grpc).
+  - This layer is an important compatibility and integration surface, but it is still best treated as an actively evolving API rather than a fully complete feature-equivalent replacement for the legacy rTorrent toolchain.
 - **Dual Binary Compatibility**:
   - Provides both `rstorrent` and `rtorrent` binaries out of the box for backward compatibility with existing scripts.
 
@@ -67,6 +65,23 @@ rstorrent/
 │   ├── rt-tui        # Terminal UI (Ratatui / Crossterm), views, canvas buffer, frame balancing
 │   └── rstorrent     # CLI entry point, signal handlers, lifecycle supervisor
 ```
+
+---
+
+## Current compatibility status
+
+This project should be considered a work in progress rather than a fully complete, drop-in replacement for every historical rTorrent deployment.
+
+The repository already contains substantial implementations for:
+
+- core BitTorrent mechanics,
+- SCGI handling,
+- XML-RPC / JSON-RPC parsing and dispatch,
+- gRPC endpoints,
+- the terminal UI,
+- and a modular engine/runtime architecture.
+
+However, feature completeness varies by subsystem. Older rTorrent commands, frontends, and edge-case protocol behavior may still be incomplete or require additional compatibility work. The goal is compatibility with the rTorrent ecosystem, but it is not yet safe to assume full protocol or command parity across all known integrations.
 
 ---
 
@@ -258,4 +273,4 @@ Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md
 
 ## License
 
-This project is licensed under the **GNU General Public License v2.0 or later** ([GPL-2.0-or-later](LICENSE)), preserving full license compatibility with the original rTorrent and libtorrent projects.
+This project is licensed under the **GNU General Public License v2.0 or later** ([GPL-2.0-or-later](LICENSE)), preserving full license compatibility with the original rTorrent and libtorrent project while remaining independent and modernized for Rust.
