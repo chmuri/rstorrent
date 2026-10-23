@@ -211,11 +211,21 @@ fn concat_path_bytes(prefix: &[u8], middle: &[u8], postfix: &[u8]) -> Vec<u8> {
     path
 }
 
+/// Widens a platform-dependent `statvfs` counter to `u64`.
+///
+/// The nix accessors are `u32` on macOS and `u64` on Linux; `Into` keeps both
+/// targets compiling without an `as` cast that clippy rejects on one of them.
+fn statvfs_u64<T: Into<u64>>(value: T) -> u64 {
+    value.into()
+}
+
 fn free_diskspace_for(dl: &Download) -> u64 {
     let directory = dl.directory();
     let path = if directory.is_empty() { "." } else { directory };
     nix::sys::statvfs::statvfs(path)
-        .map(|stat| stat.blocks_available() * stat.fragment_size())
+        // The two fields are platform-dependent integer types (`u32` on
+        // macOS, `u64` on Linux), so widen both explicitly.
+        .map(|stat| statvfs_u64(stat.blocks_available()) * statvfs_u64(stat.fragment_size()))
         .unwrap_or(0)
 }
 
