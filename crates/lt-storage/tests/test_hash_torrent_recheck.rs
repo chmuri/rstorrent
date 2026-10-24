@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use lt_common::bitfield::Bitfield;
 use lt_crypto::sha1::sha1_hash;
+use lt_storage::disk_thread::DiskThread;
 use lt_storage::hash_torrent::HashTorrent;
 use lt_storage::writer::{write_piece_to_disk, TargetFileInfo};
 
@@ -53,6 +54,52 @@ fn full_recheck_handles_short_final_piece_and_zero_length_file() {
     assert!(result.failed_pieces.is_empty());
     assert!(result.bitfield.is_all_set());
 
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn hash_pass_syncs_once_and_sees_writes_queued_before_it() {
+    let root = temp_root("sync_once");
+    let payload: Vec<u8> = (0..24).collect();
+    let files = files(payload.len() as u64);
+
+    let thread = Arc::new(DiskThread::spawn(8).unwrap());
+    let mut writes = Vec::new();
+    for (index, chunk) in payload.chunks(8).enumerate() {
+        writes.push(
+            thread
+                .submit_write(
+                    root.clone(),
+                    Arc::clone(&files),
+                    8,
+                    index as u32,
+                    chunk.to_vec(),
+                )
+                .unwrap(),
+        );
+    }
+
+    let hashes = payload.chunks(8).map(sha1_hash).collect();
+    let mut hasher = HashTorrent::new(&root, Arc::clone(&files), 8, 3, 24, hashes);
+    hasher.set_disk_thread(Some(Arc::clone(&thread)));
+
+    let result = hasher.hash_all().unwrap();
+
+    // One sync at the start of the pass makes every write queued before it
+    // durable, so the reads cannot observe an in-flight block.
+    assert_eq!(
+        thread.stats().syncs,
+        1,
+        "one sync per pass, not one per piece"
+    );
+    assert_eq!(result.checked, 3);
+    assert_eq!(result.failed, 0);
+    assert!(result.bitfield.is_all_set());
+
+    for write in writes {
+        write.wait().unwrap();
+    }
+    drop(thread);
     let _ = std::fs::remove_dir_all(&root);
 }
 
