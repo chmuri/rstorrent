@@ -5,6 +5,7 @@ pub mod chunk_list;
 pub mod chunk_manager;
 pub mod chunk_part;
 pub mod chunk_utils;
+pub mod disk_pool;
 pub mod disk_thread;
 pub mod download_data;
 pub mod error;
@@ -34,9 +35,13 @@ pub use chunk_list::{
 };
 pub use chunk_manager::{ChunkManager, ALLOCATE_DONT_LOG, ALLOCATE_REVERT_LOG};
 pub use chunk_part::{ChunkPart, MappedType};
+pub use disk_pool::{DiskPool, DiskPoolConfig};
 pub use disk_thread::{
-    global_disk_thread, shutdown_global_disk_thread, DiskThread, DiskWriteHandle,
-    DEFAULT_DISK_QUEUE, DEFAULT_IDLE_TIMEOUT, DEFAULT_MAX_OPEN_FILES,
+    default_disk_threads, default_max_open_files, global_disk_pool, global_disk_pool_initialized,
+    global_disk_stats, global_disk_thread, global_disk_thread_for, init_global_disk_pool,
+    set_default_disk_threads, set_default_max_open_files, shutdown_global_disk_thread, DiskThread,
+    DiskThreadStats, DiskWriteHandle, DEFAULT_DISK_QUEUE, DEFAULT_IDLE_TIMEOUT,
+    DEFAULT_MAX_OPEN_FILES,
 };
 pub use error::StorageError;
 pub use file::{File, FileFlags, Priority};

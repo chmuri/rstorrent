@@ -80,5 +80,67 @@ pub fn register_storage_commands(
         "Number of threads used to parse the session directory at startup.",
     )?;
 
+    map.insert_func(
+        "storage.disk_threads",
+        |_target, _obj| Ok(Object::from(lt_storage::default_disk_threads() as i64)),
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Number of disk worker threads (fixed at startup).",
+    )?;
+
+    map.insert_func(
+        "storage.disk_threads.set",
+        |_target, obj| {
+            let value = convert_to_value(obj, 0, 1)?;
+            if !(1..=64).contains(&value) {
+                return Err(RpcError::InputError(
+                    "storage.disk_threads must be between 1 and 64.".into(),
+                ));
+            }
+            if lt_storage::global_disk_pool_initialized() {
+                return Err(RpcError::InputError(
+                    "storage.disk_threads is fixed after the disk pool is created; restart to change it."
+                        .into(),
+                ));
+            }
+            lt_storage::set_default_disk_threads(value as usize);
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<value>",
+        "Number of disk worker threads (fixed at startup).",
+    )?;
+
+    map.insert_func(
+        "storage.max_open_files",
+        |_target, _obj| Ok(Object::from(lt_storage::default_max_open_files() as i64)),
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Per-worker open-file budget (fixed at startup).",
+    )?;
+
+    map.insert_func(
+        "storage.max_open_files.set",
+        |_target, obj| {
+            let value = convert_to_value(obj, 0, 1)?;
+            if !(4..=65536).contains(&value) {
+                return Err(RpcError::InputError(
+                    "storage.max_open_files must be between 4 and 65536.".into(),
+                ));
+            }
+            if lt_storage::global_disk_pool_initialized() {
+                return Err(RpcError::InputError(
+                    "storage.max_open_files is fixed after the disk pool is created; restart to change it."
+                        .into(),
+                ));
+            }
+            lt_storage::set_default_max_open_files(value as usize);
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<value>",
+        "Per-worker open-file budget (fixed at startup).",
+    )?;
+
     Ok(())
 }

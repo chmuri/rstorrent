@@ -310,6 +310,24 @@ impl Control {
             }
         }
 
+        // 5.5 Create the disk pool before any download exists: EngineDownload
+        // captures its shard at construction, and the pool configuration is
+        // fixed from this point.
+        {
+            let config = lt_storage::DiskPoolConfig {
+                threads: lt_storage::default_disk_threads(),
+                queue_capacity: lt_storage::DEFAULT_DISK_QUEUE,
+                max_open_files: lt_storage::default_max_open_files(),
+                idle_timeout: lt_storage::DEFAULT_IDLE_TIMEOUT,
+            };
+            let threads = config.threads;
+            let max_open_files = config.max_open_files;
+            if !lt_storage::init_global_disk_pool(config) {
+                tracing::debug!("Disk pool was already created; keeping its configuration.");
+            }
+            warn_if_fd_budget_is_tight(threads, max_open_files);
+        }
+
         // 6. Connect RootUI with view manager and download list
         {
             let mut ui = self.root_ui.lock().unwrap();
@@ -1053,5 +1071,31 @@ impl Control {
 
     pub fn is_shutdown_completed(&self) -> bool {
         self.is_shutdown_completed.load(Ordering::SeqCst)
+    }
+}
+
+/// Warns when the configured per-worker file caches could exhaust the
+/// descriptor limit before any torrent does.
+fn warn_if_fd_budget_is_tight(threads: usize, max_open_files: usize) {
+    let mut limit = nix::libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit writes into a valid `rlimit` owned by this frame.
+    if unsafe { nix::libc::getrlimit(nix::libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return;
+    }
+
+    let soft = limit.rlim_cur;
+    let budget = (threads as u64).saturating_mul(max_open_files as u64);
+    // Each worker also opens the files a hash pass reads, outside its cache.
+    if budget.saturating_mul(3) > soft {
+        tracing::warn!(
+            threads,
+            max_open_files,
+            budget,
+            soft_limit = soft,
+            "Disk worker open-file budget is above a third of RLIMIT_NOFILE; raise the limit or lower storage.max_open_files."
+        );
     }
 }

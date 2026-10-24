@@ -64,3 +64,26 @@ fn hash_concurrency_cannot_change_after_the_pool_is_created() {
         .expect_err("pool size is fixed once the scheduler exists");
     assert!(err.to_string().contains("restart"), "{err}");
 }
+
+#[test]
+fn disk_threads_and_open_files_are_configurable_before_the_pool() {
+    let (map, _list) = registry();
+
+    call(&map, "storage.disk_threads.set", Object::from(4i64)).unwrap();
+    let threads = call(&map, "storage.disk_threads", Object::create_empty())
+        .unwrap()
+        .as_value()
+        .unwrap();
+    assert_eq!(threads, 4);
+
+    call(&map, "storage.max_open_files.set", Object::from(256i64)).unwrap();
+    let files = call(&map, "storage.max_open_files", Object::create_empty())
+        .unwrap()
+        .as_value()
+        .unwrap();
+    assert_eq!(files, 256);
+
+    assert!(call(&map, "storage.disk_threads.set", Object::from(0i64)).is_err());
+    assert!(call(&map, "storage.disk_threads.set", Object::from(65i64)).is_err());
+    assert!(call(&map, "storage.max_open_files.set", Object::from(3i64)).is_err());
+}

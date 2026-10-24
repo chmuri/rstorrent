@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 use lt_common::hash_string::HashString;
 
 use crate::chunk_list::ChunkHandle;
+use crate::disk_pool::{DiskPool, DiskPoolConfig};
 use crate::error::StorageError;
 use crate::file::File;
 use crate::file_manager::{FileManager, FileManagerStats, FileManagerStatsHandle};
@@ -41,6 +42,35 @@ pub const DEFAULT_MAX_OPEN_FILES: usize = 64;
 
 /// Idle timeout after which the worker closes cached file handles.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Default number of disk workers. One preserves pre-pool behaviour; larger
+/// values must be opted into with `storage.disk_threads`.
+static DEFAULT_THREADS: AtomicUsize = AtomicUsize::new(1);
+/// Default per-worker open-file budget, shared by `storage.max_open_files`
+/// and `network.max_open_files`.
+static DEFAULT_OPEN_FILES: AtomicUsize = AtomicUsize::new(DEFAULT_MAX_OPEN_FILES);
+
+/// Configured worker count for a pool created from defaults.
+pub fn default_disk_threads() -> usize {
+    DEFAULT_THREADS.load(Ordering::Acquire).clamp(1, 64)
+}
+
+/// Sets the worker count used by the next [`DiskPoolConfig::default`].
+///
+/// [`DiskPoolConfig::default`]: crate::disk_pool::DiskPoolConfig
+pub fn set_default_disk_threads(threads: usize) {
+    DEFAULT_THREADS.store(threads.clamp(1, 64), Ordering::Release);
+}
+
+/// Configured per-worker open-file budget.
+pub fn default_max_open_files() -> usize {
+    DEFAULT_OPEN_FILES.load(Ordering::Acquire).clamp(4, 65536)
+}
+
+/// Sets the open-file budget used by the next pool.
+pub fn set_default_max_open_files(files: usize) {
+    DEFAULT_OPEN_FILES.store(files.clamp(4, 65536), Ordering::Release);
+}
 
 /// Hashing reads a whole piece at a time; keep the buffer size bounded.
 const HASH_READ_CHUNK: usize = 1 << 20;
@@ -481,15 +511,25 @@ pub struct DiskThread {
 }
 
 impl DiskThread {
-    /// Spawns the disk worker with a bounded request queue.
+    /// Spawns the disk worker with a bounded request queue and default limits.
     pub fn spawn(queue_capacity: usize) -> Result<Self, StorageError> {
+        Self::spawn_with(queue_capacity, DEFAULT_MAX_OPEN_FILES, DEFAULT_IDLE_TIMEOUT)
+    }
+
+    /// Spawns the disk worker with an explicit open-file budget and idle
+    /// timeout. Pool workers use this so `storage.max_open_files` is real.
+    pub fn spawn_with(
+        queue_capacity: usize,
+        max_open_files: usize,
+        idle_timeout: Duration,
+    ) -> Result<Self, StorageError> {
         let capacity = queue_capacity.max(1);
         let (tx, rx) = mpsc::sync_channel(capacity);
         let stats = Arc::new(StatsInner::default());
 
         let mut manager = FileManager::new();
-        manager.set_max_open_files(DEFAULT_MAX_OPEN_FILES);
-        manager.set_close_idle_secs(DEFAULT_IDLE_TIMEOUT.as_secs());
+        manager.set_max_open_files(max_open_files.max(1));
+        manager.set_close_idle_secs(idle_timeout.as_secs());
         let file_stats = manager.stats_handle();
 
         let worker_stats = Arc::clone(&stats);
@@ -1674,32 +1714,86 @@ impl DiskWorker {
     }
 }
 
-static GLOBAL_DISK_THREAD: OnceLock<Option<Arc<DiskThread>>> = OnceLock::new();
+static GLOBAL_DISK_POOL: OnceLock<Option<Arc<DiskPool>>> = OnceLock::new();
 
-/// Lazily-created process-wide disk thread.
-pub fn global_disk_thread() -> Option<Arc<DiskThread>> {
-    GLOBAL_DISK_THREAD
-        .get_or_init(|| DiskThread::spawn(DEFAULT_DISK_QUEUE).ok().map(Arc::new))
+/// Creates the process-wide pool with explicit settings.
+///
+/// Must run before the first download is constructed: `EngineDownload::new`
+/// captures its shard at construction so a torrent's writes and its hash pass
+/// always use the same worker. Returns `false` when the pool already exists
+/// (including the lazy default created by `global_disk_pool`).
+pub fn init_global_disk_pool(config: DiskPoolConfig) -> bool {
+    if GLOBAL_DISK_POOL.get().is_some() {
+        return false;
+    }
+    match DiskPool::new(config) {
+        Ok(pool) => GLOBAL_DISK_POOL.set(Some(pool)).is_ok(),
+        Err(err) => {
+            tracing::error!(error = %err, "Could not create the disk worker pool");
+            false
+        }
+    }
+}
+
+/// True once the process-wide pool exists, without creating it.
+///
+/// Configuration commands must use this instead of [`global_disk_pool`],
+/// which would create the pool as a side effect and lock the configuration.
+pub fn global_disk_pool_initialized() -> bool {
+    GLOBAL_DISK_POOL.get().is_some()
+}
+
+/// Lazily-created process-wide pool.
+pub fn global_disk_pool() -> Option<Arc<DiskPool>> {
+    GLOBAL_DISK_POOL
+        .get_or_init(|| match DiskPool::new(DiskPoolConfig::default()) {
+            Ok(pool) => Some(pool),
+            Err(err) => {
+                tracing::error!(error = %err, "Could not create the disk worker pool");
+                None
+            }
+        })
         .clone()
 }
 
-/// Snapshot of the global disk worker's [`FileManager`] counters, if the
-/// worker has already been created.
+/// Worker 0, kept for statistics/legacy callers.
 ///
-/// Unlike [`global_disk_thread`] this never spawns a worker just to read
+/// Per-download work must use [`global_disk_thread_for`] so one torrent is
+/// never split across workers.
+pub fn global_disk_thread() -> Option<Arc<DiskThread>> {
+    global_disk_pool().and_then(|pool| pool.workers().first().cloned())
+}
+
+/// Shard that owns every operation for `hash`.
+pub fn global_disk_thread_for(hash: &HashString) -> Option<Arc<DiskThread>> {
+    global_disk_pool().map(|pool| pool.thread_for(hash))
+}
+
+/// Aggregated counters across all workers, or `None` before the pool exists.
+pub fn global_disk_stats() -> Option<DiskThreadStats> {
+    GLOBAL_DISK_POOL
+        .get()
+        .and_then(|pool| pool.as_ref())
+        .map(|pool| pool.stats())
+}
+
+/// Snapshot of the global pool's [`FileManager`] counters, if the pool has
+/// already been created.
+///
+/// Unlike [`global_disk_pool`] this never spawns workers just to read
 /// statistics, so command handlers can poll it cheaply. Public path:
 /// `lt_storage::disk_thread::global_file_manager_stats`.
 pub fn global_file_manager_stats() -> Option<FileManagerStats> {
-    GLOBAL_DISK_THREAD
+    GLOBAL_DISK_POOL
         .get()
-        .and_then(|thread| thread.as_ref())
-        .map(|thread| thread.file_stats())
+        .and_then(|pool| pool.as_ref())
+        .map(|pool| pool.file_manager_stats())
 }
 
-/// Flushes and stops the process-wide disk thread, if it was created.
+/// Flushes and stops every worker in the process-wide pool, if it exists.
 pub fn shutdown_global_disk_thread() {
-    if let Some(thread) = GLOBAL_DISK_THREAD.get().and_then(|opt| opt.as_ref()) {
-        thread.shutdown();
+    if let Some(pool) = GLOBAL_DISK_POOL.get().and_then(|pool| pool.as_ref()) {
+        pool.shutdown();
     }
 }
 
