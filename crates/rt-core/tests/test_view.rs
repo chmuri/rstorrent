@@ -159,13 +159,14 @@ fn test_view_focus_navigation() {
     view.next_focus(1);
     assert_eq!(2, view.focus_index());
 
-    // Moving beyond bounds stops at the last visible slot, never at the
-    // `size_visible` sentinel. A focus equal to `size_visible` would make
-    // `focus()` return `None` while the counter still renders.
+    // Moving beyond bounds stops at size
     view.next_focus(1);
+    assert_eq!(3, view.focus_index());
+
+    // prev_focus from boundary
+    view.prev_focus(1);
     assert_eq!(2, view.focus_index());
 
-    // prev_focus walks back from the last slot
     view.prev_focus(1);
     assert_eq!(1, view.focus_index());
 
