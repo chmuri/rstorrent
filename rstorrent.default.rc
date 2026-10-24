@@ -18,3 +18,11 @@ network.scgi.open_port = 0.0.0.0:5000
 
 # 2. SCGI over UNIX Domain Socket (accessible via shared /session volume)
 network.scgi.open_local = /session/rtorrent.sock
+
+# Storage workers. Values are read once at startup; restart to apply.
+# Hash reads bypass the disk workers, so concurrent hashing is bounded by
+# storage.hash_concurrency, not by storage.disk_threads.
+# storage.disk_threads = 1        # 4 on a dedicated NVMe setup
+# storage.max_open_files = 64     # per worker
+# storage.hash_concurrency = 4    # default min(4, CPU cores)
+# storage.load_threads = 4        # default min(4, CPU cores)
