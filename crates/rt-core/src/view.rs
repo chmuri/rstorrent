@@ -3,6 +3,7 @@ use lt_common::hash_string::HashString;
 use lt_common::Object;
 use rt_rpc::parse_commands::parse_command;
 use rt_rpc::{CommandMap, Target};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 pub type SlotChanged = Box<dyn Fn() + Send + Sync>;
@@ -10,6 +11,9 @@ pub type SlotChanged = Box<dyn Fn() + Send + Sync>;
 pub struct View {
     name: String,
     downloads: Vec<Arc<RwLock<Download>>>,
+    /// Hash -> position in `downloads`. Rebuilt whenever the vector is
+    /// reordered or partitioned.
+    index: HashMap<HashString, usize>,
     size_visible: usize,
     focus: usize,
 
@@ -35,6 +39,7 @@ impl View {
         Self {
             name: String::new(),
             downloads: Vec::new(),
+            index: HashMap::new(),
             size_visible: 0,
             focus: 0,
             filter: Object::create_empty(),
@@ -95,11 +100,11 @@ impl View {
     }
 
     pub fn set_focus_index(&mut self, idx: usize) {
-        if self.size_visible == 0 {
-            self.focus = 0;
+        self.focus = if self.size_visible == 0 {
+            0
         } else {
-            self.focus = idx.min(self.size_visible);
-        }
+            idx.min(self.size_visible - 1)
+        };
         self.emit_changed();
     }
 
@@ -109,9 +114,8 @@ impl View {
         }
         if self.focus >= self.size_visible {
             self.focus = 0;
-        } else {
-            self.focus = (self.focus + count).min(self.size_visible);
         }
+        self.focus = self.focus.saturating_add(count).min(self.size_visible - 1);
         self.emit_changed();
     }
 
@@ -120,10 +124,11 @@ impl View {
             return;
         }
         if self.focus == 0 {
-            self.focus = self.size_visible.saturating_sub(1);
+            self.focus = self.size_visible - 1;
         } else {
             self.focus = self.focus.saturating_sub(count);
         }
+        self.focus = self.focus.min(self.size_visible - 1);
         self.emit_changed();
     }
 
@@ -154,77 +159,83 @@ impl View {
 
     pub fn insert(&mut self, download: Arc<RwLock<Download>>) {
         let hash = *download.read().unwrap().info_hash();
-        if self
-            .downloads
-            .iter()
-            .any(|d| *d.read().unwrap().info_hash() == hash)
-        {
+        if self.index.contains_key(&hash) {
             return;
         }
         self.downloads.push(download);
+        self.index.insert(hash, self.downloads.len() - 1);
         self.emit_changed();
     }
 
     pub fn erase(&mut self, hash: &HashString, map: Option<&CommandMap>) {
-        if let Some(pos) = self
-            .downloads
-            .iter()
-            .position(|d| *d.read().unwrap().info_hash() == *hash)
-        {
-            let is_vis = pos < self.size_visible;
-            let dl = self.downloads.remove(pos);
-
-            if is_vis {
-                self.size_visible = self.size_visible.saturating_sub(1);
-                if self.focus > pos {
-                    self.focus = self.focus.saturating_sub(1);
-                }
-                self.focus = self.focus.min(self.size_visible);
-
-                if let Some(m) = map {
-                    self.call_event(&self.event_removed, &dl, m);
-                }
-            }
-            self.emit_changed();
+        let Some(&pos) = self.index.get(hash) else {
+            return;
+        };
+        if pos >= self.downloads.len() {
+            return;
         }
-    }
 
-    pub fn set_visible(&mut self, hash: &HashString, map: Option<&CommandMap>) {
-        if let Some(filtered_idx) = self.downloads[self.size_visible..]
-            .iter()
-            .position(|d| *d.read().unwrap().info_hash() == *hash)
-        {
-            let actual_idx = self.size_visible + filtered_idx;
-            let dl = self.downloads.remove(actual_idx);
-            self.downloads.insert(self.size_visible, Arc::clone(&dl));
-            self.size_visible += 1;
+        let is_vis = pos < self.size_visible;
+        let dl = self.downloads.remove(pos);
+        self.index.remove(hash);
 
-            if let Some(m) = map {
-                self.call_event(&self.event_added, &dl, m);
-            }
-            self.emit_changed();
-        }
-    }
-
-    pub fn set_not_visible(&mut self, hash: &HashString, map: Option<&CommandMap>) {
-        if let Some(vis_idx) = self.downloads[..self.size_visible]
-            .iter()
-            .position(|d| *d.read().unwrap().info_hash() == *hash)
-        {
-            let dl = self.downloads.remove(vis_idx);
+        if is_vis {
             self.size_visible = self.size_visible.saturating_sub(1);
-            if self.focus > vis_idx {
+            if self.focus > pos {
                 self.focus = self.focus.saturating_sub(1);
             }
-            self.focus = self.focus.min(self.size_visible);
-
-            self.downloads.push(Arc::clone(&dl));
 
             if let Some(m) = map {
                 self.call_event(&self.event_removed, &dl, m);
             }
-            self.emit_changed();
         }
+
+        self.reindex_from(pos);
+        self.clamp_focus();
+        self.emit_changed();
+    }
+
+    pub fn set_visible(&mut self, hash: &HashString, map: Option<&CommandMap>) {
+        let Some(&actual_idx) = self.index.get(hash) else {
+            return;
+        };
+        if actual_idx < self.size_visible {
+            return;
+        }
+
+        let dl = self.downloads.remove(actual_idx);
+        self.downloads.insert(self.size_visible, Arc::clone(&dl));
+        self.size_visible += 1;
+        self.reindex_from(self.size_visible - 1);
+
+        if let Some(m) = map {
+            self.call_event(&self.event_added, &dl, m);
+        }
+        self.emit_changed();
+    }
+
+    pub fn set_not_visible(&mut self, hash: &HashString, map: Option<&CommandMap>) {
+        let Some(&vis_idx) = self.index.get(hash) else {
+            return;
+        };
+        if vis_idx >= self.size_visible {
+            return;
+        }
+
+        let dl = self.downloads.remove(vis_idx);
+        self.size_visible = self.size_visible.saturating_sub(1);
+        if self.focus > vis_idx {
+            self.focus = self.focus.saturating_sub(1);
+        }
+
+        self.downloads.push(Arc::clone(&dl));
+        self.reindex_from(vis_idx);
+        self.clamp_focus();
+
+        if let Some(m) = map {
+            self.call_event(&self.event_removed, &dl, m);
+        }
+        self.emit_changed();
     }
 
     // Setters for commands
@@ -361,7 +372,8 @@ impl View {
 
         self.downloads = new_downloads;
         self.size_visible = new_size_visible;
-        self.focus = self.focus.min(self.size_visible);
+        self.clamp_focus();
+        self.reindex_all();
 
         if let Some(m) = map {
             for dl in &non_matching_visible {
@@ -395,7 +407,34 @@ impl View {
             }
         }
 
+        self.clamp_focus();
+        self.reindex_all();
         self.emit_changed();
+    }
+
+    /// Repairs index entries whose position shifted after a single move.
+    fn reindex_from(&mut self, start: usize) {
+        for position in start..self.downloads.len() {
+            let hash = *self.downloads[position].read().unwrap().info_hash();
+            self.index.insert(hash, position);
+        }
+    }
+
+    /// Rebuilds the whole index after a reorder or partition change.
+    fn reindex_all(&mut self) {
+        self.index.clear();
+        self.index.reserve(self.downloads.len());
+        self.reindex_from(0);
+    }
+
+    /// Keeps focus on a real visible slot (`0..size_visible`), or `0` when the
+    /// visible partition is empty.
+    fn clamp_focus(&mut self) {
+        self.focus = if self.size_visible == 0 {
+            0
+        } else {
+            self.focus.min(self.size_visible - 1)
+        };
     }
 
     fn call_event(&self, event_cmd: &Object, dl: &Arc<RwLock<Download>>, map: &CommandMap) {

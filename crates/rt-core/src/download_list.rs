@@ -1,5 +1,6 @@
 use crate::download::Download;
 use lt_common::hash_string::HashString;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
@@ -8,6 +9,9 @@ pub type DownloadEventListener = Arc<dyn Fn(&str, &Arc<RwLock<Download>>) + Send
 #[derive(Default)]
 pub struct DownloadList {
     downloads: Vec<Arc<RwLock<Download>>>,
+    /// Hash -> position in `downloads`. Kept in sync by every mutating method
+    /// so duplicate detection and lookup do not scan the whole list.
+    index: HashMap<HashString, usize>,
     listeners: Vec<DownloadEventListener>,
 }
 
@@ -15,6 +19,7 @@ impl DownloadList {
     pub fn new() -> Self {
         Self {
             downloads: Vec::new(),
+            index: HashMap::new(),
             listeners: Vec::new(),
         }
     }
@@ -62,12 +67,13 @@ impl DownloadList {
             d_guard.close();
         }
         self.downloads.clear();
+        self.index.clear();
     }
 
     pub fn find(&self, hash: &HashString) -> Option<Arc<RwLock<Download>>> {
-        self.downloads
-            .iter()
-            .find(|d| d.read().unwrap().info_hash() == hash)
+        self.index
+            .get(hash)
+            .and_then(|&position| self.downloads.get(position))
             .cloned()
     }
 
@@ -82,22 +88,19 @@ impl DownloadList {
 
     pub fn insert(&mut self, download: Arc<RwLock<Download>>) -> bool {
         let hash = *download.read().unwrap().info_hash();
-        if self.find(&hash).is_some() {
+        if self.index.contains_key(&hash) {
             return false;
         }
 
         self.downloads.push(Arc::clone(&download));
+        self.index.insert(hash, self.downloads.len() - 1);
         self.emit("event.download.inserted", &download);
         true
     }
 
     pub fn erase(&mut self, hash: &HashString) -> Option<Arc<RwLock<Download>>> {
-        let pos = self
-            .downloads
-            .iter()
-            .position(|d| d.read().unwrap().info_hash() == hash)?;
-
-        let download = self.downloads[pos].clone();
+        let position = *self.index.get(hash)?;
+        let download = self.downloads.get(position).cloned()?;
         let (already_erasing, was_active, was_open) = {
             let guard = download.read().unwrap();
             (guard.is_erasing(), guard.is_active(), guard.is_open())
@@ -115,7 +118,9 @@ impl DownloadList {
             d_guard.erase();
         }
 
-        self.downloads.remove(pos);
+        self.downloads.remove(position);
+        self.index.remove(hash);
+        self.reindex_from(position);
 
         if was_active {
             self.emit("event.download.paused", &download);
@@ -130,6 +135,14 @@ impl DownloadList {
     pub fn erase_hex(&mut self, hash: &str) -> Option<Arc<RwLock<Download>>> {
         let key = HashString::from_hex(hash)?;
         self.erase(&key)
+    }
+
+    /// Repairs index entries whose position shifted after a removal.
+    fn reindex_from(&mut self, start: usize) {
+        for position in start..self.downloads.len() {
+            let hash = *self.downloads[position].read().unwrap().info_hash();
+            self.index.insert(hash, position);
+        }
     }
 
     /// Opens a download, emitting `event.download.opened` only on the first
