@@ -39,6 +39,21 @@ fn hash_concurrency_rejects_out_of_range_values() {
 }
 
 #[test]
+fn load_threads_reads_and_writes() {
+    let (map, _list) = registry();
+
+    call(&map, "storage.load_threads.set", Object::from(3i64)).unwrap();
+    let value = call(&map, "storage.load_threads", Object::create_empty())
+        .unwrap()
+        .as_value()
+        .unwrap();
+    assert_eq!(value, 3);
+
+    assert!(call(&map, "storage.load_threads.set", Object::from(0i64)).is_err());
+    assert!(call(&map, "storage.load_threads.set", Object::from(65i64)).is_err());
+}
+
+#[test]
 fn hash_concurrency_cannot_change_after_the_pool_is_created() {
     let (map, list) = registry();
     // First recheck creates the pool.
