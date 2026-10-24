@@ -4,6 +4,7 @@ pub mod commands;
 pub mod download;
 pub mod download_factory;
 pub mod download_list;
+pub mod hash_scheduler;
 pub mod manager;
 pub mod network_runtime;
 pub mod session;

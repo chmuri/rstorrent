@@ -723,10 +723,9 @@ pub fn register_download_commands(
         "d.check_hash",
         move |target, _obj| {
             let dl = get_download(target, &dl_check)?;
-            let dl_list = Arc::clone(&dl_check);
-            std::thread::spawn(move || {
-                dl_list.read().unwrap().check_hash(&dl);
-            });
+            // Queues the pass on the bounded scheduler; it never blocks on the
+            // hash itself, so the request thread can return immediately.
+            dl_check.read().unwrap().check_hash(&dl);
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,

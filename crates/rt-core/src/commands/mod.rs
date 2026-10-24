@@ -14,6 +14,7 @@ pub mod protocol;
 pub mod ratio;
 pub mod scheduler;
 pub mod session;
+pub mod storage;
 pub mod string;
 pub mod system;
 pub mod throttle;
@@ -34,6 +35,7 @@ use self::peer::register_peer_commands;
 use self::pieces::register_pieces_commands;
 use self::protocol::register_protocol_commands;
 use self::ratio::register_ratio_commands;
+use self::storage::register_storage_commands;
 use self::string::register_string_commands;
 use self::system::register_system_commands;
 use self::throttle::{register_throttle_commands, ThrottleManager};
@@ -90,6 +92,7 @@ pub fn initialize_builtin_commands(
     // the runtime-aware versions (statistics, node/bootstrap/refresh control).
     register_dht_commands(map, dht_config)?;
     register_download_commands(map, Arc::clone(&download_list), Arc::clone(&view_manager))?;
+    register_storage_commands(map, Arc::clone(&download_list))?;
     register_file_commands(map, Arc::clone(&download_list))?;
     register_peer_commands(map, Arc::clone(&download_list))?;
 
