@@ -19,8 +19,8 @@ use crate::download_factory::DownloadFactory;
 
 pub use manager::{SessionCommitEntry, SessionManager};
 pub use storer::{
-    get_formatted_entries, is_correct_format, load_resume_file, recover_staged_entries,
-    DirectoryEntry, DownloadStorer, SessionEntry,
+    gen_session, get_formatted_entries, is_correct_format, load_resume_file,
+    recover_staged_entries, DirectoryEntry, DownloadStorer, SessionEntry, SessionPaths,
 };
 
 /// Per-file decisions made while validating persisted resume data.
