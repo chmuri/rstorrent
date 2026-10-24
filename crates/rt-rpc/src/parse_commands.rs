@@ -82,9 +82,29 @@ pub fn parse_command<'a>(
     map: &CommandMap,
     trusted: bool,
 ) -> Result<(Object, &'a str), RpcError> {
+    let (key, mut args, rest) = parse_command_spec(s)?;
+    if key.is_empty() {
+        return Ok((Object::create_empty(), rest));
+    }
+
+    parse_command_execute(target, &mut args, map, trusted)?;
+
+    let result = map.call_command(key, &args, target, trusted)?;
+    Ok((result, rest))
+}
+
+/// Parses `name = arguments` without evaluating or calling the command.
+///
+/// Hot loops such as `d.multicall2` parse each column once and then dispatch
+/// the prepared name/arguments for every target, instead of re-parsing the
+/// same string `rows x columns` times.
+///
+/// Returns the command name (empty for blank or comment input), the parsed
+/// argument object, and the unconsumed remainder.
+pub fn parse_command_spec(s: &str) -> Result<(&str, Object, &str), RpcError> {
     let trimmed = parse_skip_wspace(s);
     if trimmed.is_empty() || trimmed.starts_with('#') {
-        return Ok((Object::create_empty(), trimmed));
+        return Ok(("", Object::create_empty(), trimmed));
     }
 
     let (key, rest) = parse_command_name(trimmed)?;
@@ -98,7 +118,7 @@ pub fn parse_command<'a>(
     }
 
     let after_eq = &after_key[1..];
-    let (mut args, after_args) = parse_whole_list(after_eq, parse_is_delim_command, 0)?;
+    let (args, after_args) = parse_whole_list(after_eq, parse_is_delim_command, 0)?;
 
     let mut current_rest = parse_skip_wspace(after_args);
     if !current_rest.is_empty() {
@@ -109,10 +129,7 @@ pub fn parse_command<'a>(
         current_rest = &current_rest[first_char.len_utf8()..];
     }
 
-    parse_command_execute(target, &mut args, map, trusted)?;
-
-    let result = map.call_command(key, &args, target, trusted)?;
-    Ok((result, current_rest))
+    Ok((key, args, current_rest))
 }
 
 pub fn parse_command_multiple(
