@@ -30,7 +30,9 @@ fn concurrency_never_exceeds_the_worker_count() {
         })));
     }
 
-    wait_until(|| completed.load(Ordering::SeqCst) == 20);
+    wait_until(|| {
+        completed.load(Ordering::SeqCst) == 20 && scheduler.active() == 0 && scheduler.queued() == 0
+    });
     assert!(
         scheduler.peak() <= 2,
         "peak concurrency {} exceeded the pool size",
@@ -52,7 +54,7 @@ fn a_single_worker_runs_jobs_strictly_one_at_a_time() {
         })));
     }
 
-    wait_until(|| completed.load(Ordering::SeqCst) == 10);
+    wait_until(|| completed.load(Ordering::SeqCst) == 10 && scheduler.active() == 0);
     assert_eq!(scheduler.peak(), 1);
 }
 
@@ -68,7 +70,7 @@ fn every_queued_job_runs() {
         })));
     }
 
-    wait_until(|| completed.load(Ordering::SeqCst) == 500);
+    wait_until(|| completed.load(Ordering::SeqCst) == 500 && scheduler.active() == 0);
 }
 
 #[test]
@@ -96,7 +98,7 @@ fn jobs_can_be_submitted_from_several_threads() {
     for _ in 0..8 {
         done_rx.recv_timeout(Duration::from_secs(30)).unwrap();
     }
-    wait_until(|| completed.load(Ordering::SeqCst) == 200);
+    wait_until(|| completed.load(Ordering::SeqCst) == 200 && scheduler.active() == 0);
     assert!(scheduler.peak() <= 3);
 }
 
@@ -111,7 +113,7 @@ fn a_panicking_job_does_not_kill_the_worker() {
         ran_clone.fetch_add(1, Ordering::SeqCst);
     })));
 
-    wait_until(|| ran.load(Ordering::SeqCst) == 1);
+    wait_until(|| ran.load(Ordering::SeqCst) == 1 && scheduler.active() == 0);
 }
 
 #[test]
