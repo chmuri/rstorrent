@@ -1,5 +1,6 @@
 services:
   rstorrent:
+    image: ghcr.io/chmuri/rstorrent:latest
     build:
       context: .
       dockerfile: Dockerfile

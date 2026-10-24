@@ -1,6 +1,7 @@
 # rstorrent
 
 [![CI](https://github.com/chmuri/rstorrent/actions/workflows/ci.yml/badge.svg)](https://github.com/chmuri/rstorrent/actions/workflows/ci.yml)
+[![Docker](https://github.com/chmuri/rstorrent/actions/workflows/docker.yml/badge.svg)](https://github.com/chmuri/rstorrent/pkgs/container/rstorrent)
 [![Release](https://github.com/chmuri/rstorrent/actions/workflows/release.yml/badge.svg)](https://github.com/chmuri/rstorrent/releases)
 [![License: GPL v2+](https://img.shields.io/badge/License-GPL%20v2%2B-blue.svg)](LICENSE)
 [![Rust: 2021](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
@@ -151,15 +152,20 @@ to produce the numbers above.
 
 ### 1. Using Docker Compose (Recommended)
 
-The easiest way to run `rstorrent` along with the modern **Flood Web UI**:
+The easiest way to run `rstorrent` using the pre-built image from GitHub Container Registry (`ghcr.io/chmuri/rstorrent:latest`) along with the modern **Flood Web UI**:
 
 ```bash
 # Clone the repository
 git clone https://github.com/chmuri/rstorrent.git
 cd rstorrent
 
-# Build and start services
+# Start services (pulls pre-built ghcr.io image automatically)
 docker compose up -d
+```
+
+You can also pull the container image directly:
+```bash
+docker pull ghcr.io/chmuri/rstorrent:latest
 ```
 
 - **Flood Web UI**: Open [http://localhost:3000](http://localhost:3000) in your browser.

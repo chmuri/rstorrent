@@ -8,7 +8,23 @@ Komunikacja między panelem Flood a rTorrentem odbywa się za pomocą natywnego 
 
 ## 🚀 Szybki start
 
-Aby zbudować obraz rTorrenta i uruchomić cały stos w tle:
+### Opcja A: Gotowy obraz z GitHub Container Registry (zalecane)
+
+Możesz uruchomić gotowy stos bez konieczności kompilowania kodu:
+
+```bash
+docker compose up -d
+```
+*(Docker Compose automatycznie pobierze gotowy obraz `ghcr.io/chmuri/rstorrent:latest`)*
+
+Możesz też pobrać obraz bezpośrednio poleceniem `docker pull`:
+```bash
+docker pull ghcr.io/chmuri/rstorrent:latest
+```
+
+### Opcja B: Budowanie ze źródeł lokalnie
+
+Aby samodzielnie zbudować obraz rTorrenta ze źródeł w repozytorium i uruchomić stos:
 
 ```bash
 docker compose up -d --build
