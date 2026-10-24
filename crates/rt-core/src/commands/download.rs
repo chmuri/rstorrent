@@ -802,9 +802,20 @@ pub fn register_download_commands(
         "d.check_hash",
         move |target, _obj| {
             let dl = get_download(target, &dl_check)?;
-            // Queues the pass on the bounded scheduler; it never blocks on the
-            // hash itself, so the request thread can return immediately.
-            dl_check.read().unwrap().check_hash(&dl);
+            // Run the pass on the bounded scheduler. `check_hash` itself is
+            // synchronous (tests and the engine rely on that), so the RPC
+            // thread must not call it directly or one large torrent would
+            // block the connection for minutes.
+            let list = Arc::clone(&dl_check);
+            let scheduler = list.read().unwrap().hash_scheduler();
+            let queued = scheduler.submit(Box::new(move || {
+                list.read().unwrap().check_hash(&dl);
+            }));
+            if !queued {
+                return Err(RpcError::InternalError(
+                    "hash scheduler is shutting down".into(),
+                ));
+            }
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,
