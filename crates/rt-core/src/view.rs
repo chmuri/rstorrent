@@ -100,11 +100,11 @@ impl View {
     }
 
     pub fn set_focus_index(&mut self, idx: usize) {
-        self.focus = if self.size_visible == 0 {
-            0
+        if self.size_visible == 0 {
+            self.focus = 0;
         } else {
-            idx.min(self.size_visible - 1)
-        };
+            self.focus = idx.min(self.size_visible);
+        }
         self.emit_changed();
     }
 
@@ -114,8 +114,9 @@ impl View {
         }
         if self.focus >= self.size_visible {
             self.focus = 0;
+        } else {
+            self.focus = (self.focus + count).min(self.size_visible);
         }
-        self.focus = self.focus.saturating_add(count).min(self.size_visible - 1);
         self.emit_changed();
     }
 
@@ -124,11 +125,10 @@ impl View {
             return;
         }
         if self.focus == 0 {
-            self.focus = self.size_visible - 1;
+            self.focus = self.size_visible.saturating_sub(1);
         } else {
             self.focus = self.focus.saturating_sub(count);
         }
-        self.focus = self.focus.min(self.size_visible - 1);
         self.emit_changed();
     }
 
@@ -184,6 +184,7 @@ impl View {
             if self.focus > pos {
                 self.focus = self.focus.saturating_sub(1);
             }
+            self.focus = self.focus.min(self.size_visible);
 
             if let Some(m) = map {
                 self.call_event(&self.event_removed, &dl, m);
@@ -191,7 +192,6 @@ impl View {
         }
 
         self.reindex_from(pos);
-        self.clamp_focus();
         self.emit_changed();
     }
 
@@ -227,10 +227,10 @@ impl View {
         if self.focus > vis_idx {
             self.focus = self.focus.saturating_sub(1);
         }
+        self.focus = self.focus.min(self.size_visible);
 
         self.downloads.push(Arc::clone(&dl));
         self.reindex_from(vis_idx);
-        self.clamp_focus();
 
         if let Some(m) = map {
             self.call_event(&self.event_removed, &dl, m);
@@ -372,7 +372,7 @@ impl View {
 
         self.downloads = new_downloads;
         self.size_visible = new_size_visible;
-        self.clamp_focus();
+        self.focus = self.focus.min(self.size_visible);
         self.reindex_all();
 
         if let Some(m) = map {
@@ -407,7 +407,6 @@ impl View {
             }
         }
 
-        self.clamp_focus();
         self.reindex_all();
         self.emit_changed();
     }
@@ -425,16 +424,6 @@ impl View {
         self.index.clear();
         self.index.reserve(self.downloads.len());
         self.reindex_from(0);
-    }
-
-    /// Keeps focus on a real visible slot (`0..size_visible`), or `0` when the
-    /// visible partition is empty.
-    fn clamp_focus(&mut self) {
-        self.focus = if self.size_visible == 0 {
-            0
-        } else {
-            self.focus.min(self.size_visible - 1)
-        };
     }
 
     fn call_event(&self, event_cmd: &Object, dl: &Arc<RwLock<Download>>, map: &CommandMap) {

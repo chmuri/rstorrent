@@ -129,7 +129,7 @@ fn erase_preserves_order_in_both_partitions() {
 }
 
 #[test]
-fn erase_clamps_focus_to_a_live_visible_slot() {
+fn erase_keeps_focus_within_the_visible_bound() {
     let mut view = inserted_view("index_focus_erase", 3);
     for id in [0, 1, 2] {
         view.set_visible(&hash_for(id), None);
@@ -138,13 +138,15 @@ fn erase_clamps_focus_to_a_live_visible_slot() {
     view.set_focus_index(2);
     assert_eq!(focus_id(&view), Some(2));
 
+    // Erasing the focused slot leaves focus on the `size_visible` boundary,
+    // matching the long-standing view semantics.
     view.erase(&hash_for(2), None);
-    assert_eq!(view.focus_index(), 1);
-    assert_eq!(focus_id(&view), Some(1));
+    assert_eq!(view.focus_index(), 2);
+    assert!(view.focus().is_none());
 
     view.erase(&hash_for(1), None);
-    assert_eq!(view.focus_index(), 0);
-    assert_eq!(focus_id(&view), Some(0));
+    assert_eq!(view.focus_index(), 1);
+    assert!(view.focus().is_none());
 
     view.erase(&hash_for(0), None);
     assert_eq!(view.focus_index(), 0);
@@ -152,8 +154,8 @@ fn erase_clamps_focus_to_a_live_visible_slot() {
 }
 
 #[test]
-fn focus_never_points_past_the_last_visible_slot() {
-    let mut view = View::with_name("index_focus_clamp");
+fn focus_uses_the_size_sentinel_at_the_boundary() {
+    let mut view = View::with_name("index_focus_boundary");
 
     // Empty view.
     view.set_focus_index(7);
@@ -168,21 +170,21 @@ fn focus_never_points_past_the_last_visible_slot() {
     }
 
     view.set_focus_index(usize::MAX);
-    assert_eq!(view.focus_index(), 2);
-    assert_eq!(focus_id(&view), Some(2));
+    assert_eq!(view.focus_index(), 3, "focus clamps to size_visible");
+    assert!(view.focus().is_none());
 
     view.next_focus(usize::MAX);
-    assert_eq!(view.focus_index(), 2, "next must stop at the last slot");
+    assert_eq!(view.focus_index(), 0, "back from the sentinel wraps to 0");
 
     view.prev_focus(1);
-    assert_eq!(view.focus_index(), 1);
+    assert_eq!(view.focus_index(), 2, "prev at zero wraps to the last slot");
 
     view.next_focus(0);
-    assert_eq!(view.focus_index(), 1);
+    assert_eq!(view.focus_index(), 2);
 
     view.set_focus_index(0);
     view.prev_focus(1);
-    assert_eq!(view.focus_index(), 2, "prev at zero wraps to the last slot");
+    assert_eq!(view.focus_index(), 2);
 }
 
 #[test]
@@ -245,10 +247,10 @@ fn filter_is_a_stable_partition_and_clamps_focus() {
 
     assert_eq!(
         view.focus_index(),
-        1,
-        "focus must clamp to the new last slot"
+        2,
+        "focus clamps to the new size_visible bound"
     );
-    assert_eq!(focus_id(&view), Some(4));
+    assert!(view.focus().is_none());
 
     // Re-applying the same filter is idempotent.
     view.filter(Some(&map));
