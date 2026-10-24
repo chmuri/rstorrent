@@ -1219,6 +1219,11 @@ impl Download {
         if !self.metadata.is_meta_download {
             return Err("download already has metadata".into());
         }
+        // The identity is the lookup key in DownloadList/View indexes and in
+        // the session directory, so metadata must never rename the download.
+        if metadata.info_hash != self.metadata.info_hash {
+            return Err("metadata info hash does not match the download".into());
+        }
 
         let num_pieces = metadata.num_pieces;
         let piece_length = metadata.piece_length;
