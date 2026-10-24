@@ -32,6 +32,7 @@ while [[ $# -gt 0 ]]; do
         --recheck-mb) RECHECK_MB=$2; shift 2 ;;
         --out) OUT=$2; shift 2 ;;
         --work) WORK=$2; shift 2 ;;
+        --bin) BIN=$2; shift 2 ;;
         --no-build) NO_BUILD=1; shift ;;
         -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
