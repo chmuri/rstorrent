@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Scalability release: the daemon is now usable with 14,000+ torrents and
+hundreds of concurrent rechecks.
+
+### Added
+
+- **Bounded hash scheduler (`rt-core`)**: rechecks run on a fixed pool
+  (`storage.hash_concurrency`, default min(4, cores)) with a FIFO queue instead
+  of one OS thread per pass. `d.check_hash` queues there instead of blocking the
+  RPC thread.
+- **Sharded disk worker pool (`lt-storage`)**: `storage.disk_threads` workers
+  (default 1), assigned by info hash so a torrent's writes, reads, syncs and
+  hash flush stay on one FIFO queue. Statistics aggregate across workers.
+- **`storage.*` settings**: `disk_threads`, `max_open_files`, `hash_concurrency`
+  and `load_threads`, read at startup. `network.max_open_files` now feeds the
+  same per-worker budget instead of being ignored.
+- **Parallel session restore (`rt-core`)**: torrent/sidecar/resume parsing uses
+  `storage.load_threads` scoped threads, with results inserted in enumeration
+  order so view and event ordering are unchanged.
+- **Benchmark harness (`scripts/bench`)**: startup, lookup, multicall, recheck
+  and disk-throughput measurements against a synthetic session.
+
+### Changed
+
+- **O(1) download lookup (`rt-core`)**: `DownloadList` and every `View` index
+  downloads by info hash instead of scanning. Duplicate detection and lookup no
+  longer grow with the torrent count; insertion order is preserved.
+- **Hash passes flush once (`lt-storage`)**: one `sync_all` before the first
+  piece read instead of one per piece. The engine already flushed before the
+  pass and blocks new writes for its duration.
+- **`d.multicall2` / `d.multicall.filtered` (`rt-core`)**: command columns are
+  parsed once per call, not per (download x column). A 14k-torrent poll drops
+  from ~47 s to ~0.2 s.
+
+### Fixed
+
+- **Nested command trust (`rt-rpc`)**: multicall wrappers resolved inner
+  commands as trusted regardless of the connection, letting an untrusted SCGI
+  client execute privileged commands. Handlers now inherit the caller's trust
+  level.
+- **Metadata identity (`lt-engine`)**: applying metadata with a different info
+  hash is rejected instead of silently changing the download's identity.
+
 ## [0.13.0] - 2026-10-22
 
 Payload-verification and rTorrent-parity release. Magnet links no longer
