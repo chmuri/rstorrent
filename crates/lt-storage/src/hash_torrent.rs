@@ -88,10 +88,10 @@ impl HashTorrent {
 
     /// Serialises hash reads with the disk worker.
     ///
-    /// The worker is flushed before each piece read, which guarantees that all
-    /// writes queued before the pass have reached the filesystem and mirrors
-    /// the legacy `HashCheckQueue` serialisation on the disk thread. A caller
-    /// that owns a [`DiskThread`] should always install it here.
+    /// The worker is flushed once, before the first piece read, so every write
+    /// queued before the pass has reached the filesystem. A caller that owns a
+    /// [`DiskThread`] should always install it here and must keep new writes
+    /// for this torrent out for the duration of the pass.
     pub fn set_disk_thread(&mut self, thread: Option<Arc<DiskThread>>) {
         self.disk_thread = thread;
     }
@@ -197,6 +197,19 @@ impl HashTorrent {
         self.checked.store(0, Ordering::SeqCst);
         self.failed.store(0, Ordering::SeqCst);
 
+        // Flush writes queued before this pass once, not once per piece.
+        // `sync_all` is ordered behind every command already submitted to the
+        // worker, so everything written before the pass is durable before the
+        // first read. New writes for this torrent must stay out for the
+        // duration of the pass (the engine enforces this with
+        // `verification_owns_data`), which is why a per-piece sync added no
+        // guarantee that this one does not.
+        if !pieces.is_empty() {
+            if let Some(thread) = &self.disk_thread {
+                thread.sync_all()?;
+            }
+        }
+
         let mut bitfield = initial.clone();
         let mut checked = 0u32;
         let mut failed = 0u32;
@@ -268,14 +281,6 @@ impl HashTorrent {
         index: u32,
         piece_size: u32,
     ) -> Result<Vec<u8>, StorageError> {
-        // Flush the disk worker before reading. This is the serialisation
-        // point with piece writes: once sync_all returns every write that was
-        // queued before this call is durable, so the read cannot observe a
-        // block that is still being written.
-        if let Some(thread) = &self.disk_thread {
-            thread.sync_all()?;
-        }
-
         let mut buffer = vec![0u8; piece_size as usize];
 
         for segment in piece_segments(
