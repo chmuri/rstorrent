@@ -1,10 +1,20 @@
 use crate::download::Download;
+use crate::hash_scheduler::{HashJob, HashScheduler, HashSchedulerStats};
 use lt_common::hash_string::HashString;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock, RwLock};
 
 pub type DownloadEventListener = Arc<dyn Fn(&str, &Arc<RwLock<Download>>) + Send + Sync>;
+
+/// Default number of concurrent hash passes: enough to keep a few disks busy
+/// without turning a restore into a thread storm.
+pub fn default_hash_concurrency() -> usize {
+    std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
 
 #[derive(Default)]
 pub struct DownloadList {
@@ -13,6 +23,10 @@ pub struct DownloadList {
     /// so duplicate detection and lookup do not scan the whole list.
     index: HashMap<HashString, usize>,
     listeners: Vec<DownloadEventListener>,
+    /// Created on the first recheck, so a process that never hashes never
+    /// pays for the worker threads.
+    hash_scheduler: OnceLock<Arc<HashScheduler>>,
+    hash_concurrency: AtomicUsize,
 }
 
 impl DownloadList {
@@ -21,7 +35,41 @@ impl DownloadList {
             downloads: Vec::new(),
             index: HashMap::new(),
             listeners: Vec::new(),
+            hash_scheduler: OnceLock::new(),
+            hash_concurrency: AtomicUsize::new(default_hash_concurrency()),
         }
+    }
+
+    /// Configured bound on concurrent hash passes.
+    pub fn hash_concurrency(&self) -> usize {
+        match self.hash_concurrency.load(Ordering::Acquire) {
+            0 => default_hash_concurrency(),
+            value => value,
+        }
+    }
+
+    /// Sets the bound. Returns `false` once the pool exists, because the
+    /// worker count cannot change without a restart.
+    pub fn set_hash_concurrency(&self, value: usize) -> bool {
+        if self.hash_scheduler.get().is_some() {
+            return false;
+        }
+        self.hash_concurrency.store(value.max(1), Ordering::Release);
+        true
+    }
+
+    /// Lazily creates the pool with the configured worker count.
+    pub fn hash_scheduler(&self) -> Arc<HashScheduler> {
+        let concurrency = self.hash_concurrency();
+        Arc::clone(
+            self.hash_scheduler
+                .get_or_init(|| HashScheduler::new(concurrency)),
+        )
+    }
+
+    /// Counters for the pool, or `None` while no recheck has run yet.
+    pub fn hash_scheduler_stats(&self) -> Option<HashSchedulerStats> {
+        self.hash_scheduler.get().map(|scheduler| scheduler.stats())
     }
 
     pub fn add_event_listener(&mut self, listener: DownloadEventListener) {
@@ -313,10 +361,10 @@ impl DownloadList {
     /// Starts an asynchronous recheck of the pieces queued by resume
     /// validation or by [`Download::queue_recheck_if_files_exist`].
     ///
-    /// The hash pass itself runs on a worker thread with the engine lock
-    /// released, so the UI can render `HASHING n/m` progress instead of
-    /// freezing. Events are emitted from the worker using a snapshot of the
-    /// listeners taken before the thread starts.
+    /// The pass runs on the bounded [`HashScheduler`] pool, so a restore with
+    /// hundreds of pending rechecks queues work instead of spawning a thread
+    /// per torrent. Events are emitted from the worker using a snapshot of the
+    /// listeners taken before the job is queued.
     fn begin_hash_check(&self, download: &Arc<RwLock<Download>>, was_active: bool, was_done: bool) {
         {
             let mut guard = download.write().unwrap();
@@ -332,12 +380,12 @@ impl DownloadList {
 
         let listeners = self.listeners.clone();
         let worker_download = Arc::clone(download);
-        let spawn_result = std::thread::Builder::new()
-            .name("hash-check".to_string())
-            .spawn(move || run_hash_check_worker(worker_download, listeners, was_active, was_done));
+        let job: HashJob = Box::new(move || {
+            run_hash_check_worker(worker_download, listeners, was_active, was_done);
+        });
 
-        if let Err(err) = spawn_result {
-            tracing::error!(error = %err, "Could not spawn hash check worker");
+        if !self.hash_scheduler().submit(job) {
+            tracing::error!("Could not queue hash check worker");
             let mut guard = download.write().unwrap();
             guard.set_hash_checking(false);
             guard.set_hash_checked(false);
