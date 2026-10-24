@@ -48,6 +48,28 @@ fn magnet_download_can_apply_verified_metadata() {
 }
 
 #[test]
+fn applying_metadata_with_a_different_info_hash_is_rejected() {
+    let (bytes, info_hash) = info_bytes();
+    let uri = format!("magnet:?xt=urn:btih:{}&dn=magnet-dir", info_hash.to_hex());
+    let mut download = Download::new(DownloadConstructor::from_magnet_uri(&uri).unwrap());
+    let original = *download.info_hash();
+
+    let mut other = [0u8; 20];
+    other[0] = 0xAA;
+    let other_hash = HashString::new(other);
+    let mismatched =
+        DownloadConstructor::from_info_bytes(&bytes, other_hash, None, Vec::new()).unwrap();
+    assert_ne!(mismatched.info_hash, original);
+
+    let err = download
+        .apply_metadata(mismatched)
+        .expect_err("metadata must not change the download identity");
+    assert!(err.contains("info hash"), "unexpected error: {err}");
+    assert_eq!(*download.info_hash(), original);
+    assert!(download.is_metadata_download());
+}
+
+#[test]
 fn applying_metadata_to_regular_download_is_rejected() {
     let (bytes, info_hash) = info_bytes();
     let metadata =
