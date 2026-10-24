@@ -4,7 +4,7 @@
 //! `CARGO_PKG_VERSION` so a release bump cannot leave a stale identifier
 //! behind (peer ID, tracker User-Agent, DHT `v`, BEP 10 handshake, RPC).
 
-/// Crate/workspace version, e.g. `0.13.0`.
+/// Crate/workspace version, e.g. `0.14.0`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// HTTP User-Agent sent to trackers and web seeds.
@@ -43,7 +43,7 @@ const fn version_parts() -> (u8, u8, u8) {
 
 /// Azureus-style peer ID prefix `-RS<major><minor:2><patch>-`.
 ///
-/// `0.13.0` becomes `-RS0130-`. The four digits keep the historical
+/// `0.14.0` becomes `-RS0140-`. The four digits keep the historical
 /// `major/minor(2)/patch` layout used by the previous `-RS0100-` value.
 pub const fn peer_id_prefix() -> [u8; 8] {
     let (major, minor, patch) = version_parts();
@@ -55,7 +55,7 @@ pub const fn peer_id_prefix() -> [u8; 8] {
     prefix
 }
 
-/// Compile-time peer ID prefix, e.g. `-RS0130-`.
+/// Compile-time peer ID prefix, e.g. `-RS0140-`.
 pub const PEER_ID_PREFIX: [u8; 8] = peer_id_prefix();
 
 /// Generates a fresh 20-byte peer ID with the versioned prefix.

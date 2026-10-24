@@ -39,12 +39,14 @@ The project contains active implementations for core BitTorrent functionality, a
   - This layer is an important compatibility and integration surface, but it is still best treated as an actively evolving API rather than a fully complete feature-equivalent replacement for the legacy rTorrent toolchain.
 - **Dual Binary Compatibility**:
   - Provides both `rstorrent` and `rtorrent` binaries out of the box for backward compatibility with existing scripts.
+- **Scales to Large Sessions**:
+  - O(1) hash-indexed lookups, parallel session restore, a bounded recheck pool and sharded disk workers keep 14,000+ torrents responsive; see [Performance and scaling](#performance-and-scaling).
 
 ---
 
 ## Architecture & Modular Workspace
 
-`rstorrent` is organized as a clean, highly modular workspace consisting of 14 specialized crates:
+`rstorrent` is organized as a clean, highly modular workspace consisting of 15 specialized crates:
 
 ```
 rstorrent/
@@ -82,6 +84,66 @@ The repository already contains substantial implementations for:
 - and a modular engine/runtime architecture.
 
 However, feature completeness varies by subsystem. Older rTorrent commands, frontends, and edge-case protocol behavior may still be incomplete or require additional compatibility work. The goal is compatibility with the rTorrent ecosystem, but it is not yet safe to assume full protocol or command parity across all known integrations.
+
+---
+
+## Performance and scaling
+
+`rstorrent` is designed to stay responsive with large sessions, not just a
+handful of torrents. On an 8-core host with a local ext4 volume, a synthetic
+session of **14,000 paused torrents** restores in about **1 second** and keeps
+lookups flat:
+
+| Metric | 14,000 torrents |
+|---|---:|
+| Startup to fully restored | ~0.9–1.2 s |
+| RSS | ~145 MB (~10 KB/torrent) |
+| `d.hash` p99 | ~0.2 ms |
+| `d.multicall2` (12 columns) p50 | ~0.2 s |
+| Recheck trigger (`d.check_hash`) | ~3 ms, bounded queue |
+
+How it scales:
+
+- **O(1) lookup** — downloads are indexed by info hash in `DownloadList` and in
+  every view, while insertion order (and therefore view ordering) is preserved.
+- **Parallel restore** — session entries are parsed on a bounded thread pool,
+  then inserted in their original order so events and views stay deterministic.
+- **Bounded rechecks** — hash passes run on a fixed worker pool with a FIFO
+  queue instead of one OS thread per torrent. Triggering a recheck no longer
+  blocks the RPC connection.
+- **Sharded disk I/O** — writes, reads and syncs for a torrent are routed to a
+  dedicated disk worker chosen by info hash, preserving per-torrent FIFO order
+  while letting unrelated torrents proceed in parallel.
+- **One flush per hash pass** — the engine already owns the data during
+  verification, so the pass flushes the disk worker once instead of per piece.
+
+Storage settings are read at startup (restart to apply):
+
+```ini
+# Disk workers. Default 1; raise for concurrent I/O across torrents.
+storage.disk_threads = 1
+
+# Per-worker open-file cache.
+storage.max_open_files = 64
+
+# Concurrent hash passes. Defaults to min(4, CPU cores).
+storage.hash_concurrency = 4
+
+# Session-parse threads during startup. Defaults to min(4, CPU cores).
+storage.load_threads = 4
+
+# Files a hash pass keeps open (64..=1024).
+storage.hash_read_cache = 64
+```
+
+Note that hash reads bypass the disk worker by design: recheck throughput
+follows `storage.hash_concurrency`, while `storage.disk_threads` helps
+concurrent writes, reads and syncs. FUSE/union mounts remain a single
+bottleneck regardless of worker count.
+
+See [docs/scalability.md](docs/scalability.md) for the thread model, descriptor
+budget and invariants, and [`scripts/bench`](scripts/bench) for the harness used
+to produce the numbers above.
 
 ---
 
@@ -240,13 +302,19 @@ dht.port.set = 6881
 # SCGI server for Web UI (Flood / ruTorrent)
 network.scgi.open_port = 0.0.0.0:5000
 network.scgi.open_local = /session/rtorrent.sock
+
+# Storage workers (read at startup)
+storage.disk_threads = 1        # 4 on a dedicated NVMe setup
+storage.max_open_files = 64     # per worker
+storage.hash_concurrency = 4    # default min(4, CPU cores)
+storage.load_threads = 4        # default min(4, CPU cores)
 ```
 
 ---
 
 ## Testing & Quality Assurance
 
-`rstorrent` has an exhaustive test suite covering unit tests, integration tests, fuzz targets, and end-to-end scenarios across all 14 crates:
+`rstorrent` has an exhaustive test suite covering unit tests, integration tests, fuzz targets, and end-to-end scenarios across all 15 crates:
 
 ```bash
 # Run all tests across the workspace
@@ -254,6 +322,9 @@ cargo test --workspace
 
 # Run static checks
 cargo clippy --workspace --all-targets -- -D warnings
+
+# Reproduce the scalability numbers on a synthetic session
+scripts/bench/run_all.sh --count 14000
 ```
 
 ---

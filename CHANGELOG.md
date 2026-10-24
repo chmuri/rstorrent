@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-24
+
 Scalability release: the daemon is now usable with 14,000+ torrents and
 hundreds of concurrent rechecks.
 
@@ -423,7 +425,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.14.0
 [0.13.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.13.0
 [0.12.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.12.0
 [0.11.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.11.0
