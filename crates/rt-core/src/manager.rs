@@ -260,31 +260,19 @@ impl Manager {
             session.path().to_string()
         };
 
+        let outcomes = crate::session::restore_entries(
+            &session_path,
+            &entries,
+            crate::session::load_threads(),
+        );
+
         let mut restored = 0usize;
 
-        for entry in entries {
+        for (index, outcome) in outcomes {
+            let entry = &entries[index];
             let torrent_path = format!("{}{}", session_path, entry.base_name);
-            let expected_hash = &entry.base_name[..40];
 
-            if self
-                .download_list
-                .read()
-                .unwrap()
-                .find_hex(expected_hash)
-                .is_some()
-            {
-                tracing::debug!(
-                    path = %torrent_path,
-                    "Session entry already loaded; skipping duplicate."
-                );
-                continue;
-            }
-
-            let restored_entry = match crate::session::restore_session_entry(
-                &torrent_path,
-                expected_hash,
-                entry.has_torrent,
-            ) {
+            let restored_entry = match outcome {
                 Ok(entry) => entry,
                 Err(err) => {
                     tracing::warn!(

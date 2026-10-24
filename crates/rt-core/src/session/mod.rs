@@ -19,8 +19,8 @@ use crate::download_factory::DownloadFactory;
 
 pub use manager::{SessionCommitEntry, SessionManager};
 pub use storer::{
-    get_formatted_entries, is_correct_format, load_resume_file, recover_staged_entries,
-    DirectoryEntry, DownloadStorer, SessionEntry,
+    get_formatted_entries, get_restorable_entries, is_correct_format, load_resume_file,
+    recover_staged_entries, DirectoryEntry, DownloadStorer, SessionEntry,
 };
 
 /// Per-file decisions made while validating persisted resume data.
@@ -512,4 +512,118 @@ pub fn restore_session_entry(
             "session entry is missing both the .torrent file and a persisted magnet URI",
         )),
     }
+}
+
+/// Default number of threads used to parse session entries at startup.
+pub fn default_load_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+/// Configured restore parallelism, or the platform default when unset.
+pub fn load_threads() -> usize {
+    match LOAD_THREADS.load(std::sync::atomic::Ordering::Acquire) {
+        0 => default_load_threads(),
+        value => value,
+    }
+}
+
+/// Sets restore parallelism for the next restore. Safe to call at any time.
+pub fn set_load_threads(value: usize) {
+    LOAD_THREADS.store(value.max(1), std::sync::atomic::Ordering::Release);
+}
+
+static LOAD_THREADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Restores `entries` with bounded parallelism, preserving `entries` order.
+///
+/// Parsing is dominated by blocking file I/O (torrent decode, sidecar, resume
+/// stream), so it runs on scoped OS threads rather than the async runtime.
+/// Each result is keyed by the original index: callers insert in that order so
+/// view ordering and `event.download.resumed` ordering stay deterministic.
+///
+/// A panicking worker never aborts startup; the entries it owned are returned
+/// as errors and skipped like any other unreadable entry.
+pub fn restore_entries(
+    session_path: &str,
+    entries: &[SessionEntry],
+    load_threads: usize,
+) -> Vec<(usize, io::Result<RestoredSessionDownload>)> {
+    let total = entries.len();
+    if total == 0 {
+        return Vec::new();
+    }
+
+    let threads = load_threads.max(1).min(total);
+    if threads == 1 {
+        return entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (index, restore_entry_at(session_path, entry)))
+            .collect();
+    }
+
+    let chunk = total.div_ceil(threads);
+    let mut outcomes: Vec<Option<io::Result<RestoredSessionDownload>>> =
+        (0..total).map(|_| None).collect();
+
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(threads);
+        for (chunk_index, slice) in entries.chunks(chunk).enumerate() {
+            let base = chunk_index * chunk;
+            handles.push(scope.spawn(move || {
+                slice
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, entry)| (base + offset, restore_entry_at(session_path, entry)))
+                    .collect::<Vec<_>>()
+            }));
+        }
+
+        for handle in handles {
+            match handle.join() {
+                Ok(items) => {
+                    for (index, result) in items {
+                        if let Some(slot) = outcomes.get_mut(index) {
+                            *slot = Some(result);
+                        }
+                    }
+                }
+                Err(_) => {
+                    tracing::error!("session restore worker panicked; its entries are skipped")
+                }
+            }
+        }
+    });
+
+    outcomes
+        .into_iter()
+        .enumerate()
+        .map(|(index, outcome)| {
+            (
+                index,
+                outcome.unwrap_or_else(|| Err(Error::other("session restore worker panicked"))),
+            )
+        })
+        .collect()
+}
+
+fn restore_entry_at(
+    session_path: &str,
+    entry: &SessionEntry,
+) -> io::Result<RestoredSessionDownload> {
+    let torrent_path = if session_path.ends_with('/') {
+        format!("{session_path}{}", entry.base_name)
+    } else {
+        format!("{session_path}/{}", entry.base_name)
+    };
+    let expected_hash = entry.base_name.get(..40).ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidData,
+            "session entry name is shorter than an info hash",
+        )
+    })?;
+    restore_session_entry(&torrent_path, expected_hash, entry.has_torrent)
 }

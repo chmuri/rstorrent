@@ -55,5 +55,30 @@ pub fn register_storage_commands(
         "Maximum number of concurrent hash passes.",
     )?;
 
+    map.insert_func(
+        "storage.load_threads",
+        |_target, _obj| Ok(Object::from(crate::session::load_threads() as i64)),
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Number of threads used to parse the session directory at startup.",
+    )?;
+
+    map.insert_func(
+        "storage.load_threads.set",
+        |_target, obj| {
+            let value = convert_to_value(obj, 0, 1)?;
+            if !(1..=64).contains(&value) {
+                return Err(RpcError::InputError(
+                    "storage.load_threads must be between 1 and 64.".into(),
+                ));
+            }
+            crate::session::set_load_threads(value as usize);
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<value>",
+        "Number of threads used to parse the session directory at startup.",
+    )?;
+
     Ok(())
 }

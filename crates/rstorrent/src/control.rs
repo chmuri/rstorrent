@@ -501,31 +501,17 @@ impl Control {
                     session.get_restorable_entries().unwrap_or_default()
                 };
 
-                for entry in entries {
+                let outcomes = rt_core::session::restore_entries(
+                    &session_path,
+                    &entries,
+                    rt_core::session::load_threads(),
+                );
+
+                for (index, outcome) in outcomes {
+                    let entry = &entries[index];
                     let torrent_path = format!("{}{}", session_path, entry.base_name);
-                    let hash_hex = &entry.base_name[..40];
 
-                    if self
-                        .download_list
-                        .read()
-                        .unwrap()
-                        .find_hex(hash_hex)
-                        .is_some()
-                    {
-                        // The download was just loaded from the command line
-                        // (and may already have been written to the session).
-                        tracing::debug!(
-                            path = %torrent_path,
-                            "Session entry already loaded; skipping duplicate."
-                        );
-                        continue;
-                    }
-
-                    let restored = match rt_core::session::restore_session_entry(
-                        &torrent_path,
-                        hash_hex,
-                        entry.has_torrent,
-                    ) {
+                    let restored = match outcome {
                         Ok(restored) => restored,
                         Err(err) => {
                             tracing::warn!(
