@@ -831,6 +831,9 @@ fn register_socket_aliases(
                 return Err("Max open files must be between 4 and 65536.".into());
             }
             s.max_open_files = value;
+            // The disk worker honours this budget since the pool landed; keep
+            // both spellings on the same process-wide value.
+            lt_storage::set_default_max_open_files(value as usize);
             Ok(())
         },
     )?;

@@ -10,7 +10,7 @@
 use std::sync::{Arc, RwLock};
 
 use lt_common::Object;
-use lt_storage::{global_disk_thread, memory_manager};
+use lt_storage::{global_disk_stats, memory_manager};
 use rt_rpc::command_flags::*;
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError};
 
@@ -123,9 +123,8 @@ where
 /// outstanding job; the value is therefore an upper-bound approximation rather
 /// than a synthetic queue length. No setter is registered for it.
 fn outstanding_hash_jobs() -> i64 {
-    global_disk_thread()
-        .map(|thread| {
-            let stats = thread.stats();
+    global_disk_stats()
+        .map(|stats| {
             stats
                 .hashes_submitted
                 .saturating_sub(stats.hashes_completed)

@@ -22,6 +22,10 @@ impl Default for Manager {
 
 impl Manager {
     pub fn new() -> Self {
+        // Create the pool before any download so each torrent captures its
+        // shard at construction. Explicit configuration comes from the
+        // `storage.*` commands in the daemon path.
+        let _ = lt_storage::init_global_disk_pool(lt_storage::DiskPoolConfig::default());
         let download_list = Arc::new(RwLock::new(DownloadList::new()));
         let session_manager = Arc::new(RwLock::new(SessionManager::new()));
 

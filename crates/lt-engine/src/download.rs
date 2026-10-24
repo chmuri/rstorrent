@@ -16,7 +16,7 @@ use lt_protocol::peer_list::ConnectionList;
 use lt_storage::chunk_list::ChunkList;
 use lt_storage::chunk_manager::ChunkManager;
 use lt_storage::disk_thread::{
-    global_disk_thread, DiskHashHandle, DiskThread, DiskThreadStats, DiskWriteHandle,
+    global_disk_thread_for, DiskHashHandle, DiskThread, DiskThreadStats, DiskWriteHandle,
 };
 use lt_storage::file::File;
 use lt_storage::file_list::FileList;
@@ -361,7 +361,7 @@ impl Download {
             save_directory: std::path::PathBuf::new(),
 
             target_files,
-            disk_thread: global_disk_thread(),
+            disk_thread: global_disk_thread_for(&metadata_info_hash),
             pending_writes: Vec::new(),
             queued_writes: VecDeque::new(),
             pending_hashes: Vec::new(),
@@ -535,7 +535,11 @@ impl Download {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
-        match self.disk_thread.clone().or_else(global_disk_thread) {
+        match self
+            .disk_thread
+            .clone()
+            .or_else(|| global_disk_thread_for(&self.metadata.info_hash))
+        {
             Some(thread) => {
                 thread.sync_all()?;
                 // Everything written before this sync is now durable and can
@@ -1645,7 +1649,10 @@ impl Download {
         // Reads are serialised with writes on the disk worker. The caller may
         // block waiting for the reply, but no filesystem syscall is issued on
         // the reactor thread.
-        let thread = self.disk_thread.clone().or_else(global_disk_thread);
+        let thread = self
+            .disk_thread
+            .clone()
+            .or_else(|| global_disk_thread_for(&self.metadata.info_hash));
         let Some(thread) = thread else {
             return Err("no disk worker available for read".to_string());
         };
@@ -2821,7 +2828,7 @@ impl Download {
             // The write still runs on a disk worker (never inline on the
             // reactor), but the caller waits for it so completion is visible
             // immediately.
-            let fallback = global_disk_thread().ok_or_else(|| {
+            let fallback = global_disk_thread_for(&self.metadata.info_hash).ok_or_else(|| {
                 "no disk worker available; refusing synchronous file I/O".to_string()
             })?;
             fallback

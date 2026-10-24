@@ -18,6 +18,7 @@ LOOKUPS=10000
 MULTICALL=20
 RECHECK_COUNT=0
 RECHECK_MB=32
+THREADS=0
 NO_BUILD=0
 STAMP=$(date +%Y%m%dT%H%M%S)
 OUT=${OUT:-"$REPO_ROOT/docs/benchmarks/$STAMP"}
@@ -30,6 +31,7 @@ while [[ $# -gt 0 ]]; do
         --multicall) MULTICALL=$2; shift 2 ;;
         --recheck-count) RECHECK_COUNT=$2; shift 2 ;;
         --recheck-mb) RECHECK_MB=$2; shift 2 ;;
+        --threads) THREADS=$2; shift 2 ;;
         --out) OUT=$2; shift 2 ;;
         --work) WORK=$2; shift 2 ;;
         --bin) BIN=$2; shift 2 ;;
@@ -76,6 +78,7 @@ python3 scripts/bench/bench_start.py \
     --data "$WORK/data" \
     --expected "$COUNT" \
     --bin "$BIN" \
+    --disk-threads "$THREADS" \
     --keep-running \
     --json-out "$OUT/startup.json"
 PID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$OUT/startup.json")
@@ -109,6 +112,7 @@ if [[ "$RECHECK_COUNT" -gt 0 ]]; then
         --sock "$WORK/payload/session/bench.sock" \
         --expected "$RECHECK_COUNT" \
         --bin "$BIN" \
+        --disk-threads "$THREADS" \
         --keep-running \
         --json-out "$OUT/recheck-startup.json"
     PID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$OUT/recheck-startup.json")

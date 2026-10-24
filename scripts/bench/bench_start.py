@@ -95,6 +95,7 @@ def main(argv=None) -> int:
     parser.add_argument("--expected", type=int, default=0, help="expected torrent count")
     parser.add_argument("--bin", default=os.path.join(REPO_ROOT, "target/release/rstorrent"))
     parser.add_argument("--port", type=int, default=50000)
+    parser.add_argument("--disk-threads", type=int, default=0, help="set storage.disk_threads")
     parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument(
         "--keep-running",
@@ -128,8 +129,10 @@ def main(argv=None) -> int:
         f"network.scgi.open_local = {sock}",
         "-o",
         f"network.port_range.set = {args.port}-{args.port}",
-        "--daemon",
     ]
+    if args.disk_threads > 0:
+        command.extend(["-o", f"storage.disk_threads = {args.disk_threads}"])
+    command.append("--daemon")
     print("exec: " + " ".join(command), file=sys.stderr)
 
     with open(log_path, "wb") as log:
