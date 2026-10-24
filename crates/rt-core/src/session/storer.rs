@@ -44,6 +44,63 @@ pub fn is_correct_format(f: &str) -> bool {
     f.as_bytes()[..40].iter().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Canonical on-disk paths for one download's session entry.
+///
+/// The session directory is restored by scanning for `<HASH>.torrent`; the
+/// resume and sidecar streams are derived from that same base so a single
+/// naming rule controls every file the writer publishes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionPaths {
+    /// `<session>/<HASH>.torrent`.
+    pub torrent: String,
+    /// `<torrent>.libtorrent_resume`.
+    pub resume: String,
+    /// `<torrent>.rtorrent`.
+    pub sidecar: String,
+}
+
+/// Builds the canonical session paths for `info_hash_hex`.
+///
+/// The hash is normalized to uppercase because session entries are scanned by
+/// file name and mixed casing would make an otherwise valid entry invisible
+/// after a restart. Lowercase input is accepted so callers do not need to
+/// agree on casing.
+pub fn gen_session(session_path: &str, info_hash_hex: &str) -> io::Result<SessionPaths> {
+    if session_path.is_empty() {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "gen_session() requires a non-empty session path.",
+        ));
+    }
+    if !session_path.ends_with('/') {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "gen_session() requires a session path with a trailing slash.",
+        ));
+    }
+
+    // Validate bytes, not chars: a 40-byte non-ASCII name must be rejected
+    // without slicing at a char boundary.
+    let hash_bytes = info_hash_hex.as_bytes();
+    if hash_bytes.len() != 40 || !hash_bytes.iter().all(u8::is_ascii_hexdigit) {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "gen_session() requires a 40-character hexadecimal info hash.",
+        ));
+    }
+
+    let torrent = format!(
+        "{}{}.torrent",
+        session_path,
+        info_hash_hex.to_ascii_uppercase()
+    );
+    Ok(SessionPaths {
+        resume: format!("{}.libtorrent_resume", torrent),
+        sidecar: format!("{}.rtorrent", torrent),
+        torrent,
+    })
+}
+
 /// Loads a `.libtorrent_resume` file.
 pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
     let bytes = fs::read(path)?;
@@ -346,30 +403,7 @@ pub struct DownloadStorer;
 
 impl DownloadStorer {
     pub fn build_path(session_path: &str, info_hash_hex: &str) -> io::Result<String> {
-        if session_path.is_empty() {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "DownloadStorer::build_path() called with empty session path.",
-            ));
-        }
-        if !session_path.ends_with('/') {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "DownloadStorer::build_path() session path missing trailing slash.",
-            ));
-        }
-        if info_hash_hex.len() != 40 || !info_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "DownloadStorer::build_path() requires a 40-character hexadecimal info hash.",
-            ));
-        }
-
-        Ok(format!(
-            "{}{}.torrent",
-            session_path,
-            info_hash_hex.to_uppercase()
-        ))
+        Ok(gen_session(session_path, info_hash_hex)?.torrent)
     }
 
     pub fn unlink_files(base_path: &str) {
