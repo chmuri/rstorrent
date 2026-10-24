@@ -19,6 +19,12 @@ RUN cargo build --release -p rstorrent
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.title="rstorrent" \
+      org.opencontainers.image.description="Fast, modern BitTorrent client in Rust with rTorrent CLI & Flood web UI compatibility" \
+      org.opencontainers.image.url="https://github.com/chmuri/rstorrent" \
+      org.opencontainers.image.source="https://github.com/chmuri/rstorrent" \
+      org.opencontainers.image.licenses="GPL-2.0-or-later"
+
 # Install runtime dependencies: SSL certificates, curl, and libc
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
