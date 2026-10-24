@@ -1,5 +1,3 @@
-pub mod netstring;
-
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use rt_rpc::{CommandMap, JsonRpc, XmlRpc};
