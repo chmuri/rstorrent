@@ -6,10 +6,12 @@
 //! torrent's `pieces` string.
 //!
 //! Hashing is deliberately independent of the network reactor, but reads are
-//! funnelled through the same disk worker that serialises writes whenever one
-//! is supplied with [`HashTorrent::set_disk_thread`]. The worker is flushed
-//! before each piece is read so a piece that is still queued for writing can
-//! never be hashed in its partially-written state.
+//! serialised with the disk worker whenever one is supplied with
+//! [`HashTorrent::set_disk_thread`]: the worker is flushed once before the
+//! first piece is read, so writes queued before the pass can never be hashed
+//! in a partially-written state. Callers must keep new writes for the same
+//! torrent out for the duration of the pass (the engine does this while
+//! verification owns the data).
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
@@ -23,6 +25,27 @@ use lt_crypto::sha1::sha1_hash;
 
 use crate::disk_thread::DiskThread;
 use crate::error::StorageError;
+
+/// Default number of files a hash pass keeps open (historical value).
+pub const DEFAULT_READ_CACHE_ENTRIES: usize = 64;
+
+static DEFAULT_READ_CACHE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(DEFAULT_READ_CACHE_ENTRIES);
+
+/// Read-cache size used by passes that do not override it.
+pub fn default_read_cache_entries() -> usize {
+    DEFAULT_READ_CACHE
+        .load(std::sync::atomic::Ordering::Acquire)
+        .clamp(64, 1024)
+}
+
+/// Sets the read-cache size for passes created afterwards.
+pub fn set_default_read_cache_entries(entries: usize) {
+    DEFAULT_READ_CACHE.store(
+        entries.clamp(64, 1024),
+        std::sync::atomic::Ordering::Release,
+    );
+}
 use crate::writer::{piece_segments, TargetFileInfo};
 
 /// Result of a hashing pass.
@@ -61,6 +84,9 @@ pub struct HashTorrent {
     checked: AtomicU32,
     failed: AtomicU32,
     disk_thread: Option<Arc<DiskThread>>,
+    /// Open-file cache for the read path. Raising it reduces reopens on
+    /// many-file torrents at the cost of that many descriptors per pass.
+    read_cache_entries: usize,
 }
 
 impl HashTorrent {
@@ -83,6 +109,7 @@ impl HashTorrent {
             checked: AtomicU32::new(0),
             failed: AtomicU32::new(0),
             disk_thread: None,
+            read_cache_entries: default_read_cache_entries(),
         }
     }
 
@@ -94,6 +121,20 @@ impl HashTorrent {
     /// for this torrent out for the duration of the pass.
     pub fn set_disk_thread(&mut self, thread: Option<Arc<DiskThread>>) {
         self.disk_thread = thread;
+    }
+
+    /// Sets how many files a pass keeps open at once (clamped to 64..=1024).
+    ///
+    /// The default of 64 matches the historical read path. Each concurrent
+    /// pass holds up to this many descriptors, and they are opened outside the
+    /// disk worker's cache, so include `hash_concurrency x entries` in the
+    /// descriptor budget when raising it.
+    pub fn set_read_cache_entries(&mut self, entries: usize) {
+        self.read_cache_entries = entries.clamp(64, 1024);
+    }
+
+    pub fn read_cache_entries(&self) -> usize {
+        self.read_cache_entries
     }
 
     /// Handle that can be cloned and used to cancel a running pass.
@@ -214,7 +255,7 @@ impl HashTorrent {
         let mut checked = 0u32;
         let mut failed = 0u32;
         let mut failed_pieces = Vec::new();
-        let mut cache = ReadCache::new(64);
+        let mut cache = ReadCache::new(self.read_cache_entries);
 
         let mut position = 0usize;
         while position < pieces.len() {

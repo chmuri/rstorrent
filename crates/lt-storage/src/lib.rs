@@ -51,7 +51,10 @@ pub use file_status_cache::{FileStatus, FileStatusCache};
 pub use hash_check_queue::{HashCheckQueue, FLAG_NEED, FLAG_WILL_NEED};
 pub use hash_chunk::HashChunk;
 pub use hash_queue::{HashQueue, HashQueueNode};
-pub use hash_torrent::{HashResult, HashTorrent};
+pub use hash_torrent::{
+    default_read_cache_entries, set_default_read_cache_entries, HashResult, HashTorrent,
+    DEFAULT_READ_CACHE_ENTRIES,
+};
 pub use memory_chunk::MemoryChunk;
 pub use memory_manager::{memory_manager, MemoryManager};
 pub use mmap_safe::{

@@ -87,3 +87,23 @@ fn disk_threads_and_open_files_are_configurable_before_the_pool() {
     assert!(call(&map, "storage.disk_threads.set", Object::from(65i64)).is_err());
     assert!(call(&map, "storage.max_open_files.set", Object::from(3i64)).is_err());
 }
+
+#[test]
+fn hash_read_cache_is_configurable_and_clamped() {
+    let (map, _list) = registry();
+
+    call(&map, "storage.hash_read_cache.set", Object::from(128i64)).unwrap();
+    let value = call(&map, "storage.hash_read_cache", Object::create_empty())
+        .unwrap()
+        .as_value()
+        .unwrap();
+    assert_eq!(value, 128);
+
+    // Clamped to the supported range rather than rejected.
+    call(&map, "storage.hash_read_cache.set", Object::from(8i64)).unwrap();
+    let value = call(&map, "storage.hash_read_cache", Object::create_empty())
+        .unwrap()
+        .as_value()
+        .unwrap();
+    assert_eq!(value, 64);
+}

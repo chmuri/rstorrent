@@ -56,6 +56,26 @@ pub fn register_storage_commands(
     )?;
 
     map.insert_func(
+        "storage.hash_read_cache",
+        |_target, _obj| Ok(Object::from(lt_storage::default_read_cache_entries() as i64)),
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Files kept open by one hash pass (clamped to 64..=1024).",
+    )?;
+
+    map.insert_func(
+        "storage.hash_read_cache.set",
+        |_target, obj| {
+            let value = convert_to_value(obj, 0, 1)?;
+            lt_storage::set_default_read_cache_entries(value.max(0) as usize);
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<value>",
+        "Files kept open by one hash pass (clamped to 64..=1024).",
+    )?;
+
+    map.insert_func(
         "storage.load_threads",
         |_target, _obj| Ok(Object::from(crate::session::load_threads() as i64)),
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
