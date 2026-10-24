@@ -170,3 +170,29 @@ fn cancellation_preserves_existing_target_bits() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn read_cache_size_is_configurable_and_clamped() {
+    let root = temp_root("read_cache");
+    let payload: Vec<u8> = (0..16).collect();
+    let files = files(payload.len() as u64);
+    for (index, chunk) in payload.chunks(8).enumerate() {
+        write_piece_to_disk(&root, &files, 8, index as u32, chunk).unwrap();
+    }
+    let hashes = payload.chunks(8).map(sha1_hash).collect();
+
+    let mut hasher = HashTorrent::new(&root, Arc::clone(&files), 8, 2, 16, hashes);
+    assert_eq!(hasher.read_cache_entries(), 64);
+
+    hasher.set_read_cache_entries(32);
+    assert_eq!(hasher.read_cache_entries(), 64, "values below 64 clamp up");
+
+    hasher.set_read_cache_entries(256);
+    assert_eq!(hasher.read_cache_entries(), 256);
+    assert!(hasher.hash_all().unwrap().bitfield.is_all_set());
+
+    hasher.set_read_cache_entries(4096);
+    assert_eq!(hasher.read_cache_entries(), 1024, "values above 1024 clamp");
+
+    let _ = std::fs::remove_dir_all(&root);
+}
