@@ -8,7 +8,7 @@ use lt_common::object::flags::{FLAG_AS_BINARY, FLAG_BASE64, FLAG_HEX};
 use lt_common::option_strings::{option_find_string, OptionEnum};
 use lt_common::{HashString, Object};
 use rt_rpc::command_flags::*;
-use rt_rpc::parse_commands::parse_command;
+use rt_rpc::parse_commands::{parse_command, parse_command_execute, parse_command_spec};
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError, Target};
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -18,6 +18,85 @@ use std::sync::{Arc, Mutex, RwLock};
 
 fn to_str(obj: &Object) -> Result<String, RpcError> {
     convert_to_string(obj)
+}
+
+/// One `name=arguments` column prepared for repeated dispatch across targets.
+struct PreparedColumn<'a> {
+    args: Object,
+    entry: &'a rt_rpc::command::CommandEntry,
+    /// Non-empty arguments may contain `$...` commands that must be evaluated
+    /// against each target; the common `d.foo=` case skips that work.
+    evaluate: bool,
+}
+
+enum PreparedColumnState<'a> {
+    Ready(PreparedColumn<'a>),
+    Invalid,
+}
+
+/// Parses every multicall column once instead of per (download x column).
+fn prepare_columns<'a>(
+    map: &'a CommandMap,
+    commands: &[Object],
+    trusted: bool,
+) -> Result<Vec<PreparedColumnState<'a>>, RpcError> {
+    let mut specs = Vec::with_capacity(commands.len());
+    for cmd_obj in commands {
+        let cmd_str = to_str(cmd_obj)?;
+        specs.push(if cmd_str.contains('=') {
+            cmd_str
+        } else {
+            format!("{}=", cmd_str)
+        });
+    }
+
+    let mut prepared = Vec::with_capacity(specs.len());
+    for spec in &specs {
+        prepared.push(match parse_command_spec(spec) {
+            Ok((name, args, _rest)) => match map.resolve(name, trusted) {
+                Ok(entry) => {
+                    let evaluate = !args.is_empty();
+                    PreparedColumnState::Ready(PreparedColumn {
+                        args,
+                        entry,
+                        evaluate,
+                    })
+                }
+                Err(_) => PreparedColumnState::Invalid,
+            },
+            Err(_) => PreparedColumnState::Invalid,
+        });
+    }
+    Ok(prepared)
+}
+
+/// Dispatches the prepared columns for one download.
+fn prepared_row(
+    prepared: &[PreparedColumnState<'_>],
+    target: &Target,
+    map: &CommandMap,
+    trusted: bool,
+) -> Vec<Object> {
+    prepared
+        .iter()
+        .map(|column| {
+            let result = match column {
+                PreparedColumnState::Invalid => return Object::create_empty(),
+                PreparedColumnState::Ready(column) => {
+                    if column.evaluate {
+                        let mut owned = column.args.clone();
+                        match parse_command_execute(target, &mut owned, map, trusted) {
+                            Ok(()) => (column.entry.func)(target, &owned),
+                            Err(err) => Err(err),
+                        }
+                    } else {
+                        (column.entry.func)(target, &column.args)
+                    }
+                }
+            };
+            result.unwrap_or_else(|_| Object::create_empty())
+        })
+        .collect()
 }
 
 /// Returns the raw bytes of a string argument without lossy UTF-8 conversion.
@@ -1016,27 +1095,17 @@ pub fn register_download_commands(
             };
 
             let map_guard = mc_map.read().unwrap();
+
+            let trusted = rt_rpc::current_trusted();
+            let prepared = prepare_columns(&map_guard, commands, trusted)?;
             let mut result_rows = Vec::with_capacity(downloads.len());
 
             for dl in downloads {
                 let hash = *dl.read().unwrap().info_hash();
                 let target = Target::Download(hash);
-
-                let mut row = Vec::with_capacity(commands.len());
-                for cmd_obj in commands {
-                    let cmd_str = to_str(cmd_obj)?;
-                    let cmd_to_run = if cmd_str.contains('=') {
-                        cmd_str
-                    } else {
-                        format!("{}=", cmd_str)
-                    };
-
-                    match parse_command(&cmd_to_run, &target, &map_guard, true) {
-                        Ok((res, _)) => row.push(res),
-                        Err(_) => row.push(Object::create_empty()),
-                    }
-                }
-                result_rows.push(Object::create_list_with(row));
+                result_rows.push(Object::create_list_with(prepared_row(
+                    &prepared, &target, &map_guard, trusted,
+                )));
             }
 
             Ok(Object::create_list_with(result_rows))
@@ -1091,6 +1160,8 @@ pub fn register_download_commands(
             // Keep a reference to every download the same way d.multicall does
             // so commands that erase entries cannot invalidate the iteration.
             let map_guard = map_filtered.read().unwrap();
+            let trusted = rt_rpc::current_trusted();
+            let prepared = prepare_columns(&map_guard, commands, trusted)?;
             let mut result_rows = Vec::new();
 
             for dl in downloads {
@@ -1101,21 +1172,9 @@ pub fn register_download_commands(
                     continue;
                 }
 
-                let mut row = Vec::with_capacity(commands.len());
-                for cmd_obj in commands {
-                    let cmd_str = to_str(cmd_obj)?;
-                    let cmd_to_run = if cmd_str.contains('=') {
-                        cmd_str
-                    } else {
-                        format!("{}=", cmd_str)
-                    };
-
-                    match parse_command(&cmd_to_run, &target, &map_guard, true) {
-                        Ok((res, _)) => row.push(res),
-                        Err(_) => row.push(Object::create_empty()),
-                    }
-                }
-                result_rows.push(Object::create_list_with(row));
+                result_rows.push(Object::create_list_with(prepared_row(
+                    &prepared, &target, &map_guard, trusted,
+                )));
             }
 
             Ok(Object::create_list_with(result_rows))

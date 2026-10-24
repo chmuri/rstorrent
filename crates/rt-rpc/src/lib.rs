@@ -17,7 +17,7 @@ pub use command::{
     flags as command_flags, parse_command_object, CommandEntry, CommandFn, CommandStack,
     PreparsedCommands,
 };
-pub use command_map::CommandMap;
+pub use command_map::{current_trusted, CommandMap};
 pub use error::RpcError;
 pub use exec_file::{flags as exec_flags, ExecFile};
 pub use jsonrpc::JsonRpc;
@@ -33,7 +33,7 @@ pub use parse::{
 };
 pub use parse_commands::{
     parse_command, parse_command_execute, parse_command_file, parse_command_multiple,
-    parse_command_name,
+    parse_command_name, parse_command_spec,
 };
 pub use parse_options::{
     parse_option_flag, parse_option_flags, parse_option_for_each, parse_option_print_flags,

@@ -131,3 +131,46 @@ fn test_untrusted() {
         Err(RpcError::UntrustedError(_))
     ));
 }
+
+#[test]
+fn nested_commands_inherit_the_callers_trust_level() {
+    let mut map = CommandMap::new();
+    map.insert_func(
+        "test_privileged",
+        |_target, _obj| Ok(Object::from(7i64)),
+        FLAG_PUBLIC_RPC,
+        "",
+        "",
+    )
+    .unwrap();
+
+    // A wrapper that expands another command, like d.multicall2 does.
+    let inner = map.clone();
+    map.insert_func(
+        "test_wrapper",
+        move |target, _obj| {
+            inner.call_command(
+                "test_privileged",
+                &Object::create_empty(),
+                target,
+                rt_rpc::current_trusted(),
+            )
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "",
+    )
+    .unwrap();
+
+    let target = Target::None;
+    assert!(
+        map.call_command("test_wrapper", &Object::create_empty(), &target, true)
+            .is_ok(),
+        "a trusted caller may reach a privileged command through the wrapper"
+    );
+    assert!(
+        map.call_command("test_wrapper", &Object::create_empty(), &target, false)
+            .is_err(),
+        "an untrusted caller must not escalate through the wrapper"
+    );
+}

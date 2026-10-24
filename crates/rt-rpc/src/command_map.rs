@@ -2,8 +2,30 @@ use crate::command::{flags::*, CommandEntry, CommandFn};
 use crate::error::RpcError;
 use crate::target::Target;
 use lt_common::Object;
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+thread_local! {
+    /// Trust level of the command currently executing on this thread.
+    static CURRENT_TRUSTED: Cell<bool> = const { Cell::new(true) };
+}
+
+/// Trust level of the command currently executing on this thread.
+///
+/// A handler that expands another command (multicall, redirects, `$...`
+/// arguments) must pass this value through instead of assuming a trusted
+/// connection, otherwise an untrusted caller can escalate through the wrapper.
+pub fn current_trusted() -> bool {
+    CURRENT_TRUSTED.with(Cell::get)
+}
+
+fn with_trusted<R>(trusted: bool, f: impl FnOnce() -> R) -> R {
+    let previous = CURRENT_TRUSTED.with(|cell| cell.replace(trusted));
+    let result = f();
+    CURRENT_TRUSTED.with(|cell| cell.set(previous));
+    result
+}
 
 #[derive(Default, Clone)]
 pub struct CommandMap {
@@ -138,6 +160,16 @@ impl CommandMap {
         target: &Target,
         trusted: bool,
     ) -> Result<Object, RpcError> {
+        let entry = self.resolve(key, trusted)?;
+        // Handlers that dispatch nested commands (`d.multicall2`,
+        // `d.multicall.filtered`, redirects) must inherit the caller's trust
+        // level instead of assuming `true`.
+        with_trusted(trusted, || (entry.func)(target, arg))
+    }
+
+    /// Resolves a command once so a hot loop can dispatch it per target
+    /// without repeating the map lookup and the trust check.
+    pub fn resolve(&self, key: &str, trusted: bool) -> Result<&CommandEntry, RpcError> {
         let entry = self
             .commands
             .get(key)
@@ -150,7 +182,7 @@ impl CommandMap {
             )));
         }
 
-        (entry.func)(target, arg)
+        Ok(entry)
     }
 
     pub fn call_catch(&self, key: &str, arg: &Object, target: &Target, trusted: bool) -> Object {
