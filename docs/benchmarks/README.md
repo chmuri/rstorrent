@@ -15,6 +15,15 @@ scripts/bench/run_all.sh --count 1000 --lookups 500 --multicall 3 --no-build
 
 # recheck concurrency (threads, MB/s) on a separate payload session
 scripts/bench/run_all.sh --count 1000 --recheck-count 100 --recheck-mb 32
+
+# shutdown latency, lock release and session rewrites
+scripts/bench/run_all.sh --count 1000 --no-build --shutdown
+
+# interactive TUI time-to-first-frame
+scripts/bench/run_all.sh --count 1000 --no-build --pty
+
+# restart over existing payload with resume data (the slow-restart case)
+scripts/bench/run_all.sh --count 1000 --no-build --payload --shutdown
 ```
 
 Results land in `docs/benchmarks/<timestamp>/`:
@@ -22,11 +31,39 @@ Results land in `docs/benchmarks/<timestamp>/`:
 | File | Contents |
 |---|---|
 | `host.txt` | kernel, CPU count, `ulimit -n`, filesystem type, binary version |
-| `startup.json` | `socket_s`, `rpc_s`, `full_s`, `rows`, peak RSS/threads/FDs, CPU |
+| `startup.json` | `socket_s`, `rpc_s`, `full_s`, `rows`, peak RSS/threads/FDs, CPU, `metrics` |
+| `startup-pty.json` | `first_frame_s`, `bytes_to_frame`, `exit_s` (interactive TUI on a 120x40 PTY) |
+| `startup-warm.json` | `full_s` + `metrics` for a restart with resume data and payload present |
+| `startup-payload-cold.json` | first start over existing payload (no resume): queues rechecks |
+| `shutdown.json` | `exit_s`, `lock_free_s`, `files_rewritten`, `files_added`, `bytes_on_disk_delta`, `proc_write_bytes`, `shutdown_phases_ms` |
+| `shutdown-warm.json` | the same measurements after the payload session was saved once |
 | `lookup.json` | `d.hash` p50/p95/p99/max, hits/faults, QPS |
 | `multicall.json` | `d.multicall2` p50/p95/p99, rows per second |
 | `recheck.json` | `wall_s`, `mb_per_s`, peak concurrent checks, peak threads |
 | `recheck-startup.json` | startup of the payload session (recheck queued) |
+
+`metrics` comes from `RSTORRENT_METRICS_FILE` (one JSON object per line, see
+`crates/rstorrent/src/metrics.rs`). It carries per-phase times and the session
+writer counters, which is what separates "restore is slow" from "we rewrote
+30,000 files".
+
+## The metrics channel
+
+`RSTORRENT_METRICS_FILE=/path/metrics.jsonl` enables it for one process. Events:
+
+| Event | Meaning |
+|---|---|
+| `startup.phase` | one startup stage (`views`, `commands`, `config`, `session_lock`, `scan_entries`, `restore_entries`, `insert_downloads`, `cli_files`, `watch_scan`, `watch_import`, `watch_commit`, `network_spawn`) |
+| `startup.summary` | totals: `torrents`, `rechecks_queued`, session-writer counters, `coordinators_spawned` |
+| `shutdown.phase` | `network_drain`, `flush_downloads`, `disk_thread`, `session_save`, `lock_release`, with `completed`/`timed_out` flags |
+| `shutdown.summary` | `total_ms`, `/proc/self/io` write volume, full session-writer counters |
+| `exit.summary` | `wall_ms`, `interactive`, `forced` |
+
+The session-writer counters are cumulative since process start, so the delta
+between `startup.summary` and `shutdown.summary` is exactly the work done while
+running. `session_staged_files` counts `.new` files, `session_fdatasync_calls`
+counts per-file syncs and `session_dir_sync_calls` counts directory syncs.
+
 
 Generated sessions live under `${TMPDIR:-/tmp/opencode}/rstorrent-bench/<stamp>`
 and are deliberately **not** committed.
@@ -58,6 +95,10 @@ Do not invent numbers before measuring.
 | `multicall.p95_ms` | | | | within 1.5x of the 1k value per row |
 | `recheck.mb_per_s` | | | | at NVMe line rate for the piece size |
 | `recheck.peak_threads` | | | | ≤ configured `storage.hash_concurrency` + baseline |
+| `startup-pty.first_frame_s` | | | | ≈ `startup.full_s`; UI must not wait behind restore |
+| `shutdown.exit_s` | | | | < 5 s at 1k and 10k, hard cap 10 s |
+| `shutdown.files_rewritten` | | | | 0 when the session did not change |
+| `startup.rechecks_queued` (warm) | | | | 0 when the resume data is trusted |
 
 `startup.peak.threads` is informational only: thread count is expected to rise
 with the number of active rechecks until the bounded scheduler exists.

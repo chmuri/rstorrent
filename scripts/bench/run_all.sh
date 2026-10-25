@@ -8,6 +8,8 @@
 #   scripts/bench/run_all.sh                          # 14k startup + lookup + multicall
 #   scripts/bench/run_all.sh --count 1000 --no-build
 #   scripts/bench/run_all.sh --recheck-count 100 --recheck-mb 32
+#   scripts/bench/run_all.sh --count 1000 --shutdown --pty
+#   scripts/bench/run_all.sh --count 1000 --payload --shutdown
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -20,6 +22,9 @@ RECHECK_COUNT=0
 RECHECK_MB=32
 THREADS=0
 NO_BUILD=0
+PAYLOAD=0
+SHUTDOWN=0
+PTY=0
 STAMP=$(date +%Y%m%dT%H%M%S)
 OUT=${OUT:-"$REPO_ROOT/docs/benchmarks/$STAMP"}
 WORK=${WORK:-"${TMPDIR:-/tmp/opencode}/rstorrent-bench/$STAMP"}
@@ -32,6 +37,9 @@ while [[ $# -gt 0 ]]; do
         --recheck-count) RECHECK_COUNT=$2; shift 2 ;;
         --recheck-mb) RECHECK_MB=$2; shift 2 ;;
         --threads) THREADS=$2; shift 2 ;;
+        --payload) PAYLOAD=1; shift ;;
+        --shutdown) SHUTDOWN=1; shift ;;
+        --pty) PTY=1; shift ;;
         --out) OUT=$2; shift 2 ;;
         --work) WORK=$2; shift 2 ;;
         --bin) BIN=$2; shift 2 ;;
@@ -41,7 +49,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-mkdir -p "$OUT" "$WORK"
+mkdir -p "$OUT" "$WORK" "$WORK/metrics"
 PID=""
 stop_daemon() {
     [[ -n "${PID:-}" ]] || return 0
@@ -79,6 +87,7 @@ python3 scripts/bench/bench_start.py \
     --expected "$COUNT" \
     --bin "$BIN" \
     --disk-threads "$THREADS" \
+    --metrics "$WORK/metrics/startup.jsonl" \
     --keep-running \
     --json-out "$OUT/startup.json"
 PID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$OUT/startup.json")
@@ -96,8 +105,76 @@ python3 scripts/bench/bench_multicall.py \
     --iterations "$MULTICALL" \
     --json-out "$OUT/multicall.json"
 
-if [[ "$RECHECK_COUNT" -gt 0 ]]; then
-    echo "==> recheck: $RECHECK_COUNT x ${RECHECK_MB} MiB"
+if [[ "$SHUTDOWN" -eq 1 || "$PTY" -eq 1 || "$PAYLOAD" -eq 1 ]]; then
+    stop_daemon
+fi
+
+if [[ "$PTY" -eq 1 ]]; then
+    echo "==> interactive: time to first frame"
+    python3 scripts/bench/bench_start.py \
+        --session "$WORK/session" \
+        --data "$WORK/data" \
+        --bin "$BIN" \
+        --port 50010 \
+        --pty \
+        --json-out "$OUT/startup-pty.json" > /dev/null
+fi
+
+if [[ "$SHUTDOWN" -eq 1 ]]; then
+    echo "==> shutdown: latency, lock release, session rewrites"
+    python3 scripts/bench/bench_shutdown.py \
+        --session "$WORK/session" \
+        --data "$WORK/data" \
+        --expected "$COUNT" \
+        --bin "$BIN" \
+        --port 50011 \
+        --metrics "$WORK/metrics/shutdown.jsonl" \
+        --json-out "$OUT/shutdown.json" > /dev/null
+fi
+
+if [[ "$PAYLOAD" -eq 1 ]]; then
+    echo "==> payload: cold restore over existing files queues rechecks"
+    stop_daemon
+    python3 scripts/bench/gen_payload.py \
+        --out "$WORK/payload-restore/session" \
+        --data "$WORK/payload-restore/data" \
+        --count "$COUNT" \
+        --size-mb 1
+
+    python3 scripts/bench/bench_start.py \
+        --session "$WORK/payload-restore/session" \
+        --data "$WORK/payload-restore/data" \
+        --sock "$WORK/payload-restore/session/bench.sock" \
+        --expected "$COUNT" \
+        --bin "$BIN" \
+        --port 50012 \
+        --settle 10 \
+        --metrics "$WORK/metrics/payload-cold.jsonl" \
+        --json-out "$OUT/startup-payload-cold.json" > /dev/null
+
+    echo "==> warm restart with resume + payload (the slow-restart case)"
+    python3 scripts/bench/bench_shutdown.py \
+        --session "$WORK/payload-restore/session" \
+        --data "$WORK/payload-restore/data" \
+        --expected "$COUNT" \
+        --bin "$BIN" \
+        --port 50013 \
+        --settle 5 \
+        --metrics "$WORK/metrics/warm-shutdown.jsonl" \
+        --json-out "$OUT/shutdown-warm.json" > /dev/null
+
+    python3 scripts/bench/bench_start.py \
+        --session "$WORK/payload-restore/session" \
+        --data "$WORK/payload-restore/data" \
+        --sock "$WORK/payload-restore/session/bench.sock" \
+        --expected "$COUNT" \
+        --bin "$BIN" \
+        --port 50014 \
+        --metrics "$WORK/metrics/warm-startup.jsonl" \
+        --json-out "$OUT/startup-warm.json" > /dev/null
+fi
+
+if [[ "$RECHECK_COUNT" -gt 0 ]]; then    echo "==> recheck: $RECHECK_COUNT x ${RECHECK_MB} MiB"
     stop_daemon
 
     python3 scripts/bench/gen_payload.py \
@@ -133,16 +210,21 @@ import os
 import sys
 
 out = sys.argv[1]
-for name in ("startup", "lookup", "multicall", "recheck"):
+for name in (
+    "startup", "startup-pty", "startup-warm", "startup-payload-cold",
+    "shutdown", "shutdown-warm", "lookup", "multicall", "recheck",
+):
     path = os.path.join(out, f"{name}.json")
     if not os.path.exists(path):
         continue
     data = json.load(open(path))
     keys = (
-        "full_s", "rows", "peak",
+        "full_s", "rows", "peak", "first_frame_s", "exit_s", "lock_free_s",
+        "files_rewritten", "files_added", "bytes_on_disk_delta",
+        "proc_write_bytes", "timed_out",
         "p50_ms", "p95_ms", "p99_ms",
         "wall_s", "mb_per_s", "peak_active_checks", "peak_threads",
     )
     summary = {key: data[key] for key in keys if key in data}
-    print(f"{name:10} {json.dumps(summary)}")
+    print(f"{name:20} {json.dumps(summary)}")
 PY
