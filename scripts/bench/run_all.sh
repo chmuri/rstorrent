@@ -139,7 +139,8 @@ if [[ "$PAYLOAD" -eq 1 ]]; then
         --out "$WORK/payload-restore/session" \
         --data "$WORK/payload-restore/data" \
         --count "$COUNT" \
-        --size-mb 1
+        --size-mb 1 \
+        --active
 
     python3 scripts/bench/bench_start.py \
         --session "$WORK/payload-restore/session" \
@@ -148,7 +149,7 @@ if [[ "$PAYLOAD" -eq 1 ]]; then
         --expected "$COUNT" \
         --bin "$BIN" \
         --port 50012 \
-        --settle 10 \
+        --settle 45 \
         --metrics "$WORK/metrics/payload-cold.jsonl" \
         --json-out "$OUT/startup-payload-cold.json" > /dev/null
 

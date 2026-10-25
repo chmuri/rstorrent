@@ -23,6 +23,7 @@ import os
 import sys
 import time
 
+import bencode
 from bencode import torrent_bytes
 
 PATTERN = bytes(range(256))
@@ -70,6 +71,12 @@ def main(argv=None) -> int:
     parser.add_argument("--piece-size", type=int, default=262144)
     parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--fill", action="store_true", help="write real bytes instead of sparse")
+    parser.add_argument(
+        "--active",
+        action="store_true",
+        help="write a .rtorrent sidecar marking the torrent active, so restore "
+        "starts it and the queued recheck actually runs",
+    )
     parser.add_argument("--manifest", help="manifest path (default: <out>/payload-manifest.json)")
     args = parser.parse_args(argv)
 
@@ -91,6 +98,10 @@ def main(argv=None) -> int:
         write_payload(os.path.join(args.data, name), size, args.fill, args.piece_size)
         with open(os.path.join(args.out, f"{info_hash}.torrent"), "wb") as handle:
             handle.write(torrent)
+        if args.active:
+            sidecar = {"directory": args.data, "state": 1}
+            with open(os.path.join(args.out, f"{info_hash}.torrent.rtorrent"), "wb") as handle:
+                handle.write(bencode.encode(sidecar))
 
         entries.append(
             {

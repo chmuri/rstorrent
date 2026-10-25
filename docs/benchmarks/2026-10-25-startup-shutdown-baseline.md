@@ -45,6 +45,12 @@ second and the terminal is usable immediately.
 
 ## The forced recheck
 
+> **Correction:** the end-to-end numbers in this section were confounded — most
+> torrents in that fixture still had zero completed pieces, which queues a
+> recheck on its own. See
+> [`2026-10-25-shutdown-fix.md`](2026-10-25-shutdown-fix.md#the-recheck-correction)
+> for the isolated measurement and the deterministic test.
+
 `startup-warm` is a restart where every torrent already has accepted resume
 data (`resume_rejected: 0`) and its payload on disk:
 
