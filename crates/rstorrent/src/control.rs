@@ -613,6 +613,14 @@ impl Control {
             }
         }
 
+        // 8.6 Load torrents from the watch directory, if configured. A bad
+        // watch directory is reported but must not abort startup.
+        if let Some(watch_dir) = &cli.watch_dir {
+            if let Err(e) = self.load_watch_directory(watch_dir) {
+                tracing::warn!("Failed to load watch directory '{}': {}", watch_dir, e);
+            }
+        }
+
         // 9. Spawn NetworkRuntime supervisor
         let dht_cache_path = {
             let session = self.session_manager.lock().unwrap();
@@ -726,20 +734,12 @@ impl Control {
             Err(e) => return Err(format!("Commit failed: {}", e)),
         };
 
-        let default_dir = {
-            let map = self.command_map.read().unwrap();
-            map.call_command(
-                "directory.default",
-                &Object::create_empty(),
-                &Target::None,
-                false,
-            )
-            .ok()
-            .and_then(|obj| obj.as_str().map(|s| s.to_string()).ok())
-            .unwrap_or_else(|| ".".to_string())
-        };
-        download.write().unwrap().set_directory(&default_dir);
-        download.write().unwrap().queue_recheck_if_files_exist();
+        let default_dir = self.default_download_directory();
+        {
+            let mut guard = download.write().unwrap();
+            guard.set_directory(&default_dir);
+            guard.queue_recheck_if_files_exist();
+        }
 
         if start {
             dl_list.start(&download);
@@ -754,6 +754,136 @@ impl Control {
             .unwrap()
             .push_log(format!("Loaded torrent from '{}'", trimmed));
         Ok(())
+    }
+
+    /// Resolves `directory.default`, falling back to the current directory
+    /// when the command has not been registered (e.g. in isolated tests).
+    fn default_download_directory(&self) -> String {
+        let map = self.command_map.read().unwrap();
+        map.call_command(
+            "directory.default",
+            &Object::create_empty(),
+            &Target::None,
+            false,
+        )
+        .ok()
+        .and_then(|obj| obj.as_str().map(|s| s.to_string()).ok())
+        .unwrap_or_else(|| ".".to_string())
+    }
+
+    /// Loads and starts every `.torrent` file found directly in `dir_path`.
+    ///
+    /// The scan is non-recursive and case-insensitive on the extension.
+    /// Files are processed in sorted order for deterministic behaviour.
+    /// Individual unreadable or malformed torrents are logged and skipped;
+    /// only an unusable watch directory itself is reported as an error.
+    ///
+    /// Returns the number of torrents newly added to the session. Torrents
+    /// whose info hash is already present are started but not counted again.
+    /// Session state is persisted once after a non-empty batch.
+    pub fn load_watch_directory(&self, dir_path: &str) -> Result<usize, String> {
+        let path = std::path::Path::new(dir_path);
+        if !path.exists() {
+            return Err(format!("Watch directory '{}' does not exist", dir_path));
+        }
+        if !path.is_dir() {
+            return Err(format!("Watch directory '{}' is not a directory", dir_path));
+        }
+
+        let read_dir = std::fs::read_dir(path)
+            .map_err(|e| format!("Failed to read watch directory '{}': {}", dir_path, e))?;
+
+        let mut torrent_files: Vec<std::path::PathBuf> = read_dir
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|p| p.is_file() && Self::has_torrent_extension(p))
+            .collect();
+        torrent_files.sort();
+
+        if torrent_files.is_empty() {
+            return Ok(0);
+        }
+
+        let default_dir = self.default_download_directory();
+        let mut loaded_count = 0usize;
+
+        for (processed, torrent_path) in torrent_files.iter().enumerate() {
+            if self.import_watch_torrent(torrent_path, &default_dir) {
+                loaded_count += 1;
+            }
+
+            if (processed + 1).is_multiple_of(1000) {
+                tracing::info!(
+                    "Watch directory progress: {}/{} files processed",
+                    processed + 1,
+                    torrent_files.len()
+                );
+            }
+        }
+
+        if loaded_count > 0 {
+            let _ = self.save_session();
+            let msg = format!(
+                "Loaded {} torrents from watch directory '{}'",
+                loaded_count, dir_path
+            );
+            self.root_ui.lock().unwrap().push_log(msg.clone());
+            tracing::info!("{}", msg);
+        }
+
+        Ok(loaded_count)
+    }
+
+    /// Returns `true` when the torrent was newly inserted into the session.
+    fn import_watch_torrent(&self, torrent_path: &std::path::Path, directory: &str) -> bool {
+        let path_str = torrent_path.to_string_lossy().to_string();
+
+        let mut factory = DownloadFactory::new();
+        factory.set_start(false);
+        factory.set_init_load(true);
+        if let Err(e) = factory.load_file(&path_str) {
+            tracing::warn!("Failed to load watch torrent '{}': {}", path_str, e);
+            return false;
+        }
+
+        let mut dl_list = self.download_list.write().unwrap();
+        let download = match factory.commit(&mut dl_list) {
+            Ok(download) => download,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // The torrent is already tracked (e.g. restored from the
+                // session). Start it, but do not report it as newly loaded.
+                if let Ok(placeholder) = factory.create_download() {
+                    let hash = *placeholder.info_hash();
+                    if let Some(existing) = dl_list.find(&hash) {
+                        dl_list.start(&existing);
+                    }
+                }
+                return false;
+            }
+            Err(e) => {
+                tracing::warn!("Commit failed for watch torrent '{}': {}", path_str, e);
+                return false;
+            }
+        };
+
+        {
+            let mut guard = download.write().unwrap();
+            guard.set_directory(directory);
+            guard.queue_recheck_if_files_exist();
+        }
+
+        dl_list.start(&download);
+        drop(dl_list);
+
+        let mut vm = self.view_manager.write().unwrap();
+        vm.insert_download_to_all(Arc::clone(&download));
+        true
+    }
+
+    fn has_torrent_extension(path: &std::path::Path) -> bool {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("torrent"))
     }
 
     /// Applies the `change_directory` prompt (`^O`) to the focused download.

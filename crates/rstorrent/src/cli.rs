@@ -13,9 +13,23 @@ pub struct Cli {
     #[arg(short = 'b', value_name = "IP")]
     pub bind_address: Option<String>,
 
-    /// Default directory
-    #[arg(short = 'd', value_name = "DIRECTORY")]
+    /// Default download directory
+    #[arg(
+        short = 'd',
+        long = "directory",
+        visible_alias = "download-dir",
+        value_name = "DIRECTORY"
+    )]
     pub directory: Option<String>,
+
+    /// Watch directory for .torrent files to automatically load and start
+    #[arg(
+        short = 'w',
+        long = "watch-dir",
+        visible_alias = "watch",
+        value_name = "DIRECTORY"
+    )]
+    pub watch_dir: Option<String>,
 
     /// Local address
     #[arg(short = 'i', value_name = "IP")]

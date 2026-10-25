@@ -41,6 +41,7 @@ async fn test_full_lifecycle_and_rpc() {
     let cli = Cli {
         bind_address: Some("127.0.0.1".to_string()),
         directory: Some(download_dir.path.clone()),
+        watch_dir: None,
         local_address: None,
         port_range: Some("6881-6889".to_string()),
         session: Some(session_dir.path.clone()),
