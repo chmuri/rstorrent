@@ -32,6 +32,9 @@ const COORDINATOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const DISK_FLUSH_TIMEOUT: Duration = Duration::from_secs(35);
 const DISK_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const SESSION_SAVE_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a timed-out session writer gets to stop at an entry boundary
+/// before the shutdown proceeds without it.
+const WRITER_ABORT_GRACE: Duration = Duration::from_secs(2);
 
 pub struct Control {
     pub core_manager: Arc<CoreManager>,
@@ -626,10 +629,15 @@ impl Control {
                         download.set_directory(default_dir);
                     }
 
-                    // The directory may have come from the sidecar, so verify
-                    // existing payload regardless of whether we just filled in
-                    // a default.
-                    if download.queue_recheck_if_files_exist() {
+                    // A resume record that survived validation already carries
+                    // a trustworthy bitfield: `prepare_resume_data` clears the
+                    // pieces whose file mtime or size changed, so rehashing it
+                    // would throw away progress. Entries with no resume record,
+                    // or with one that completed no pieces, still need the
+                    // payload verified -- now that the directory is known.
+                    let resume_trusted =
+                        restored.resume_loaded && restored.outcome.completed_chunks > 0;
+                    if !resume_trusted && download.queue_recheck_if_files_exist() {
                         self.queued_rechecks.fetch_add(1, Ordering::Relaxed);
                     }
 
@@ -1114,35 +1122,47 @@ impl Control {
     /// Writes resume data for every download that is not mid-verification.
     ///
     /// This is the bounded-work variant used by the periodic checkpoint and the
-    /// forced-exit path: it never re-encodes `.torrent` files.
+    /// forced-exit path: it never re-encodes `.torrent` files. Like the full
+    /// save it snapshots the writer and writes outside the session mutex, so a
+    /// checkpoint running in the background cannot make `stop()` wait.
     pub fn save_resume_checkpoint_state(
         session_manager: Arc<Mutex<SessionManager>>,
         download_list: Arc<RwLock<DownloadList>>,
     ) -> std::io::Result<()> {
-        let session = session_manager.lock().unwrap();
-        if !session.is_used() || !session.is_active() {
-            return Ok(());
-        }
+        let writer = {
+            let session = session_manager.lock().unwrap();
+            if !session.is_used() || !session.is_active() {
+                return Ok(());
+            }
+            session.writer()
+        };
 
         let mut first_error = None;
+        let mut entries = Vec::new();
         for download in download_list.read().unwrap().all() {
             let guard = download.read().unwrap();
             if guard.is_hash_checking() || guard.is_erasing() {
                 continue;
             }
             match CoreManager::build_commit_entry(&guard) {
-                Ok(entry) => {
-                    if let Err(err) = session.save_resume(&entry) {
-                        if first_error.is_none() {
-                            first_error = Some(err);
-                        }
-                    }
+                Ok(mut entry) => {
+                    // Resume-only: the static torrent file is unchanged.
+                    entry.torrent_stream = None;
+                    entries.push(entry);
                 }
                 Err(err) => {
                     tracing::error!(error = %err, "Could not serialize checkpoint entry");
                     if first_error.is_none() {
                         first_error = Some(err);
                     }
+                }
+            }
+        }
+
+        if !entries.is_empty() {
+            if let Err(err) = writer.commit_parallel(&entries, None, session_write_workers()) {
+                if first_error.is_none() {
+                    first_error = Some(err);
                 }
             }
         }
@@ -1157,10 +1177,31 @@ impl Control {
         session_manager: Arc<Mutex<SessionManager>>,
         download_list: Arc<RwLock<DownloadList>>,
     ) -> std::io::Result<()> {
-        let session = session_manager.lock().unwrap();
-        if !session.is_used() || !session.is_active() {
-            return Ok(());
-        }
+        Self::save_session_state_with_abort(session_manager, download_list, None)
+    }
+
+    /// Serializes every download and publishes it through a writer snapshot.
+    ///
+    /// The session mutex is held only long enough to snapshot the writer, so
+    /// `SessionManager::stop()` never waits behind a long write. Entries are
+    /// written across a small worker pool: each entry keeps its own `fdatasync`
+    /// and directory `fsync`, only the number of entries in flight changes.
+    ///
+    /// `abort` is checked before each entry, which lets a shutdown deadline
+    /// stop the write at an entry boundary instead of detaching a task that
+    /// keeps the disk busy after the process gave up waiting.
+    pub fn save_session_state_with_abort(
+        session_manager: Arc<Mutex<SessionManager>>,
+        download_list: Arc<RwLock<DownloadList>>,
+        abort: Option<Arc<AtomicBool>>,
+    ) -> std::io::Result<()> {
+        let writer = {
+            let session = session_manager.lock().unwrap();
+            if !session.is_used() || !session.is_active() {
+                return Ok(());
+            }
+            session.writer()
+        };
 
         let downloads = download_list.read().unwrap().all();
         let mut entries = Vec::with_capacity(downloads.len());
@@ -1168,6 +1209,20 @@ impl Control {
 
         for download in downloads {
             let mut guard = download.write().unwrap();
+            // A verification in flight has no stable bitfield: persisting the
+            // resume now would store an empty one and force a recheck later.
+            // The static torrent still has to exist, though, so a new import
+            // survives a restart.
+            if guard.is_hash_checking() || guard.is_erasing() {
+                if let Ok(entry) = CoreManager::build_commit_entry(&guard) {
+                    if let Err(err) = writer.save_torrent_if_missing(&entry) {
+                        if first_error.is_none() {
+                            first_error = Some(err);
+                        }
+                    }
+                }
+                continue;
+            }
             // Refresh magnet metadata (and its bencode) that may have arrived
             // since the last network supervisor tick, so a shutdown always
             // persists the static torrent as well.
@@ -1187,7 +1242,9 @@ impl Control {
         }
 
         if !entries.is_empty() {
-            if let Err(err) = session.commit(&entries) {
+            let result =
+                writer.commit_parallel(&entries, abort.as_deref(), session_write_workers());
+            if let Err(err) = result {
                 if first_error.is_none() {
                     first_error = Some(err);
                 }
@@ -1299,16 +1356,21 @@ impl Control {
 
         // 6. Commit session/resume data, then release the session lock. Run
         // the file I/O on the blocking pool so a second SIGINT can still be
-        // serviced while the session is written.
+        // serviced while the session is written. The writer holds no session
+        // mutex, so a deadline stops the wait without stopping the work: the
+        // abort flag is checked between entries and the task is awaited for a
+        // short grace period before the lock is released.
         let phase_started = Instant::now();
-        let session_save = tokio::task::spawn_blocking({
+        let abort = Arc::new(AtomicBool::new(false));
+        let mut session_save = tokio::task::spawn_blocking({
             let session_manager = Arc::clone(&self.session_manager);
             let download_list = Arc::clone(&self.download_list);
-            move || Self::save_session_state(session_manager, download_list)
+            let abort = Arc::clone(&abort);
+            move || Self::save_session_state_with_abort(session_manager, download_list, Some(abort))
         });
 
         let (save_completed, save_timed_out) =
-            match tokio::time::timeout(SESSION_SAVE_TIMEOUT, session_save).await {
+            match tokio::time::timeout(SESSION_SAVE_TIMEOUT, &mut session_save).await {
                 Ok(Ok(Ok(()))) => (1, 0),
                 Ok(Ok(Err(err))) => {
                     tracing::error!(error = %err, "Could not save session during shutdown");
@@ -1319,7 +1381,15 @@ impl Control {
                     (0, 0)
                 }
                 Err(_) => {
-                    tracing::warn!("Timed out saving the session during shutdown");
+                    abort.store(true, Ordering::Relaxed);
+                    match tokio::time::timeout(WRITER_ABORT_GRACE, &mut session_save).await {
+                        Ok(_) => {
+                            tracing::warn!("Session save stopped at the shutdown deadline")
+                        }
+                        Err(_) => tracing::warn!(
+                            "Timed out saving the session during shutdown; writer still running"
+                        ),
+                    }
                     (0, 1)
                 }
             };
@@ -1430,6 +1500,18 @@ impl Control {
     pub fn is_shutdown_completed(&self) -> bool {
         self.is_shutdown_completed.load(Ordering::SeqCst)
     }
+}
+
+/// Number of threads used to publish session entries.
+///
+/// Entries are independent (distinct paths, atomic rename) and an `fsync` is
+/// latency-bound rather than throughput-bound, so a handful of workers turns a
+/// minute-long shutdown into a few seconds. Capped so the write does not starve
+/// the disk pool on the same filesystem.
+fn session_write_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|count| count.get().clamp(1, 8))
+        .unwrap_or(4)
 }
 
 /// Warns when the configured per-worker file caches could exhaust the

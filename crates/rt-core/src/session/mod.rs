@@ -18,7 +18,7 @@ use lt_storage::resume::{
 use crate::download::Download;
 use crate::download_factory::DownloadFactory;
 
-pub use manager::{SessionCommitEntry, SessionManager};
+pub use manager::{SessionCommitEntry, SessionManager, SessionWriter};
 pub use storer::{
     get_formatted_entries, get_restorable_entries, is_correct_format, load_resume_file,
     recover_staged_entries, DirectoryEntry, DownloadStorer, SessionEntry,
@@ -435,6 +435,10 @@ pub fn load_session_download(
     // A resume snapshot taken before the initial recheck finished contains an
     // empty bitfield even though the payload already exists. Trusting it would
     // re-download every piece. Verify the existing files instead.
+    //
+    // The download directory is usually only known after the caller applies
+    // `directory.default`, so the restore path in `Control` repeats this check
+    // once the directory is set.
     if outcome.completed_chunks == 0 && download.queue_recheck_if_files_exist() {
         tracing::info!(
             path = %torrent_path,

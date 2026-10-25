@@ -51,6 +51,13 @@ pub(crate) fn record_save_streams(torrent_stream: bool, bytes: u64) {
     BYTES.fetch_add(bytes, Ordering::Relaxed);
 }
 
+/// Records one attempt that wrote the static `.torrent` stream alone.
+pub(crate) fn record_torrent_only(bytes: u64) {
+    ENTRIES.fetch_add(1, Ordering::Relaxed);
+    TORRENT_STREAMS.fetch_add(1, Ordering::Relaxed);
+    BYTES.fetch_add(bytes, Ordering::Relaxed);
+}
+
 /// Records the `.new` files staged for one entry.
 pub(crate) fn record_staged_files(count: u64) {
     STAGED_FILES.fetch_add(count, Ordering::Relaxed);

@@ -5,6 +5,7 @@ use lt_sys::lockfile::Lockfile;
 use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// One download's already-serialized session streams.
 ///
@@ -274,18 +275,25 @@ impl SessionManager {
             ));
         }
 
-        let file_path = DownloadStorer::build_path(&self.path, info_hash_hex)?;
-        let bytes = torrent_stream.map_or(0, |stream| stream.len() as u64)
-            + rtorrent_stream.len() as u64
-            + libtorrent_stream.len() as u64;
-        stats::record_save_streams(torrent_stream.is_some(), bytes);
-        DownloadStorer::save_and_move_streams(
-            &file_path,
-            self.use_fsyncdisk,
+        self.writer().save_streams(
+            info_hash_hex,
             torrent_stream,
             rtorrent_stream,
             libtorrent_stream,
         )
+    }
+
+    /// Returns a writer that owns a copy of the session settings.
+    ///
+    /// Session writes are the slow part of shutdown (one `fsync` per staged
+    /// file). Holding the manager mutex across them makes `stop()` wait for the
+    /// whole write, so callers that need to bound shutdown take a writer
+    /// snapshot under the lock and write outside it.
+    pub fn writer(&self) -> SessionWriter {
+        SessionWriter {
+            path: self.path.clone(),
+            use_fsyncdisk: self.use_fsyncdisk,
+        }
     }
 
     /// Commits every entry, continuing past individual failures so one broken
@@ -305,38 +313,7 @@ impl SessionManager {
             ));
         }
 
-        stats::record_commit();
-        let mut saved = 0usize;
-        let mut first_error = None;
-
-        for entry in entries {
-            let result = self.save_streams(
-                &entry.info_hash_hex,
-                entry.torrent_stream.as_deref(),
-                &entry.rtorrent_stream,
-                &entry.libtorrent_stream,
-            );
-
-            match result {
-                Ok(()) => saved += 1,
-                Err(err) => {
-                    tracing::error!(
-                        hash = %entry.info_hash_hex,
-                        path = %self.path,
-                        error = %err,
-                        "Could not commit download session data."
-                    );
-                    if first_error.is_none() {
-                        first_error = Some(err);
-                    }
-                }
-            }
-        }
-
-        match first_error {
-            Some(err) => Err(err),
-            None => Ok(saved),
-        }
+        self.writer().commit_with_abort(entries, None)
     }
 
     /// Persist only the resume and `.rtorrent` streams for one download.
@@ -452,4 +429,202 @@ impl Drop for SessionManager {
         }
         self.active = false;
     }
+}
+
+/// Snapshot of the session directory settings, usable without the manager
+/// mutex.
+///
+/// Obtained from [`SessionManager::writer`]. Publishing one entry is atomic and
+/// touches only that entry's paths, so distinct entries can be written
+/// concurrently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionWriter {
+    path: String,
+    use_fsyncdisk: bool,
+}
+
+impl SessionWriter {
+    pub fn is_enabled(&self) -> bool {
+        !self.path.is_empty()
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn use_fsyncdisk(&self) -> bool {
+        self.use_fsyncdisk
+    }
+
+    /// Stages and publishes one entry's streams.
+    pub fn save_streams(
+        &self,
+        info_hash_hex: &str,
+        torrent_stream: Option<&[u8]>,
+        rtorrent_stream: &[u8],
+        libtorrent_stream: &[u8],
+    ) -> io::Result<()> {
+        if self.path.is_empty() {
+            return Ok(());
+        }
+
+        let file_path = DownloadStorer::build_path(&self.path, info_hash_hex)?;
+        let bytes = torrent_stream.map_or(0, |stream| stream.len() as u64)
+            + rtorrent_stream.len() as u64
+            + libtorrent_stream.len() as u64;
+        stats::record_save_streams(torrent_stream.is_some(), bytes);
+        DownloadStorer::save_and_move_streams(
+            &file_path,
+            self.use_fsyncdisk,
+            torrent_stream,
+            rtorrent_stream,
+            libtorrent_stream,
+        )
+    }
+
+    pub fn save_resume(&self, entry: &SessionCommitEntry) -> io::Result<()> {
+        self.save_streams(
+            &entry.info_hash_hex,
+            None,
+            &entry.rtorrent_stream,
+            &entry.libtorrent_stream,
+        )
+    }
+
+    /// Writes the static `.torrent` stream only when the file is missing.
+    ///
+    /// A verification in flight makes the resume bitfield untrustworthy, but a
+    /// newly imported torrent still has to be recorded or it disappears on the
+    /// next start.
+    pub fn save_torrent_if_missing(&self, entry: &SessionCommitEntry) -> io::Result<()> {
+        let Some(stream) = entry.torrent_stream.as_deref() else {
+            return Ok(());
+        };
+        if self.path.is_empty() {
+            return Ok(());
+        }
+        let path = DownloadStorer::build_path(&self.path, &entry.info_hash_hex)?;
+        if Path::new(&path).is_file() {
+            return Ok(());
+        }
+        stats::record_torrent_only(stream.len() as u64);
+        DownloadStorer::save_single_stream(&path, self.use_fsyncdisk, stream)
+    }
+
+    /// Writes entries sequentially, stopping at the first abort request.
+    pub fn commit_with_abort(
+        &self,
+        entries: &[SessionCommitEntry],
+        abort: Option<&AtomicBool>,
+    ) -> io::Result<usize> {
+        if self.path.is_empty() {
+            return Ok(0);
+        }
+
+        stats::record_commit();
+        let mut saved = 0usize;
+        let mut first_error = None;
+
+        for entry in entries {
+            if is_aborted(abort) {
+                break;
+            }
+            match self.save_entry(entry) {
+                Ok(()) => saved += 1,
+                Err(err) => {
+                    if first_error.is_none() {
+                        first_error = Some(err);
+                    }
+                }
+            }
+        }
+
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(saved),
+        }
+    }
+
+    /// Writes entries across `workers` threads.
+    ///
+    /// Each entry still gets its own `fdatasync` and directory `fsync`; only
+    /// the number of entries in flight changes. This is what keeps shutdown
+    /// proportional to `entries / workers` instead of `entries`.
+    pub fn commit_parallel(
+        &self,
+        entries: &[SessionCommitEntry],
+        abort: Option<&AtomicBool>,
+        workers: usize,
+    ) -> io::Result<usize> {
+        if self.path.is_empty() {
+            return Ok(0);
+        }
+
+        let workers = workers.clamp(1, entries.len().max(1));
+        stats::record_commit();
+
+        let cursor = AtomicUsize::new(0);
+        let saved = AtomicUsize::new(0);
+        let first_error: std::sync::Mutex<Option<io::Error>> = std::sync::Mutex::new(None);
+
+        std::thread::scope(|scope| {
+            for _ in 0..workers {
+                scope.spawn(|| loop {
+                    if is_aborted(abort) {
+                        break;
+                    }
+                    let index = cursor.fetch_add(1, Ordering::Relaxed);
+                    let Some(entry) = entries.get(index) else {
+                        break;
+                    };
+                    match self.save_entry(entry) {
+                        Ok(()) => {
+                            saved.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(err) => {
+                            let mut slot = first_error.lock().unwrap();
+                            if slot.is_none() {
+                                *slot = Some(err);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        if let Some(err) = first_error.into_inner().unwrap() {
+            // One broken entry must not hide the entries that did succeed.
+            tracing::warn!(
+                saved = saved.load(Ordering::Relaxed),
+                entries = entries.len(),
+                error = %err,
+                "Some session entries could not be written."
+            );
+            Err(err)
+        } else {
+            Ok(saved.load(Ordering::Relaxed))
+        }
+    }
+
+    fn save_entry(&self, entry: &SessionCommitEntry) -> io::Result<()> {
+        let result = self.save_streams(
+            &entry.info_hash_hex,
+            entry.torrent_stream.as_deref(),
+            &entry.rtorrent_stream,
+            &entry.libtorrent_stream,
+        );
+        if let Err(err) = &result {
+            tracing::error!(
+                hash = %entry.info_hash_hex,
+                path = %self.path,
+                error = %err,
+                "Could not commit download session data."
+            );
+        }
+        result
+    }
+}
+
+fn is_aborted(abort: Option<&AtomicBool>) -> bool {
+    abort.is_some_and(|flag| flag.load(Ordering::Relaxed))
 }

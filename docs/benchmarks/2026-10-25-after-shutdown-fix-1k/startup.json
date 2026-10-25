@@ -1,0 +1,81 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/fixed-1k-work-1/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/fixed-1k-work-1/data",
+    "-o",
+    "network.scgi.open_local = /tmp/opencode/fixed-1k-work-1/session/bench.sock",
+    "-o",
+    "network.port_range.set = 50000-50000",
+    "--daemon"
+  ],
+  "pid": 943853,
+  "log": "/tmp/opencode/fixed-1k-work-1/rstorrent.log",
+  "socket_s": 0.010192081004788633,
+  "rpc_s": 0.010595580999506637,
+  "rows": 1000,
+  "full_s": 0.06870395300211385,
+  "final": {
+    "rss_kb": 22484,
+    "threads": 11,
+    "fds": 12,
+    "cpu_s": 0.12,
+    "elapsed_s": 0.06902985100168735
+  },
+  "left_running": true,
+  "peak": {
+    "rss_kb": 22484,
+    "threads": 14,
+    "fds": 12
+  },
+  "metrics": {
+    "events": 14,
+    "phases_ms": {
+      "views": 0,
+      "commands": 4,
+      "schedule": 0,
+      "config": 0,
+      "disk_pool": 0,
+      "ui_wiring": 0,
+      "session_lock": 0,
+      "scan_entries": 16,
+      "restore_entries": 18,
+      "insert_downloads": 17,
+      "cli_files": 0,
+      "watch_dir": 0,
+      "network_spawn": 0
+    },
+    "shutdown_phases_ms": {},
+    "shutdown_phase_events": {},
+    "summaries": {
+      "startup.summary": {
+        "v": 1,
+        "t_ms": 57,
+        "event": "startup.summary",
+        "total_ms": 57,
+        "torrents": 1000,
+        "cli_files": 0,
+        "watch_loaded": 0,
+        "rechecks_queued": 0,
+        "listen_port": 50000,
+        "session_entries": 0,
+        "session_torrent_streams": 0,
+        "session_resume_streams": 0,
+        "session_rtorrent_streams": 0,
+        "session_staged_files": 0,
+        "session_bytes": 0,
+        "session_fdatasync_calls": 0,
+        "session_dir_sync_calls": 0,
+        "session_commit_calls": 0,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      }
+    }
+  }
+}

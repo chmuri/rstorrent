@@ -467,6 +467,27 @@ impl DownloadStorer {
         Ok(())
     }
 
+    /// Stages, syncs and publishes one stream without touching the sidecars.
+    ///
+    /// Used to persist a static `.torrent` while a verification in flight makes
+    /// the resume bitfield untrustworthy.
+    pub fn save_single_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
+        let staged = temp_path(path);
+        stats::record_staged_files(1);
+        if let Err(err) = save_stream(&staged, use_fsyncdisk, data) {
+            remove_staged_files(std::slice::from_ref(&staged));
+            return Err(err);
+        }
+        if let Err(err) = fs::rename(&staged, path) {
+            remove_staged_files(std::slice::from_ref(&staged));
+            return Err(err);
+        }
+        if use_fsyncdisk {
+            sync_directory_of(path)?;
+        }
+        Ok(())
+    }
+
     /// Loads a `.libtorrent_resume` file.
     pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
         let bytes = fs::read(path)?;

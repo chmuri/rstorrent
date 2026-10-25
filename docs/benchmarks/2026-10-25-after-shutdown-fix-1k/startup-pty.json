@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/fixed-1k-work-1/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/fixed-1k-work-1/data",
+    "-o",
+    "network.port_range.set = 50010-50010"
+  ],
+  "mode": "pty",
+  "first_frame_s": 0.13322316200356,
+  "bytes_to_frame": 1094,
+  "exit_s": 1.3666108730030828,
+  "exited": true,
+  "timed_out": false
+}

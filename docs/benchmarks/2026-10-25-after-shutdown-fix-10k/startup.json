@@ -1,0 +1,81 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/fixed-10k-work-1/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/fixed-10k-work-1/data",
+    "-o",
+    "network.scgi.open_local = /tmp/opencode/fixed-10k-work-1/session/bench.sock",
+    "-o",
+    "network.port_range.set = 50000-50000",
+    "--daemon"
+  ],
+  "pid": 947171,
+  "log": "/tmp/opencode/fixed-10k-work-1/rstorrent.log",
+  "socket_s": 0.010263738004141487,
+  "rpc_s": 0.010667575006664265,
+  "rows": 10000,
+  "full_s": 0.6692701470019529,
+  "final": {
+    "rss_kb": 107064,
+    "threads": 11,
+    "fds": 11,
+    "cpu_s": 1.13,
+    "elapsed_s": 0.6698363720061025
+  },
+  "left_running": true,
+  "peak": {
+    "rss_kb": 107064,
+    "threads": 14,
+    "fds": 13
+  },
+  "metrics": {
+    "events": 14,
+    "phases_ms": {
+      "views": 0,
+      "commands": 4,
+      "schedule": 0,
+      "config": 0,
+      "disk_pool": 0,
+      "ui_wiring": 0,
+      "session_lock": 0,
+      "scan_entries": 150,
+      "restore_entries": 196,
+      "insert_downloads": 177,
+      "cli_files": 0,
+      "watch_dir": 0,
+      "network_spawn": 0
+    },
+    "shutdown_phases_ms": {},
+    "shutdown_phase_events": {},
+    "summaries": {
+      "startup.summary": {
+        "v": 1,
+        "t_ms": 531,
+        "event": "startup.summary",
+        "total_ms": 531,
+        "torrents": 10000,
+        "cli_files": 0,
+        "watch_loaded": 0,
+        "rechecks_queued": 0,
+        "listen_port": 50000,
+        "session_entries": 0,
+        "session_torrent_streams": 0,
+        "session_resume_streams": 0,
+        "session_rtorrent_streams": 0,
+        "session_staged_files": 0,
+        "session_bytes": 0,
+        "session_fdatasync_calls": 0,
+        "session_dir_sync_calls": 0,
+        "session_commit_calls": 0,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      }
+    }
+  }
+}
