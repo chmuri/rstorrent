@@ -2639,6 +2639,7 @@ dependencies = [
  "rt-rpc",
  "rt-scgi",
  "rt-tui",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
