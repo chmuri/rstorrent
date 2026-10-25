@@ -68,6 +68,7 @@ async fn test_scgi_socket_flood_xmlrpc() {
     let cli = Cli {
         bind_address: None,
         directory: None,
+        watch_dir: None,
         local_address: None,
         port_range: None,
         session: Some(session_dir.clone()),
@@ -147,6 +148,7 @@ async fn test_scgi_socket_load_raw_start() {
     let cli = Cli {
         bind_address: None,
         directory: None,
+        watch_dir: None,
         local_address: None,
         port_range: None,
         session: Some(session_dir.clone()),

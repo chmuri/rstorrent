@@ -38,6 +38,7 @@ fn daemon_cli(session: &str, directory: &str, port: u16) -> Cli {
     Cli {
         bind_address: Some("127.0.0.1".to_string()),
         directory: Some(directory.to_string()),
+        watch_dir: None,
         local_address: None,
         port_range: Some(format!("{}-{}", port, port)),
         session: Some(session.to_string()),

@@ -43,6 +43,7 @@ fn cli(data_dir: &Path, session_dir: &Path, port: u16) -> Cli {
     Cli {
         bind_address: None,
         directory: Some(data_dir.to_string_lossy().to_string()),
+        watch_dir: None,
         local_address: None,
         port_range: Some(port.to_string()),
         session: Some(session_dir.to_string_lossy().to_string()),
