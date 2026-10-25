@@ -1,0 +1,119 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/canon-10k/payload-restore/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/canon-10k/payload-restore/data",
+    "-o",
+    "network.scgi.open_local = /tmp/opencode/canon-10k/payload-restore/session/bench.sock",
+    "-o",
+    "network.port_range.set = 50014-50014",
+    "--daemon"
+  ],
+  "pid": 841732,
+  "log": "/tmp/opencode/canon-10k/payload-restore/rstorrent.log",
+  "socket_s": 0.010207343002548441,
+  "rpc_s": 0.010653017998265568,
+  "rows": 10000,
+  "full_s": 1.013288472997374,
+  "final": {
+    "rss_kb": 114000,
+    "threads": 11,
+    "fds": 13,
+    "cpu_s": 1.97,
+    "elapsed_s": 1.0136252169977524
+  },
+  "peak": {
+    "rss_kb": 114000,
+    "threads": 14,
+    "fds": 15
+  },
+  "metrics": {
+    "events": 18,
+    "phases_ms": {
+      "views": 0,
+      "commands": 4,
+      "schedule": 0,
+      "config": 0,
+      "disk_pool": 0,
+      "ui_wiring": 0,
+      "session_lock": 0,
+      "scan_entries": 159,
+      "restore_entries": 409,
+      "insert_downloads": 215,
+      "cli_files": 0,
+      "watch_dir": 0,
+      "network_spawn": 0
+    },
+    "shutdown_phases_ms": {
+      "network_drain": 0,
+      "flush_downloads": 210,
+      "disk_thread": 0,
+      "session_save": 30001
+    },
+    "shutdown_phase_events": {
+      "network_drain": {
+        "v": 1,
+        "t_ms": 1017,
+        "event": "shutdown.phase",
+        "phase": "network_drain",
+        "ms": 0,
+        "completed": 1
+      },
+      "flush_downloads": {
+        "v": 1,
+        "t_ms": 1228,
+        "event": "shutdown.phase",
+        "phase": "flush_downloads",
+        "ms": 210,
+        "errors": 0
+      },
+      "disk_thread": {
+        "v": 1,
+        "t_ms": 1228,
+        "event": "shutdown.phase",
+        "phase": "disk_thread",
+        "ms": 0,
+        "completed": 1
+      },
+      "session_save": {
+        "v": 1,
+        "t_ms": 31229,
+        "event": "shutdown.phase",
+        "phase": "session_save",
+        "ms": 30001,
+        "completed": 0,
+        "timed_out": 1
+      }
+    },
+    "summaries": {
+      "startup.summary": {
+        "v": 1,
+        "t_ms": 791,
+        "event": "startup.summary",
+        "total_ms": 791,
+        "torrents": 10000,
+        "cli_files": 0,
+        "watch_loaded": 0,
+        "rechecks_queued": 10000,
+        "listen_port": 50014,
+        "session_entries": 0,
+        "session_torrent_streams": 0,
+        "session_resume_streams": 0,
+        "session_rtorrent_streams": 0,
+        "session_staged_files": 0,
+        "session_bytes": 0,
+        "session_fdatasync_calls": 0,
+        "session_dir_sync_calls": 0,
+        "session_commit_calls": 0,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      }
+    }
+  }
+}

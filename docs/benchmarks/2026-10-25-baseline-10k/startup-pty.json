@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/canon-10k/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/canon-10k/data",
+    "-o",
+    "network.port_range.set = 50010-50010"
+  ],
+  "mode": "pty",
+  "first_frame_s": 0.5439092209999217,
+  "bytes_to_frame": 1094,
+  "exit_s": 80.76546466099535,
+  "exited": true,
+  "timed_out": false
+}

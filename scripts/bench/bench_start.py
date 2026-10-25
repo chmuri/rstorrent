@@ -93,6 +93,7 @@ def read_metrics(path: str) -> dict | None:
         return None
     phases: dict[str, int] = {}
     shutdown_phases: dict[str, int] = {}
+    shutdown_phase_events: dict[str, dict] = {}
     summaries: dict[str, dict] = {}
     lines = 0
     with open(path, encoding="utf-8") as handle:
@@ -107,12 +108,14 @@ def read_metrics(path: str) -> dict | None:
                 phases[event["phase"]] = event.get("ms", 0)
             elif name == "shutdown.phase":
                 shutdown_phases[event["phase"]] = event.get("ms", 0)
+                shutdown_phase_events[event["phase"]] = event
             elif name in ("startup.summary", "shutdown.summary", "exit.summary"):
                 summaries[name] = event
     return {
         "events": lines,
         "phases_ms": phases,
         "shutdown_phases_ms": shutdown_phases,
+        "shutdown_phase_events": shutdown_phase_events,
         "summaries": summaries,
     }
 

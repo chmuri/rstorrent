@@ -1,0 +1,163 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/canon-1k/payload-restore/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/canon-1k/payload-restore/data",
+    "-o",
+    "network.scgi.open_local = /tmp/opencode/canon-1k/payload-restore/session/bench.sock",
+    "-o",
+    "network.port_range.set = 50013-50013",
+    "--daemon"
+  ],
+  "pid": 835206,
+  "socket_s": 0.010178303004067857,
+  "rows": 1000,
+  "full_s": 0.11985335800272878,
+  "timed_out": false,
+  "exit_s": 6.630018126001232,
+  "returncode": 0,
+  "lock_free_s": 6.630064035001851,
+  "lock_released": true,
+  "files_before": 3003,
+  "files_after": 3002,
+  "files_rewritten": 3001,
+  "files_added": 0,
+  "files_removed": 1,
+  "bytes_on_disk_delta": -15,
+  "metrics": {
+    "events": 21,
+    "phases_ms": {
+      "views": 0,
+      "commands": 4,
+      "schedule": 0,
+      "config": 0,
+      "disk_pool": 0,
+      "ui_wiring": 0,
+      "session_lock": 0,
+      "scan_entries": 14,
+      "restore_entries": 33,
+      "insert_downloads": 18,
+      "cli_files": 0,
+      "watch_dir": 0,
+      "network_spawn": 0
+    },
+    "shutdown_phases_ms": {
+      "network_drain": 0,
+      "flush_downloads": 18,
+      "disk_thread": 0,
+      "session_save": 6511,
+      "lock_release": 0
+    },
+    "shutdown_phase_events": {
+      "network_drain": {
+        "v": 1,
+        "t_ms": 5190,
+        "event": "shutdown.phase",
+        "phase": "network_drain",
+        "ms": 0,
+        "completed": 1
+      },
+      "flush_downloads": {
+        "v": 1,
+        "t_ms": 5208,
+        "event": "shutdown.phase",
+        "phase": "flush_downloads",
+        "ms": 18,
+        "errors": 0
+      },
+      "disk_thread": {
+        "v": 1,
+        "t_ms": 5208,
+        "event": "shutdown.phase",
+        "phase": "disk_thread",
+        "ms": 0,
+        "completed": 1
+      },
+      "session_save": {
+        "v": 1,
+        "t_ms": 11720,
+        "event": "shutdown.phase",
+        "phase": "session_save",
+        "ms": 6511,
+        "completed": 1,
+        "timed_out": 0
+      },
+      "lock_release": {
+        "v": 1,
+        "t_ms": 11720,
+        "event": "shutdown.phase",
+        "phase": "lock_release",
+        "ms": 0
+      }
+    },
+    "summaries": {
+      "startup.summary": {
+        "v": 1,
+        "t_ms": 71,
+        "event": "startup.summary",
+        "total_ms": 71,
+        "torrents": 1000,
+        "cli_files": 0,
+        "watch_loaded": 0,
+        "rechecks_queued": 1000,
+        "listen_port": 50013,
+        "session_entries": 0,
+        "session_torrent_streams": 0,
+        "session_resume_streams": 0,
+        "session_rtorrent_streams": 0,
+        "session_staged_files": 0,
+        "session_bytes": 0,
+        "session_fdatasync_calls": 0,
+        "session_dir_sync_calls": 0,
+        "session_commit_calls": 0,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      },
+      "shutdown.summary": {
+        "v": 1,
+        "t_ms": 11720,
+        "event": "shutdown.summary",
+        "total_ms": 6530,
+        "proc_write_bytes": 12578816,
+        "proc_wchar": 701843,
+        "session_entries": 1000,
+        "session_torrent_streams": 1000,
+        "session_resume_streams": 1000,
+        "session_rtorrent_streams": 1000,
+        "session_staged_files": 3000,
+        "session_bytes": 425000,
+        "session_fdatasync_calls": 3000,
+        "session_dir_sync_calls": 1000,
+        "session_commit_calls": 1,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      },
+      "exit.summary": {
+        "v": 1,
+        "t_ms": 11720,
+        "event": "exit.summary",
+        "wall_ms": 11720,
+        "interactive": 0,
+        "forced": 0
+      }
+    }
+  },
+  "proc_write_bytes": 12292096,
+  "shutdown_phases_ms": {
+    "network_drain": 0,
+    "flush_downloads": 18,
+    "disk_thread": 0,
+    "session_save": 6511,
+    "lock_release": 0
+  },
+  "session_save_timed_out": false
+}
