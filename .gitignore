@@ -40,3 +40,11 @@ Thumbs.db
 
 # Internal knowledge base (not part of the repository)
 docs/knowledge-base/
+
+# Benchmark test datasets
+/test/
+/files/
+
+# Local agent tooling state
+/.claude/
+/.task
