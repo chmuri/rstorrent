@@ -438,6 +438,18 @@ impl Drop for SessionManager {
     }
 }
 
+/// Number of threads used to publish session entries.
+///
+/// Entries are independent (distinct paths, atomic rename) and an `fsync` is
+/// latency-bound rather than throughput-bound, so a handful of workers turns a
+/// minute-long write into a few seconds. Capped so the write does not starve
+/// the disk pool on the same filesystem.
+pub fn write_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|count| count.get().clamp(1, 8))
+        .unwrap_or(4)
+}
+
 /// Remembers the bytes last published for each info hash.
 ///
 /// A session commit re-serializes every download, so the writer needs a way to

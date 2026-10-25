@@ -131,6 +131,39 @@ instead of nothing; that case is still bounded:
 (pieces are already synced per hash pass); with the old value a shutdown during
 heavy hashing sat on that single stage for exactly 35 s before giving up.
 
+## Watch-directory startup
+
+`load_watch_directory` used to end with a synchronous full session commit. At
+10 000 imported torrents that is 30 000 files written **before the TUI starts**:
+
+| 10k, `-d files -w watch` | Before | After |
+|---|---|---|
+| `startup.total_ms` | **56 137 ms** | **824 ms** |
+| `watch_scan` | 77 ms | 77 ms |
+| `watch_import` | 745 ms | 740 ms |
+| `watch_commit` (synchronous save) | **55 299 ms** | removed |
+
+Imports are now persisted off the startup path: the periodic checkpoint writes
+the static anchor (a `stat` for torrents that already have one) and the resume
+data, and shutdown writes whatever is still pending. The watch directory remains
+the source of truth, so a crash between import and the first checkpoint
+re-imports from it on the next start.
+
+The first shutdown after importing 10 000 torrents is the one-time cost of
+persisting them, and it happens while 10 000 verifications are running:
+
+| Phase | Time |
+|---|---|
+| `flush_downloads` (5 s cap) | 5 005 ms |
+| `disk_thread` | 7 568 ms |
+| `session_save` (12 485 entries, 2 files each) | 23 196 ms |
+| total | 35.8 s |
+
+That is real work — 10 000 torrents did not exist in the session before — and it
+is bounded (`flush_downloads` 5 s, `session_save` 30 s with an abort flag).
+Every later shutdown is the steady-state case below.
+
+
 ## Acceptance
 
 | Criterion | Result |

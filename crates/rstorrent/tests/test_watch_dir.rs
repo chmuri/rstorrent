@@ -422,17 +422,42 @@ async fn initialize_loads_watch_directory_into_session_and_views() {
     }
     assert_eq!(main_view_len(&control), 1);
 
-    // The batch watch-dir load persists the session once.
-    let session_entries = control
+    // Importing must not write the session before the TUI starts: at 10k
+    // torrents that was 30k files and ~56 s of startup. The first checkpoint
+    // (every 300 s) persists the anchor and resume data off the startup path.
+    let entries_before = control
+        .session_manager
+        .lock()
+        .unwrap()
+        .get_valid_entries()
+        .expect("read session entries");
+    assert!(
+        entries_before.is_empty(),
+        "watch-directory load must not persist synchronously"
+    );
+
+    control
+        .command_map
+        .read()
+        .unwrap()
+        .call_command(
+            "session.checkpoint",
+            &lt_common::Object::create_empty(),
+            &rt_rpc::Target::None,
+            true,
+        )
+        .expect("checkpoint");
+
+    let entries_after = control
         .session_manager
         .lock()
         .unwrap()
         .get_valid_entries()
         .expect("read session entries");
     assert_eq!(
-        session_entries.len(),
+        entries_after.len(),
         1,
-        "watch-directory load must persist the session"
+        "the periodic checkpoint must persist imported torrents"
     );
 
     control.shutdown().await;

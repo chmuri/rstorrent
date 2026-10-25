@@ -9,6 +9,7 @@ rechecks, and which knobs change that. Numbers live in
 | Area | Before | Now |
 |---|---|---|
 | Restore 14k paused torrents | 157.9 s (quadratic) | ~0.9–1.4 s (linear) |
+| Watch directory import, 10k torrents | 56.1 s (synchronous session save) | 0.82 s (persisted by checkpoint/shutdown) |
 | Graceful shutdown, 10k torrents | 84.5 s (30 s timeout + 54 s lock wait) | 0.52 s idle, 0.87 s during a recheck |
 | Session files rewritten on an unchanged shutdown | every entry, 3 files each | 1 file (`dht.cache`) via dirty-only writes |
 | `d.hash` p99 at 14k | 1.04 ms (scan) | 0.17 ms (flat in N) |

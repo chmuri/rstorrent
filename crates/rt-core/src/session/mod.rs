@@ -18,7 +18,7 @@ use lt_storage::resume::{
 use crate::download::Download;
 use crate::download_factory::DownloadFactory;
 
-pub use manager::{SessionCommitEntry, SessionManager, SessionWriter};
+pub use manager::{write_workers, SessionCommitEntry, SessionManager, SessionWriter};
 pub use storer::{
     get_formatted_entries, get_restorable_entries, is_correct_format, load_resume_file,
     recover_staged_entries, DirectoryEntry, DownloadStorer, SessionEntry,

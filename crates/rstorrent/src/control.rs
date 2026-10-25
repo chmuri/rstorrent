@@ -959,14 +959,13 @@ impl Control {
         );
 
         if loaded_count > 0 {
-            let commit_started = Instant::now();
-            let _ = self.save_session();
-            self.metrics.phase(
-                "startup.phase",
-                "watch_commit",
-                commit_started,
-                Some(loaded_count as u64),
-            );
+            // Persisting here would write three files per imported torrent
+            // before the TUI starts (tens of seconds at 10k). The watch
+            // directory is the source of truth for imports, so they are
+            // persisted by the periodic checkpoint (anchors + resume) and by
+            // shutdown instead, both of which run off the startup path.
+            self.metrics
+                .counter("startup.watch_pending_persist", loaded_count as u64);
             let msg = format!(
                 "Loaded {} torrents from watch directory '{}'",
                 loaded_count, dir_path
@@ -1146,7 +1145,16 @@ impl Control {
             }
             match CoreManager::build_commit_entry(&guard) {
                 Ok(mut entry) => {
-                    // Resume-only: the static torrent file is unchanged.
+                    // Newly imported torrents (watch directory, CLI loads) have
+                    // no static anchor yet; the checkpoint is the first place
+                    // that persists one. For an established torrent this is a
+                    // single `stat`.
+                    if let Err(err) = writer.save_torrent_if_missing(&entry) {
+                        if first_error.is_none() {
+                            first_error = Some(err);
+                        }
+                    }
+                    // Resume-only: the static torrent file is now current.
                     entry.torrent_stream = None;
                     entries.push(entry);
                 }
@@ -1160,7 +1168,9 @@ impl Control {
         }
 
         if !entries.is_empty() {
-            if let Err(err) = writer.commit_parallel(&entries, None, session_write_workers()) {
+            if let Err(err) =
+                writer.commit_parallel(&entries, None, rt_core::session::write_workers())
+            {
                 if first_error.is_none() {
                     first_error = Some(err);
                 }
@@ -1242,8 +1252,11 @@ impl Control {
         }
 
         if !entries.is_empty() {
-            let result =
-                writer.commit_parallel(&entries, abort.as_deref(), session_write_workers());
+            let result = writer.commit_parallel(
+                &entries,
+                abort.as_deref(),
+                rt_core::session::write_workers(),
+            );
             if let Err(err) = result {
                 if first_error.is_none() {
                     first_error = Some(err);
@@ -1500,18 +1513,6 @@ impl Control {
     pub fn is_shutdown_completed(&self) -> bool {
         self.is_shutdown_completed.load(Ordering::SeqCst)
     }
-}
-
-/// Number of threads used to publish session entries.
-///
-/// Entries are independent (distinct paths, atomic rename) and an `fsync` is
-/// latency-bound rather than throughput-bound, so a handful of workers turns a
-/// minute-long shutdown into a few seconds. Capped so the write does not starve
-/// the disk pool on the same filesystem.
-fn session_write_workers() -> usize {
-    std::thread::available_parallelism()
-        .map(|count| count.get().clamp(1, 8))
-        .unwrap_or(4)
 }
 
 /// Warns when the configured per-worker file caches could exhaust the

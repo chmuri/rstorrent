@@ -237,28 +237,45 @@ pub fn register_session_commands(
     map.insert_func(
         "session.checkpoint",
         move |_target, _obj| {
-            let session = s_checkpoint.lock().unwrap();
-            if !session.is_used() || !session.is_active() {
-                return Ok(Object::create_empty());
-            }
+            // Snapshot the writer and release the session mutex before writing:
+            // a checkpoint must never make `SessionManager::stop()` wait.
+            let writer = {
+                let session = s_checkpoint.lock().unwrap();
+                if !session.is_used() || !session.is_active() {
+                    return Ok(Object::create_empty());
+                }
+                session.writer()
+            };
 
+            let mut entries = Vec::new();
             for download in checkpoint_list.read().unwrap().all() {
                 let guard = download.read().unwrap();
-                // A hash pass rewrites the bitfield; persisting it mid-pass
-                // would store a half-verified state.
-                if guard.is_hash_checking() || guard.is_erasing() {
-                    continue;
-                }
-                let entry = match Manager::build_commit_entry(&guard) {
+                let mut entry = match Manager::build_commit_entry(&guard) {
                     Ok(entry) => entry,
                     Err(err) => {
                         tracing::error!(error = %err, "Could not serialize checkpoint entry");
                         continue;
                     }
                 };
-                if let Err(err) = session.save_resume(&entry) {
-                    tracing::warn!(error = %err, "Could not write checkpoint entry");
+                // The static anchor is safe to write at any time. A torrent
+                // imported from the watch directory has none until something
+                // writes it, and losing it on a crash would drop the import.
+                if let Err(err) = writer.save_torrent_if_missing(&entry) {
+                    tracing::warn!(error = %err, "Could not write checkpoint anchor");
                 }
+                // A hash pass rewrites the bitfield; persisting it mid-pass
+                // would store a half-verified state.
+                if guard.is_hash_checking() || guard.is_erasing() {
+                    continue;
+                }
+                entry.torrent_stream = None;
+                entries.push(entry);
+            }
+
+            if let Err(err) =
+                writer.commit_parallel(&entries, None, crate::session::write_workers())
+            {
+                tracing::warn!(error = %err, "Could not write checkpoint entries");
             }
 
             Ok(Object::create_empty())
