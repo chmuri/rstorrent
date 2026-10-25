@@ -87,6 +87,110 @@ def row_count(sock: str) -> int:
     return len(scgi_client.find_hashes(body))
 
 
+def read_metrics(path: str) -> dict | None:
+    """Parse the JSONL emitted by `RSTORRENT_METRICS_FILE`."""
+    if not os.path.exists(path):
+        return None
+    phases: dict[str, int] = {}
+    shutdown_phases: dict[str, int] = {}
+    summaries: dict[str, dict] = {}
+    lines = 0
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            lines += 1
+            name = event.get("event")
+            if name == "startup.phase":
+                phases[event["phase"]] = event.get("ms", 0)
+            elif name == "shutdown.phase":
+                shutdown_phases[event["phase"]] = event.get("ms", 0)
+            elif name in ("startup.summary", "shutdown.summary", "exit.summary"):
+                summaries[name] = event
+    return {
+        "events": lines,
+        "phases_ms": phases,
+        "shutdown_phases_ms": shutdown_phases,
+        "summaries": summaries,
+    }
+
+
+def measure_pty(binary: str, command: list[str], timeout: float) -> dict:
+    """Run the interactive TUI on a pseudo-terminal and time the first frame.
+
+    A frame is the first output burst large enough to paint a screen; the
+    initial cursor-hide/alternate-screen sequences are a few bytes and would
+    otherwise be mistaken for the UI being ready.
+    """
+    import fcntl
+    import pty
+    import select
+    import struct
+    import termios
+
+    rows, cols = 40, 120
+    master, slave = pty.openpty()
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+    env = dict(os.environ, TERM="xterm-256color")
+    env.pop("RSTORRENT_METRICS_FILE", None)
+    process = subprocess.Popen(
+        [binary] + command,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+
+    started = time.monotonic()
+    buffer = b""
+    first_frame = None
+    while time.monotonic() - started < timeout:
+        if process.poll() is not None:
+            break
+        ready, _, _ = select.select([master], [], [], 0.05)
+        if not ready:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buffer += chunk
+        if b"\x1b[" in buffer and len(buffer) >= 256:
+            first_frame = time.monotonic() - started
+            break
+
+    if first_frame is None:
+        process.kill()
+        process.wait(timeout=10)
+        os.close(master)
+        return {"first_frame_s": None, "timed_out": True}
+
+    process.send_signal(signal.SIGINT)
+    signal_at = time.monotonic()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+    exit_s = time.monotonic() - signal_at
+    os.close(master)
+
+    return {
+        "first_frame_s": first_frame,
+        "bytes_to_frame": len(buffer),
+        "exit_s": exit_s,
+        "exited": process.returncode is not None,
+        "timed_out": False,
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session", required=True)
@@ -102,7 +206,22 @@ def main(argv=None) -> int:
         action="store_true",
         help="leave the daemon running after measuring (for bench_lookup/recheck)",
     )
+    parser.add_argument(
+        "--settle",
+        type=float,
+        default=0.0,
+        help="idle seconds after measuring before the shutdown signal",
+    )
     parser.add_argument("--json-out")
+    parser.add_argument(
+        "--metrics",
+        help="path for RSTORRENT_METRICS_FILE; phases are merged into the result",
+    )
+    parser.add_argument(
+        "--pty",
+        action="store_true",
+        help="interactive mode: measure time to first TUI frame and Ctrl+C exit",
+    )
     args = parser.parse_args(argv)
 
     session = os.path.abspath(args.session)
@@ -110,6 +229,24 @@ def main(argv=None) -> int:
     sock = os.path.abspath(args.sock) if args.sock else os.path.join(session, "bench.sock")
     binary = os.path.abspath(args.bin)
     log_path = os.path.join(os.path.dirname(session), "rstorrent.log")
+
+    if args.pty:
+        command = [
+            "-n",
+            "-s",
+            session,
+            "-o",
+            f"directory.default.set = {data}",
+            "-o",
+            f"network.port_range.set = {args.port}-{args.port}",
+        ]
+        result = {"command": [binary] + command, "mode": "pty"}
+        result.update(measure_pty(binary, command, args.timeout))
+        print(json.dumps(result, indent=2))
+        if args.json_out:
+            with open(args.json_out, "w", encoding="utf-8") as handle:
+                json.dump(result, handle, indent=2)
+        return 0
 
     for path in (sock,):
         try:
@@ -136,7 +273,12 @@ def main(argv=None) -> int:
     print("exec: " + " ".join(command), file=sys.stderr)
 
     with open(log_path, "wb") as log:
-        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+        env = dict(os.environ)
+        if args.metrics:
+            env["RSTORRENT_METRICS_FILE"] = os.path.abspath(args.metrics)
+        process = subprocess.Popen(
+            command, stdout=log, stderr=subprocess.STDOUT, env=env
+        )
         sampler = Sampler(process.pid)
         sampler.start()
         started = time.monotonic()
@@ -209,6 +351,10 @@ def main(argv=None) -> int:
                 "threads": sampler.peak_threads,
                 "fds": sampler.peak_fds,
             }
+            if args.metrics:
+                result["metrics"] = read_metrics(args.metrics)
+            if args.settle > 0:
+                time.sleep(args.settle)
 
     print(json.dumps(result, indent=2))
     if args.json_out:
