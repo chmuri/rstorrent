@@ -1,3 +1,4 @@
+use crate::session::stats;
 use lt_common::object::bencode;
 use lt_storage::resume::ResumeData;
 use nix::fcntl::{open, OFlag};
@@ -303,6 +304,7 @@ fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
     }
 
     if use_fsyncdisk {
+        stats::record_fdatasync();
         #[cfg(target_os = "macos")]
         let sync_res = fsync(&fd);
         #[cfg(not(target_os = "macos"))]
@@ -328,6 +330,7 @@ fn remove_staged_files(paths: &[String]) {
 }
 
 fn sync_directory_of(path: &str) -> io::Result<()> {
+    stats::record_dir_sync();
     let dir = match path.rfind('/') {
         Some(0) => "/",
         Some(idx) => &path[..idx],
@@ -404,6 +407,7 @@ impl DownloadStorer {
         // left untouched, so a crash or write failure cannot destroy the last
         // good session state.
         let stage_result = (|| {
+            stats::record_staged_files(if torrent_stream.is_some() { 3 } else { 2 });
             if let Some(data) = torrent_stream {
                 save_stream(&torrent_tmp, use_fsyncdisk, data)?;
             }

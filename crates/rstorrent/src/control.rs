@@ -58,6 +58,9 @@ pub struct Control {
     pub network_runtime: Mutex<Option<rt_core::network_runtime::NetworkRuntimeHandle>>,
     /// Optional startup/shutdown recorder, enabled by [`metrics::METRICS_ENV`].
     pub metrics: Metrics,
+    /// Number of `queue_recheck_if_files_exist()` calls that found payload on
+    /// disk since startup. Diagnostic only; see `startup.summary`.
+    pub queued_rechecks: AtomicU64,
     shutdown_lock: tokio::sync::Mutex<()>,
 }
 
@@ -111,6 +114,7 @@ impl Control {
             shutdown_tx,
             network_runtime: Mutex::new(None),
             metrics: Metrics::from_env(),
+            queued_rechecks: AtomicU64::new(0),
             shutdown_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -122,13 +126,19 @@ impl Control {
     }
 
     pub fn initialize(&mut self, cli: &Cli) -> Result<(), String> {
+        let init_started = Instant::now();
+        let mut watch_loaded = 0usize;
+
         // 1. Setup default views
+        let phase = Instant::now();
         {
             let mut vm = self.view_manager.write().unwrap();
             setup_default_views(&mut vm);
         }
+        self.metrics.phase("startup.phase", "views", phase, None);
 
         // 2. Register all standard builtin commands into command_map
+        let phase = Instant::now();
         {
             let mut map = self.command_map.write().unwrap();
 
@@ -208,8 +218,10 @@ impl Control {
             )
             .map_err(|e| format!("Failed to register system.listMethods: {}", e))?;
         }
+        self.metrics.phase("startup.phase", "commands", phase, None);
 
         // 3. Setup default schedule
+        let phase = Instant::now();
         {
             let mut sched = self.command_scheduler.lock().unwrap();
             let now = std::time::SystemTime::now()
@@ -218,8 +230,10 @@ impl Control {
             sched.set_cached_time(now);
             setup_default_schedule(&mut sched);
         }
+        self.metrics.phase("startup.phase", "schedule", phase, None);
 
         // 4. Parse config files
+        let phase = Instant::now();
         if !cli.ignore_rc_file() {
             let config_path = cli
                 .config_file
@@ -323,6 +337,8 @@ impl Control {
         // 5.5 Create the disk pool before any download exists: EngineDownload
         // captures its shard at construction, and the pool configuration is
         // fixed from this point.
+        self.metrics.phase("startup.phase", "config", phase, None);
+        let phase = Instant::now();
         {
             let config = lt_storage::DiskPoolConfig {
                 threads: lt_storage::default_disk_threads(),
@@ -337,8 +353,11 @@ impl Control {
             }
             warn_if_fd_budget_is_tight(threads, max_open_files);
         }
+        self.metrics
+            .phase("startup.phase", "disk_pool", phase, None);
 
         // 6. Connect RootUI with view manager and download list
+        let phase = Instant::now();
         {
             let mut ui = self.root_ui.lock().unwrap();
             ui.set_view_manager(Arc::clone(&self.view_manager));
@@ -471,6 +490,9 @@ impl Control {
         }
 
         // 7. Start session manager if session directory is configured, or use XDG default
+        self.metrics
+            .phase("startup.phase", "ui_wiring", phase, None);
+        let phase = Instant::now();
         {
             let mut sm = self.session_manager.lock().unwrap();
             // Read the path from the manager directly. Calling the
@@ -513,6 +535,8 @@ impl Control {
         // 8. Restore session entries and their resume data first. Loading CLI
         // torrents into a not-yet-restored session would commit a fresh, empty
         // resume and overwrite the saved progress.
+        self.metrics
+            .phase("startup.phase", "session_lock", phase, None);
         {
             let session_path = {
                 let session = self.session_manager.lock().unwrap();
@@ -520,6 +544,7 @@ impl Control {
             };
 
             if !session_path.is_empty() {
+                let phase = Instant::now();
                 let entries = {
                     let session = self.session_manager.lock().unwrap();
                     // Restore every valid base, including magnet placeholders
@@ -528,13 +553,32 @@ impl Control {
                     // startup.
                     session.get_restorable_entries().unwrap_or_default()
                 };
+                self.metrics.phase(
+                    "startup.phase",
+                    "scan_entries",
+                    phase,
+                    Some(entries.len() as u64),
+                );
 
+                let phase = Instant::now();
                 let outcomes = rt_core::session::restore_entries(
                     &session_path,
                     &entries,
                     rt_core::session::load_threads(),
                 );
+                self.metrics.phase(
+                    "startup.phase",
+                    "restore_entries",
+                    phase,
+                    Some(outcomes.len() as u64),
+                );
 
+                let phase = Instant::now();
+                let mut restore_failed = 0u64;
+                let mut resume_rejected = 0u64;
+                let mut duplicates = 0u64;
+                let mut inserted = 0u64;
+                let mut started = 0u64;
                 for (index, outcome) in outcomes {
                     let entry = &entries[index];
                     let torrent_path = format!("{}{}", session_path, entry.base_name);
@@ -542,6 +586,7 @@ impl Control {
                     let restored = match outcome {
                         Ok(restored) => restored,
                         Err(err) => {
+                            restore_failed += 1;
                             tracing::warn!(
                                 path = %torrent_path,
                                 has_torrent = entry.has_torrent,
@@ -554,6 +599,7 @@ impl Control {
                     };
 
                     if let Some(err) = &restored.resume_error {
+                        resume_rejected += 1;
                         tracing::warn!(
                             path = %torrent_path,
                             error = %err,
@@ -583,18 +629,22 @@ impl Control {
                     // The directory may have come from the sidecar, so verify
                     // existing payload regardless of whether we just filled in
                     // a default.
-                    download.queue_recheck_if_files_exist();
+                    if download.queue_recheck_if_files_exist() {
+                        self.queued_rechecks.fetch_add(1, Ordering::Relaxed);
+                    }
 
                     let download = Arc::new(RwLock::new(download));
                     {
                         let mut dl_list = self.download_list.write().unwrap();
                         if !dl_list.insert(Arc::clone(&download)) {
+                            duplicates += 1;
                             tracing::warn!(
                                 path = %torrent_path,
                                 "Skipping duplicate session torrent entry."
                             );
                             continue;
                         }
+                        inserted += 1;
                     }
 
                     {
@@ -604,6 +654,7 @@ impl Control {
 
                     if was_active && resume_accepted {
                         self.download_list.read().unwrap().start(&download);
+                        started += 1;
                     }
 
                     self.root_ui
@@ -611,27 +662,58 @@ impl Control {
                         .unwrap()
                         .push_log(format!("Restored session torrent '{}'", torrent_path));
                 }
+
+                self.metrics.phase_with(
+                    "startup.phase",
+                    "insert_downloads",
+                    phase,
+                    Some(inserted),
+                    &[
+                        ("started", started),
+                        ("failed", restore_failed),
+                        ("resume_rejected", resume_rejected),
+                        ("duplicates", duplicates),
+                    ],
+                );
             }
         }
 
         // 8.5 Load files from CLI positional arguments. Torrents already
         // restored above are started from their existing entry instead of
         // being re-committed from scratch.
+        let phase = Instant::now();
         for file in &cli.files {
             if let Err(e) = self.try_load_torrent(file, true) {
                 tracing::warn!("Failed to load argument torrent '{}': {}", file, e);
             }
         }
+        self.metrics.phase(
+            "startup.phase",
+            "cli_files",
+            phase,
+            Some(cli.files.len() as u64),
+        );
 
         // 8.6 Load torrents from the watch directory, if configured. A bad
         // watch directory is reported but must not abort startup.
+        let phase = Instant::now();
         if let Some(watch_dir) = &cli.watch_dir {
-            if let Err(e) = self.load_watch_directory(watch_dir) {
-                tracing::warn!("Failed to load watch directory '{}': {}", watch_dir, e);
+            match self.load_watch_directory(watch_dir) {
+                Ok(loaded) => watch_loaded = loaded,
+                Err(e) => {
+                    tracing::warn!("Failed to load watch directory '{}': {}", watch_dir, e);
+                }
             }
         }
+        self.metrics.phase(
+            "startup.phase",
+            "watch_dir",
+            phase,
+            Some(watch_loaded as u64),
+        );
 
         // 9. Spawn NetworkRuntime supervisor
+        let phase = Instant::now();
         let dht_cache_path = {
             let session = self.session_manager.lock().unwrap();
             if session.path().is_empty() {
@@ -684,6 +766,24 @@ impl Control {
             dht_lifecycle,
         );
         *self.network_runtime.lock().unwrap() = Some(runtime);
+        self.metrics
+            .phase("startup.phase", "network_spawn", phase, None);
+
+        let torrents = self.download_list.read().unwrap().len() as u64;
+        let mut summary: Vec<(&'static str, u64)> = vec![
+            ("total_ms", self.metrics.ms_since(init_started)),
+            ("torrents", torrents),
+            ("cli_files", cli.files.len() as u64),
+            ("watch_loaded", watch_loaded as u64),
+            (
+                "rechecks_queued",
+                self.queued_rechecks.load(Ordering::Relaxed),
+            ),
+            ("listen_port", u64::from(self.listen_port)),
+        ];
+        summary.extend(rt_core::session::stats::snapshot().as_fields());
+        summary.extend(self.runtime_stats_fields());
+        self.metrics.summary("startup.summary", &summary);
 
         Ok(())
     }
@@ -748,7 +848,9 @@ impl Control {
         {
             let mut guard = download.write().unwrap();
             guard.set_directory(&default_dir);
-            guard.queue_recheck_if_files_exist();
+            if guard.queue_recheck_if_files_exist() {
+                self.queued_rechecks.fetch_add(1, Ordering::Relaxed);
+            }
         }
 
         if start {
@@ -758,7 +860,10 @@ impl Control {
 
         let mut vm = self.view_manager.write().unwrap();
         vm.insert_download_to_all(Arc::clone(&download));
+        let commit_started = Instant::now();
         let _ = self.save_session();
+        self.metrics
+            .phase("load.phase", "torrent_commit", commit_started, None);
         self.root_ui
             .lock()
             .unwrap()
@@ -792,6 +897,7 @@ impl Control {
     /// whose info hash is already present are started but not counted again.
     /// Session state is persisted once after a non-empty batch.
     pub fn load_watch_directory(&self, dir_path: &str) -> Result<usize, String> {
+        let scan_started = Instant::now();
         let path = std::path::Path::new(dir_path);
         if !path.exists() {
             return Err(format!("Watch directory '{}' does not exist", dir_path));
@@ -809,6 +915,12 @@ impl Control {
             .filter(|p| p.is_file() && Self::has_torrent_extension(p))
             .collect();
         torrent_files.sort();
+        self.metrics.phase(
+            "startup.phase",
+            "watch_scan",
+            scan_started,
+            Some(torrent_files.len() as u64),
+        );
 
         if torrent_files.is_empty() {
             return Ok(0);
@@ -816,6 +928,7 @@ impl Control {
 
         let default_dir = self.default_download_directory();
         let mut loaded_count = 0usize;
+        let import_started = Instant::now();
 
         for (processed, torrent_path) in torrent_files.iter().enumerate() {
             if self.import_watch_torrent(torrent_path, &default_dir) {
@@ -830,9 +943,22 @@ impl Control {
                 );
             }
         }
+        self.metrics.phase(
+            "startup.phase",
+            "watch_import",
+            import_started,
+            Some(loaded_count as u64),
+        );
 
         if loaded_count > 0 {
+            let commit_started = Instant::now();
             let _ = self.save_session();
+            self.metrics.phase(
+                "startup.phase",
+                "watch_commit",
+                commit_started,
+                Some(loaded_count as u64),
+            );
             let msg = format!(
                 "Loaded {} torrents from watch directory '{}'",
                 loaded_count, dir_path
@@ -879,7 +1005,9 @@ impl Control {
         {
             let mut guard = download.write().unwrap();
             guard.set_directory(directory);
-            guard.queue_recheck_if_files_exist();
+            if guard.queue_recheck_if_files_exist() {
+                self.queued_rechecks.fetch_add(1, Ordering::Relaxed);
+            }
         }
 
         dl_list.start(&download);
@@ -1133,9 +1261,14 @@ impl Control {
 
         // 4. Drain acknowledged piece writes and sync file handles.
         let phase_started = Instant::now();
-        self.flush_downloads().await;
-        self.metrics
-            .phase("shutdown.phase", "flush_downloads", phase_started, None);
+        let flush_errors = self.flush_downloads().await;
+        self.metrics.phase_with(
+            "shutdown.phase",
+            "flush_downloads",
+            phase_started,
+            None,
+            &[("errors", flush_errors)],
+        );
 
         // 5. Stop the process-wide disk worker after all downloads have been
         // flushed so queued writes are synced before the session is committed.
@@ -1218,22 +1351,29 @@ impl Control {
             summary.push(("proc_write_bytes", io.write_bytes));
             summary.push(("proc_wchar", io.wchar));
         }
+        summary.extend(rt_core::session::stats::snapshot().as_fields());
+        summary.extend(self.runtime_stats_fields());
         self.metrics.summary("shutdown.summary", &summary);
 
         tracing::info!("Graceful shutdown completed.");
     }
 
-    async fn flush_downloads(&self) {
+    async fn flush_downloads(&self) -> u64 {
         let downloads = self.download_list.read().unwrap().all();
         if downloads.is_empty() {
-            return;
+            return 0;
         }
 
+        let errors = Arc::new(AtomicU64::new(0));
+        let flush_errors = Arc::clone(&errors);
         let flush = tokio::task::spawn_blocking(move || {
             for download in downloads {
                 match download.write().unwrap().flush_disk() {
                     Ok(()) => {}
-                    Err(err) => tracing::warn!(error = %err, "Could not flush download"),
+                    Err(err) => {
+                        flush_errors.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!(error = %err, "Could not flush download");
+                    }
                 }
             }
         });
@@ -1243,6 +1383,23 @@ impl Control {
             Ok(Err(err)) => tracing::warn!(error = %err, "Disk flush task failed"),
             Err(_) => tracing::warn!("Timed out flushing downloads during shutdown"),
         }
+
+        errors.load(Ordering::Relaxed)
+    }
+
+    /// Hash scheduler and coordinator counters for the startup/shutdown
+    /// summaries. Missing scheduler counters read as zero.
+    fn runtime_stats_fields(&self) -> Vec<(&'static str, u64)> {
+        let mut fields = Vec::with_capacity(5);
+        if let Some(stats) = self.download_list.read().unwrap().hash_scheduler_stats() {
+            fields.push(("hash_queued", stats.queued as u64));
+            fields.push(("hash_active", stats.active as u64));
+            fields.push(("hash_peak", stats.peak as u64));
+        }
+        let (spawned, peak) = rt_core::network_runtime::coordinator_stats();
+        fields.push(("coordinators_spawned", spawned));
+        fields.push(("coordinators_peak", peak));
+        fields
     }
 
     /// Immediate shutdown used by the synchronous fallback path. It cannot
