@@ -36,6 +36,26 @@ pub fn status_label(
     }
 }
 
+/// First item to render so `focus` is visible in a window of `capacity` rows.
+///
+/// The window moves only when the focus leaves it, which keeps the list stable
+/// while moving inside the visible page, and never scrolls past the point where
+/// the last page is full.
+pub fn scroll_window(focus: usize, current: usize, capacity: usize, total: usize) -> usize {
+    if capacity == 0 || total == 0 {
+        return 0;
+    }
+    let capacity = capacity.min(total);
+    let max_start = total - capacity;
+    let mut start = current.min(max_start);
+    if focus < start {
+        start = focus;
+    } else if focus >= start + capacity {
+        start = focus + 1 - capacity;
+    }
+    start.min(max_start)
+}
+
 pub struct WindowDownloadList {
     pub flags: u32,
     pub view: Option<Arc<RwLock<View>>>,
@@ -43,6 +63,11 @@ pub struct WindowDownloadList {
     pub view_name: String,
     pub layout: String,
     dirty: bool,
+    /// Index of the first rendered download. Adjusted on every render so the
+    /// focused row stays on screen.
+    scroll: usize,
+    /// Rows that fit in the last render; used by PageUp/PageDown.
+    page: usize,
 }
 
 impl Default for WindowDownloadList {
@@ -60,6 +85,8 @@ impl WindowDownloadList {
             view_name: "main".to_string(),
             layout: "full".to_string(),
             dirty: true,
+            scroll: 0,
+            page: 1,
         }
     }
 
@@ -88,15 +115,18 @@ impl WindowDownloadList {
         self.dirty = true;
     }
 
-    pub fn page_size(&self, height: u32) -> usize {
-        let h = match self.layout.as_str() {
-            "compact" => 1,
-            _ => 3,
-        };
-        (height / h) as usize
+    /// Rows visible in the last render. Never zero, so it is safe as a page
+    /// step for PageUp/PageDown.
+    pub fn page_len(&self) -> usize {
+        self.page.max(1)
     }
 
-    fn render_view(&self, view: &View, canvas: &mut Canvas) {
+    /// First rendered download index.
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll
+    }
+
+    fn render_view(&mut self, view: &View, canvas: &mut Canvas) {
         let view_name = view.name();
         let filtered_str = if !view.get_filter_temp().is_empty() {
             " (filtered)"
@@ -111,7 +141,9 @@ impl WindowDownloadList {
         let counter_str = if total == 0 {
             "[ none of 0    ]".to_string()
         } else {
-            format!("[{:5} of {:<5}]", focus_idx + 1, total)
+            // `focus == total` is the "no selection" sentinel; never render it
+            // as position N+1.
+            format!("[{:5} of {:<5}]", (focus_idx + 1).min(total), total)
         };
 
         if canvas.width() > (title_line.len() + counter_str.len() + 2) as u32 {
@@ -124,12 +156,27 @@ impl WindowDownloadList {
             return;
         }
 
+        let item_height = if self.layout == "compact" { 1 } else { 3 };
         let mut y = 1u32;
         if self.layout == "compact" {
             canvas.print_at(0, y, "  Name                                                            | Status     | Downloaded |    Size    | Progress |  Up Rate  | Down Rate |  Uploaded  |    ETA    | Ratio | Misc ");
             y += 1;
+        }
 
-            for (idx, dl) in visible.iter().enumerate() {
+        // Keep the focused row on screen: move the window only when the focus
+        // leaves it, then clamp so the last page stays full.
+        let capacity = (canvas.height().saturating_sub(y) / item_height) as usize;
+        self.page = capacity.max(1);
+        // The sentinel focus (nothing selected) still scrolls to the end, but
+        // must not paint a focus marker on the last row.
+        let scroll_focus = focus_idx.min(visible.len() - 1);
+        let start = scroll_window(scroll_focus, self.scroll, self.page, visible.len());
+        self.scroll = start;
+        let end = (start + self.page).min(visible.len());
+
+        if self.layout == "compact" {
+            for (offset, dl) in visible[start..end].iter().enumerate() {
+                let idx = start + offset;
                 if y >= canvas.height() {
                     break;
                 }
@@ -160,7 +207,8 @@ impl WindowDownloadList {
             }
         } else {
             // Full 3-line layout per torrent
-            for (idx, dl) in visible.iter().enumerate() {
+            for (offset, dl) in visible[start..end].iter().enumerate() {
+                let idx = start + offset;
                 if y + 2 >= canvas.height() {
                     break;
                 }
@@ -266,15 +314,19 @@ impl Window for WindowDownloadList {
         }
         canvas.erase();
 
-        if let Some(v) = &self.view {
+        let view = self.view.clone();
+        let view_manager = self.view_manager.clone();
+        let view_name = self.view_name.clone();
+
+        if let Some(v) = view {
             let view_lock = v.read().unwrap();
             self.render_view(&view_lock, canvas);
-        } else if let Some(vm_arc) = &self.view_manager {
+        } else if let Some(vm_arc) = view_manager {
             let vm = vm_arc.read().unwrap();
-            if let Some(view) = vm.find(&self.view_name) {
+            if let Some(view) = vm.find(&view_name) {
                 self.render_view(view, canvas);
             } else {
-                canvas.print_at(0, 0, &format!("[View '{}' not found]", self.view_name));
+                canvas.print_at(0, 0, &format!("[View '{}' not found]", view_name));
             }
         } else {
             canvas.print_at(0, 0, "[No View]");

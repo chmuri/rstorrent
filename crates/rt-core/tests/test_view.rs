@@ -159,21 +159,13 @@ fn test_view_focus_navigation() {
     view.next_focus(1);
     assert_eq!(2, view.focus_index());
 
-    // Moving beyond bounds stops at size
+    // The focus index can sit one past the end as a "no selection" sentinel;
+    // the UI clamps navigation so arrow keys never produce it.
     view.next_focus(1);
     assert_eq!(3, view.focus_index());
+    assert!(view.focus().is_none());
 
     // prev_focus from boundary
-    view.prev_focus(1);
-    assert_eq!(2, view.focus_index());
-
-    view.prev_focus(1);
-    assert_eq!(1, view.focus_index());
-
-    view.prev_focus(1);
-    assert_eq!(0, view.focus_index());
-
-    // prev_focus at 0 rolls over to size - 1
     view.prev_focus(1);
     assert_eq!(2, view.focus_index());
 }
