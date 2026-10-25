@@ -23,6 +23,25 @@ use tracing::{debug, info, warn};
 
 use crate::download_list::DownloadList;
 
+/// Cumulative number of per-torrent network coordinators started since the
+/// process began, and the high-water mark of coordinators alive at once.
+static COORDINATORS_SPAWNED: AtomicU64 = AtomicU64::new(0);
+static COORDINATORS_PEAK: AtomicU64 = AtomicU64::new(0);
+
+/// Returns `(spawned, peak_active)`. Diagnostic only; feeds startup and
+/// shutdown metrics so an announce storm is visible without a debug build.
+pub fn coordinator_stats() -> (u64, u64) {
+    (
+        COORDINATORS_SPAWNED.load(Ordering::Relaxed),
+        COORDINATORS_PEAK.load(Ordering::Relaxed),
+    )
+}
+
+fn record_coordinator_spawn(active: usize) {
+    COORDINATORS_SPAWNED.fetch_add(1, Ordering::Relaxed);
+    COORDINATORS_PEAK.fetch_max(active as u64, Ordering::Relaxed);
+}
+
 /// Upper bound on concurrent inbound handshakes/connections.
 const MAX_INBOUND_CONNECTIONS: usize = 256;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -1407,6 +1426,7 @@ impl NetworkRuntime {
                     }
 
                     if is_active {
+                        let created = !active_coordinators.contains_key(&hash);
                         active_coordinators.entry(hash).or_insert_with(|| {
                             debug!(hash = %hash.to_hex(), "Spawning network coordinator for torrent");
                             let coordinator = DownloadNetworkCoordinator::new_with_shared_policy(
@@ -1421,6 +1441,9 @@ impl NetworkRuntime {
                             let stop_tx = coordinator.spawn();
                             (stop_tx, pool)
                         });
+                        if created {
+                            record_coordinator_spawn(active_coordinators.len());
+                        }
                     } else if let Some((stop_tx, _)) = active_coordinators.remove(&hash) {
                         debug!(hash = %hash.to_hex(), "Stopping network coordinator for torrent");
                         let _ = stop_tx.send(true);

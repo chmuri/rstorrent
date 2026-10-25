@@ -1,3 +1,4 @@
+use super::stats;
 use super::storer::{is_correct_format, DirectoryEntry, DownloadStorer};
 use crate::commands::system::resolve_path;
 use lt_sys::lockfile::Lockfile;
@@ -274,6 +275,10 @@ impl SessionManager {
         }
 
         let file_path = DownloadStorer::build_path(&self.path, info_hash_hex)?;
+        let bytes = torrent_stream.map_or(0, |stream| stream.len() as u64)
+            + rtorrent_stream.len() as u64
+            + libtorrent_stream.len() as u64;
+        stats::record_save_streams(torrent_stream.is_some(), bytes);
         DownloadStorer::save_and_move_streams(
             &file_path,
             self.use_fsyncdisk,
@@ -300,6 +305,7 @@ impl SessionManager {
             ));
         }
 
+        stats::record_commit();
         let mut saved = 0usize;
         let mut first_error = None;
 
