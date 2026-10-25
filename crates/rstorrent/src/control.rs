@@ -1,4 +1,5 @@
 use crate::cli::Cli;
+use crate::metrics::{self, Metrics};
 use crate::setup::{
     find_config_file, parse_config_file_comments, setup_default_schedule, setup_default_views,
 };
@@ -20,7 +21,7 @@ use rt_rpc::{parse_command, CommandMap, CommandScheduler, ObjectStorage, Target}
 use rt_tui::RootUI;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Bounded deadlines for the graceful shutdown phases. A stage that overruns
 /// its deadline is logged and its tasks are aborted rather than blocking
@@ -55,6 +56,8 @@ pub struct Control {
     /// Join handles for the network runtime. Taken exactly once by
     /// [`Control::shutdown`] so every spawned task is drained or aborted.
     pub network_runtime: Mutex<Option<rt_core::network_runtime::NetworkRuntimeHandle>>,
+    /// Optional startup/shutdown recorder, enabled by [`metrics::METRICS_ENV`].
+    pub metrics: Metrics,
     shutdown_lock: tokio::sync::Mutex<()>,
 }
 
@@ -107,8 +110,15 @@ impl Control {
             listen_port: 6881,
             shutdown_tx,
             network_runtime: Mutex::new(None),
+            metrics: Metrics::from_env(),
             shutdown_lock: tokio::sync::Mutex::new(()),
         }
+    }
+
+    /// Replaces the recorder. Used by tests and by embedders that want to
+    /// choose the output path explicitly instead of via the environment.
+    pub fn set_metrics(&mut self, metrics: Metrics) {
+        self.metrics = metrics;
     }
 
     pub fn initialize(&mut self, cli: &Cli) -> Result<(), String> {
@@ -1078,11 +1088,14 @@ impl Control {
         }
 
         tracing::info!("Graceful shutdown in progress...");
+        let shutdown_started = Instant::now();
         let _ = self.shutdown_tx.send(true);
 
         // 1-3. Listeners, DHT and the coordinator supervisor (which stops
         // every per-torrent coordinator) in dependency order.
+        let phase_started = Instant::now();
         let runtime = self.network_runtime.lock().unwrap().take();
+        let mut network_completed = 1;
         if let Some(runtime) = runtime {
             let report = runtime
                 .drain(rt_core::network_runtime::ShutdownTimeouts {
@@ -1101,44 +1114,91 @@ impl Control {
             if !report.coordinators_completed {
                 tracing::warn!("Network coordinator supervisor did not stop before its deadline");
             }
+            if !(report.listeners_completed
+                && report.dht_completed
+                && report.coordinators_completed)
+            {
+                network_completed = 0;
+            }
         } else {
             tracing::debug!("No network runtime was started; skipping network shutdown");
         }
+        self.metrics.phase_with(
+            "shutdown.phase",
+            "network_drain",
+            phase_started,
+            None,
+            &[("completed", network_completed)],
+        );
 
         // 4. Drain acknowledged piece writes and sync file handles.
+        let phase_started = Instant::now();
         self.flush_downloads().await;
+        self.metrics
+            .phase("shutdown.phase", "flush_downloads", phase_started, None);
 
         // 5. Stop the process-wide disk worker after all downloads have been
         // flushed so queued writes are synced before the session is committed.
-        match tokio::time::timeout(
+        let phase_started = Instant::now();
+        let disk_thread_completed = match tokio::time::timeout(
             DISK_THREAD_SHUTDOWN_TIMEOUT,
             tokio::task::spawn_blocking(lt_storage::shutdown_global_disk_thread),
         )
         .await
         {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => tracing::warn!(error = %err, "Disk worker shutdown task failed"),
-            Err(_) => tracing::warn!("Timed out waiting for the disk worker to stop"),
-        }
+            Ok(Ok(())) => 1,
+            Ok(Err(err)) => {
+                tracing::warn!(error = %err, "Disk worker shutdown task failed");
+                0
+            }
+            Err(_) => {
+                tracing::warn!("Timed out waiting for the disk worker to stop");
+                0
+            }
+        };
+        self.metrics.phase_with(
+            "shutdown.phase",
+            "disk_thread",
+            phase_started,
+            None,
+            &[("completed", disk_thread_completed)],
+        );
 
         // 6. Commit session/resume data, then release the session lock. Run
         // the file I/O on the blocking pool so a second SIGINT can still be
         // serviced while the session is written.
+        let phase_started = Instant::now();
         let session_save = tokio::task::spawn_blocking({
             let session_manager = Arc::clone(&self.session_manager);
             let download_list = Arc::clone(&self.download_list);
             move || Self::save_session_state(session_manager, download_list)
         });
 
-        match tokio::time::timeout(SESSION_SAVE_TIMEOUT, session_save).await {
-            Ok(Ok(Ok(()))) => {}
-            Ok(Ok(Err(err))) => {
-                tracing::error!(error = %err, "Could not save session during shutdown")
-            }
-            Ok(Err(err)) => tracing::warn!(error = %err, "Session save task failed"),
-            Err(_) => tracing::warn!("Timed out saving the session during shutdown"),
-        }
+        let (save_completed, save_timed_out) =
+            match tokio::time::timeout(SESSION_SAVE_TIMEOUT, session_save).await {
+                Ok(Ok(Ok(()))) => (1, 0),
+                Ok(Ok(Err(err))) => {
+                    tracing::error!(error = %err, "Could not save session during shutdown");
+                    (0, 0)
+                }
+                Ok(Err(err)) => {
+                    tracing::warn!(error = %err, "Session save task failed");
+                    (0, 0)
+                }
+                Err(_) => {
+                    tracing::warn!("Timed out saving the session during shutdown");
+                    (0, 1)
+                }
+            };
+        self.metrics.phase_with(
+            "shutdown.phase",
+            "session_save",
+            phase_started,
+            None,
+            &[("completed", save_completed), ("timed_out", save_timed_out)],
+        );
 
+        let phase_started = Instant::now();
         {
             let mut session = self.session_manager.lock().unwrap();
             if session.is_active() {
@@ -1147,8 +1207,19 @@ impl Control {
                 }
             }
         }
+        self.metrics
+            .phase("shutdown.phase", "lock_release", phase_started, None);
 
         self.is_shutdown_completed.store(true, Ordering::SeqCst);
+
+        let mut summary: Vec<(&'static str, u64)> =
+            vec![("total_ms", self.metrics.ms_since(shutdown_started))];
+        if let Some(io) = metrics::io_snapshot() {
+            summary.push(("proc_write_bytes", io.write_bytes));
+            summary.push(("proc_wchar", io.wchar));
+        }
+        self.metrics.summary("shutdown.summary", &summary);
+
         tracing::info!("Graceful shutdown completed.");
     }
 

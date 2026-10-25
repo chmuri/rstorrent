@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod control;
 pub mod grpc;
+pub mod metrics;
 pub mod scgi;
 pub mod setup;
 pub mod signals;
@@ -11,6 +12,7 @@ pub mod ui_commands;
 pub use cli::Cli;
 pub use control::Control;
 pub use grpc::register_grpc_commands;
+pub use metrics::Metrics;
 pub use scgi::register_scgi_commands;
 pub use setup::{
     find_config_file, parse_config_file_comments, setup_default_schedule, setup_default_views,
@@ -45,6 +47,7 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let signal_task = spawn_signal_handlers(control.signals.clone());
 
     if let Err(e) = control.initialize(&cli) {
+        control.metrics.failure("startup.failed", &e);
         eprintln!("Initialization error: {}", e);
         std::process::exit(1);
     }
@@ -57,6 +60,14 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         }
         control.shutdown().await;
         signal_task.abort();
+        control.metrics.summary(
+            "exit.summary",
+            &[
+                ("wall_ms", control.metrics.elapsed_ms()),
+                ("interactive", 0),
+                ("forced", 0),
+            ],
+        );
         tracing::info!("rstorrent shutdown completed cleanly.");
         return Ok(());
     }
@@ -206,6 +217,17 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         }
         terminal_guard.leave()?;
         signals::mark_terminal_restored();
+        control
+            .metrics
+            .failure("shutdown.forced", "double ^Q force exit");
+        control.metrics.summary(
+            "exit.summary",
+            &[
+                ("wall_ms", control.metrics.elapsed_ms()),
+                ("interactive", 1),
+                ("forced", 1),
+            ],
+        );
         std::process::exit(0);
     }
 
@@ -217,6 +239,14 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     // `TerminalGuard::leave` already emitted the restore sequence; mark the
     // session so the panic hook and our guard do not repeat it.
     signals::mark_terminal_restored();
+    control.metrics.summary(
+        "exit.summary",
+        &[
+            ("wall_ms", control.metrics.elapsed_ms()),
+            ("interactive", 1),
+            ("forced", 0),
+        ],
+    );
     println!("rstorrent shutdown completed cleanly.");
 
     Ok(())
