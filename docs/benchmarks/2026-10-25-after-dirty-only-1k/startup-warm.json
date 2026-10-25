@@ -1,0 +1,159 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/final-1k-work/payload-restore/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/final-1k-work/payload-restore/data",
+    "-o",
+    "network.scgi.open_local = /tmp/opencode/final-1k-work/payload-restore/session/bench.sock",
+    "-o",
+    "network.port_range.set = 50014-50014",
+    "--daemon"
+  ],
+  "pid": 1039290,
+  "log": "/tmp/opencode/final-1k-work/payload-restore/rstorrent.log",
+  "socket_s": 0.010245516001305077,
+  "rpc_s": 0.010628177005855832,
+  "rows": 1000,
+  "full_s": 0.11931599100353196,
+  "final": {
+    "rss_kb": 23796,
+    "threads": 11,
+    "fds": 14,
+    "cpu_s": 0.19,
+    "elapsed_s": 0.11963211500551552
+  },
+  "peak": {
+    "rss_kb": 23796,
+    "threads": 14,
+    "fds": 14
+  },
+  "metrics": {
+    "events": 21,
+    "phases_ms": {
+      "views": 0,
+      "commands": 4,
+      "schedule": 0,
+      "config": 0,
+      "disk_pool": 0,
+      "ui_wiring": 0,
+      "session_lock": 0,
+      "scan_entries": 14,
+      "restore_entries": 35,
+      "insert_downloads": 18,
+      "cli_files": 0,
+      "watch_dir": 0,
+      "network_spawn": 0
+    },
+    "shutdown_phases_ms": {
+      "network_drain": 48,
+      "flush_downloads": 24,
+      "disk_thread": 0,
+      "session_save": 324,
+      "lock_release": 0
+    },
+    "shutdown_phase_events": {
+      "network_drain": {
+        "v": 1,
+        "t_ms": 174,
+        "event": "shutdown.phase",
+        "phase": "network_drain",
+        "ms": 48,
+        "completed": 1
+      },
+      "flush_downloads": {
+        "v": 1,
+        "t_ms": 198,
+        "event": "shutdown.phase",
+        "phase": "flush_downloads",
+        "ms": 24,
+        "errors": 0
+      },
+      "disk_thread": {
+        "v": 1,
+        "t_ms": 199,
+        "event": "shutdown.phase",
+        "phase": "disk_thread",
+        "ms": 0,
+        "completed": 1
+      },
+      "session_save": {
+        "v": 1,
+        "t_ms": 524,
+        "event": "shutdown.phase",
+        "phase": "session_save",
+        "ms": 324,
+        "completed": 1,
+        "timed_out": 0
+      },
+      "lock_release": {
+        "v": 1,
+        "t_ms": 524,
+        "event": "shutdown.phase",
+        "phase": "lock_release",
+        "ms": 0
+      }
+    },
+    "summaries": {
+      "startup.summary": {
+        "v": 1,
+        "t_ms": 74,
+        "event": "startup.summary",
+        "total_ms": 74,
+        "torrents": 1000,
+        "cli_files": 0,
+        "watch_loaded": 0,
+        "rechecks_queued": 763,
+        "listen_port": 50014,
+        "session_entries": 0,
+        "session_torrent_streams": 0,
+        "session_resume_streams": 0,
+        "session_rtorrent_streams": 0,
+        "session_staged_files": 0,
+        "session_bytes": 0,
+        "session_fdatasync_calls": 0,
+        "session_dir_sync_calls": 0,
+        "session_commit_calls": 0,
+        "session_skipped_entries": 0,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      },
+      "shutdown.summary": {
+        "v": 1,
+        "t_ms": 524,
+        "event": "shutdown.summary",
+        "total_ms": 398,
+        "proc_write_bytes": 3223552,
+        "proc_wchar": 398605,
+        "session_entries": 237,
+        "session_torrent_streams": 237,
+        "session_resume_streams": 237,
+        "session_rtorrent_streams": 237,
+        "session_staged_files": 711,
+        "session_bytes": 103332,
+        "session_fdatasync_calls": 711,
+        "session_dir_sync_calls": 237,
+        "session_commit_calls": 1,
+        "session_skipped_entries": 763,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 237,
+        "coordinators_peak": 237
+      },
+      "exit.summary": {
+        "v": 1,
+        "t_ms": 524,
+        "event": "exit.summary",
+        "wall_ms": 524,
+        "interactive": 0,
+        "forced": 0
+      }
+    }
+  }
+}

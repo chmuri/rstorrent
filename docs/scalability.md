@@ -9,8 +9,8 @@ rechecks, and which knobs change that. Numbers live in
 | Area | Before | Now |
 |---|---|---|
 | Restore 14k paused torrents | 157.9 s (quadratic) | ~0.9–1.4 s (linear) |
-| Graceful shutdown, 10k torrents | 84.5 s (30 s timeout + 54 s lock wait) | ~15–17 s, lock free during the write |
-| Session files rewritten on an unchanged shutdown | every entry, 3 files each | every entry (dirty-only still pending) |
+| Graceful shutdown, 10k torrents | 84.5 s (30 s timeout + 54 s lock wait) | 0.52 s idle, 0.87 s during a recheck |
+| Session files rewritten on an unchanged shutdown | every entry, 3 files each | 1 file (`dht.cache`) via dirty-only writes |
 | `d.hash` p99 at 14k | 1.04 ms (scan) | 0.17 ms (flat in N) |
 | `d.multicall2` at 14k x 12 | 47 s | ~0.18–0.22 s |
 | Rechecks | one OS thread each | bounded pool, FIFO queue |

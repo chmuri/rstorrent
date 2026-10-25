@@ -25,7 +25,10 @@ Raw results: `2026-10-25-after-shutdown-fix-1k/`, `2026-10-25-after-shutdown-fix
 6. **The periodic checkpoint uses the same writer**, so a background checkpoint
    can no longer block `stop()`.
 
-## Before → after
+## Intermediate: parallel writer only
+
+This was the state before dirty-only writes landed; it isolates the effect of
+taking the session mutex out of the write path.
 
 | Metric (10 000 torrents) | Baseline | After | |
 |---|---|---|---|
@@ -87,18 +90,54 @@ The deterministic proof lives in
 and in `crates/rt-core/tests/test_resume_no_forced_recheck.rs`, which pins the
 restore-level facts the gate depends on (`resume_loaded`, `completed_chunks`).
 
-## What is still slow
+## Dirty-only writes
 
-At 10 000 torrents shutdown is ~16 s, not the 5 s target. The remaining cost is
-entirely the number of files written: 30 001 unchanged session files, each with
-its own `fsync`. Parallelism has taken what it can; the next step has to stop
-writing files that did not change:
+The parallel writer fixed the *locking*, but an unchanged session still cost
+~16 s at 10k because it rewrote all 30 001 files. The writer now keeps a
+byte-exact cache of what it last published:
 
-| Remaining option | Files written at 10k | Expected `exit_s` |
+- on a cache hit with identical bytes, the entry is skipped (counted as
+  `session_skipped_entries`);
+- on first sighting in a fresh process, the entry is compared against the files
+  on disk (they are warm in the page cache right after restore), so a restart
+  does not rewrite a session either;
+- a failed publish evicts the entry instead of leaving "this is current" behind;
+- `erase_entry` evicts it too.
+
+No hashing and no collision reasoning: the streams are compared as bytes. One
+average entry is a few hundred bytes, so a 14k-torrent session keeps a few
+megabytes in memory.
+
+| Metric | Baseline | After |
 |---|---|---|
-| skip unchanged entries (content/dirty tracking) | ~0 | < 1 s |
-| skip `.torrent` rewrites when the file exists | 20 000 | ~11 s |
-| current | 30 001 | ~16 s |
+| **1k** `shutdown.exit_s` (idle) | 6.63 s | **0.114 s** |
+| **10k** `shutdown.exit_s` (idle) | 84.53 s | **0.517 s** |
+| **10k** `startup-pty.exit_s` (Ctrl+C) | 80.77 s | **3.07 s** |
+| 10k `session_save` | 30 001 ms (timeout) + 54 s lock wait | **243 ms**, no lock wait |
+| 10k `files_rewritten` | 30 001 | **1** (`dht.cache`) |
+| 10k `proc_write_bytes` | 122.9 MB | **4 KB** |
+| 10k `session_skipped_entries` | — | **10 000 / 10 000** |
 
-`files_rewritten` and `proc_write_bytes` are in the benchmark output
-specifically so that change is accepted only when those two numbers move.
+Shutting down *while* a mass verification is finishing writes real results
+instead of nothing; that case is still bounded:
+
+| 10k | idle | rechecks finishing |
+|---|---|---|
+| `session_save` | 243 ms | 588 ms |
+| `files_written` | 0 | 245 |
+| `shutdown.exit_s` | 0.517 s | 0.866 s |
+
+`DISK_FLUSH_TIMEOUT` was also reduced from 35 s to 5 s. A flush is best-effort
+(pieces are already synced per hash pass); with the old value a shutdown during
+heavy hashing sat on that single stage for exactly 35 s before giving up.
+
+## Acceptance
+
+| Criterion | Result |
+|---|---|
+| Ctrl+C → exit < 5 s at 10k | 0.52 s idle, 0.87 s during recheck, 3.07 s through the TUI |
+| hard cap 10 s | every measured run is under it; the 30 s save timeout is not reachable in practice |
+| unchanged session writes 0 files | 1 file (`dht.cache`), 4 KB |
+| trusted resume queues 0 rechecks | proven by `test_restore_recheck` |
+| lock released only after a consistent write | `lock_release` = 0 ms; the writer never holds the session mutex |
+

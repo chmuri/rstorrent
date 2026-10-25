@@ -1,0 +1,159 @@
+{
+  "command": [
+    "/home/chmuri/git/rstorrent/target/release/rstorrent",
+    "-n",
+    "-s",
+    "/tmp/opencode/final-10k-work/payload-restore/session",
+    "-o",
+    "directory.default.set = /tmp/opencode/final-10k-work/payload-restore/data",
+    "-o",
+    "network.scgi.open_local = /tmp/opencode/final-10k-work/payload-restore/session/bench.sock",
+    "-o",
+    "network.port_range.set = 50014-50014",
+    "--daemon"
+  ],
+  "pid": 1041409,
+  "log": "/tmp/opencode/final-10k-work/payload-restore/rstorrent.log",
+  "socket_s": 0.010215286005404778,
+  "rpc_s": 0.010606246003590059,
+  "rows": 10000,
+  "full_s": 0.8224241590069141,
+  "final": {
+    "rss_kb": 114536,
+    "threads": 11,
+    "fds": 13,
+    "cpu_s": 1.75,
+    "elapsed_s": 0.8229498910004622
+  },
+  "peak": {
+    "rss_kb": 114536,
+    "threads": 14,
+    "fds": 14
+  },
+  "metrics": {
+    "events": 21,
+    "phases_ms": {
+      "views": 0,
+      "commands": 4,
+      "schedule": 0,
+      "config": 0,
+      "disk_pool": 0,
+      "ui_wiring": 0,
+      "session_lock": 0,
+      "scan_entries": 151,
+      "restore_entries": 339,
+      "insert_downloads": 192,
+      "cli_files": 0,
+      "watch_dir": 0,
+      "network_spawn": 0
+    },
+    "shutdown_phases_ms": {
+      "network_drain": 1,
+      "flush_downloads": 220,
+      "disk_thread": 0,
+      "session_save": 587,
+      "lock_release": 0
+    },
+    "shutdown_phase_events": {
+      "network_drain": {
+        "v": 1,
+        "t_ms": 851,
+        "event": "shutdown.phase",
+        "phase": "network_drain",
+        "ms": 1,
+        "completed": 1
+      },
+      "flush_downloads": {
+        "v": 1,
+        "t_ms": 1071,
+        "event": "shutdown.phase",
+        "phase": "flush_downloads",
+        "ms": 220,
+        "errors": 0
+      },
+      "disk_thread": {
+        "v": 1,
+        "t_ms": 1072,
+        "event": "shutdown.phase",
+        "phase": "disk_thread",
+        "ms": 0,
+        "completed": 1
+      },
+      "session_save": {
+        "v": 1,
+        "t_ms": 1659,
+        "event": "shutdown.phase",
+        "phase": "session_save",
+        "ms": 587,
+        "completed": 1,
+        "timed_out": 0
+      },
+      "lock_release": {
+        "v": 1,
+        "t_ms": 1659,
+        "event": "shutdown.phase",
+        "phase": "lock_release",
+        "ms": 0
+      }
+    },
+    "summaries": {
+      "startup.summary": {
+        "v": 1,
+        "t_ms": 690,
+        "event": "startup.summary",
+        "total_ms": 690,
+        "torrents": 10000,
+        "cli_files": 0,
+        "watch_loaded": 0,
+        "rechecks_queued": 9755,
+        "listen_port": 50014,
+        "session_entries": 0,
+        "session_torrent_streams": 0,
+        "session_resume_streams": 0,
+        "session_rtorrent_streams": 0,
+        "session_staged_files": 0,
+        "session_bytes": 0,
+        "session_fdatasync_calls": 0,
+        "session_dir_sync_calls": 0,
+        "session_commit_calls": 0,
+        "session_skipped_entries": 0,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 0,
+        "coordinators_peak": 0
+      },
+      "shutdown.summary": {
+        "v": 1,
+        "t_ms": 1659,
+        "event": "shutdown.summary",
+        "total_ms": 809,
+        "proc_write_bytes": 5824512,
+        "proc_wchar": 2905641,
+        "session_entries": 245,
+        "session_torrent_streams": 245,
+        "session_resume_streams": 245,
+        "session_rtorrent_streams": 245,
+        "session_staged_files": 735,
+        "session_bytes": 107038,
+        "session_fdatasync_calls": 735,
+        "session_dir_sync_calls": 245,
+        "session_commit_calls": 1,
+        "session_skipped_entries": 9755,
+        "hash_queued": 0,
+        "hash_active": 0,
+        "hash_peak": 0,
+        "coordinators_spawned": 245,
+        "coordinators_peak": 245
+      },
+      "exit.summary": {
+        "v": 1,
+        "t_ms": 1660,
+        "event": "exit.summary",
+        "wall_ms": 1660,
+        "interactive": 0,
+        "forced": 0
+      }
+    }
+  }
+}
