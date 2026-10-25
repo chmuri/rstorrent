@@ -1,11 +1,12 @@
 use super::stats;
-use super::storer::{is_correct_format, DirectoryEntry, DownloadStorer};
+use super::storer::{file_holds, is_correct_format, DirectoryEntry, DownloadStorer};
 use crate::commands::system::resolve_path;
 use lt_sys::lockfile::Lockfile;
 use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// One download's already-serialized session streams.
 ///
@@ -44,6 +45,9 @@ pub struct SessionManager {
     active: bool,
     freeze_info: bool,
     lockfile: Option<Lockfile>,
+    /// Last successfully published bytes per info hash, shared with every
+    /// writer snapshot so an unchanged entry is never written twice.
+    write_cache: Arc<Mutex<WriteCache>>,
 }
 
 impl Default for SessionManager {
@@ -62,6 +66,7 @@ impl SessionManager {
             active: false,
             freeze_info: false,
             lockfile: None,
+            write_cache: Arc::new(Mutex::new(WriteCache::default())),
         }
     }
 
@@ -293,6 +298,7 @@ impl SessionManager {
         SessionWriter {
             path: self.path.clone(),
             use_fsyncdisk: self.use_fsyncdisk,
+            cache: Arc::clone(&self.write_cache),
         }
     }
 
@@ -400,6 +406,7 @@ impl SessionManager {
         ] {
             let _ = fs::remove_file(format!("{base}{suffix}"));
         }
+        self.write_cache.lock().unwrap().forget(info_hash_hex);
         Ok(true)
     }
 
@@ -431,16 +438,89 @@ impl Drop for SessionManager {
     }
 }
 
+/// Remembers the bytes last published for each info hash.
+///
+/// A session commit re-serializes every download, so the writer needs a way to
+/// tell "same bytes as last time" from "changed". Entries are compared
+/// byte-for-byte (no hash collisions to reason about); one average entry is a
+/// few hundred bytes, so a 14k-torrent session keeps a few megabytes here.
+#[derive(Debug, Default)]
+struct WriteCache {
+    entries: std::collections::HashMap<String, CachedStreams>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedStreams {
+    torrent: Option<Vec<u8>>,
+    rtorrent: Vec<u8>,
+    libtorrent: Vec<u8>,
+}
+
+impl WriteCache {
+    /// `Some(true)` when the entry is known to be unchanged, `Some(false)` when
+    /// it is known to have changed, `None` when this process has not seen it.
+    ///
+    /// `torrent_stream: None` means a resume-only write: the static torrent is
+    /// not being published, so it does not take part in the comparison.
+    fn matches(
+        &self,
+        info_hash_hex: &str,
+        torrent_stream: Option<&[u8]>,
+        rtorrent_stream: &[u8],
+        libtorrent_stream: &[u8],
+    ) -> Option<bool> {
+        let cached = self.entries.get(info_hash_hex)?;
+        if cached.rtorrent != rtorrent_stream || cached.libtorrent != libtorrent_stream {
+            return Some(false);
+        }
+        match (torrent_stream, cached.torrent.as_deref()) {
+            (Some(expected), Some(cached_torrent)) => Some(expected == cached_torrent),
+            (Some(_), None) => Some(false),
+            (None, _) => Some(true),
+        }
+    }
+
+    fn remember(
+        &mut self,
+        info_hash_hex: &str,
+        torrent_stream: Option<&[u8]>,
+        rtorrent_stream: &[u8],
+        libtorrent_stream: &[u8],
+    ) {
+        let torrent = match torrent_stream {
+            Some(stream) => Some(stream.to_vec()),
+            // A resume-only write leaves the static torrent on disk untouched.
+            None => self
+                .entries
+                .get(info_hash_hex)
+                .and_then(|cached| cached.torrent.clone()),
+        };
+        self.entries.insert(
+            info_hash_hex.to_string(),
+            CachedStreams {
+                torrent,
+                rtorrent: rtorrent_stream.to_vec(),
+                libtorrent: libtorrent_stream.to_vec(),
+            },
+        );
+    }
+
+    fn forget(&mut self, info_hash_hex: &str) {
+        self.entries.remove(info_hash_hex);
+    }
+}
+
 /// Snapshot of the session directory settings, usable without the manager
 /// mutex.
 ///
 /// Obtained from [`SessionManager::writer`]. Publishing one entry is atomic and
 /// touches only that entry's paths, so distinct entries can be written
 /// concurrently.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SessionWriter {
     path: String,
     use_fsyncdisk: bool,
+    cache: Arc<Mutex<WriteCache>>,
 }
 
 impl SessionWriter {
@@ -457,6 +537,11 @@ impl SessionWriter {
     }
 
     /// Stages and publishes one entry's streams.
+    ///
+    /// An entry whose bytes already match the last published generation is
+    /// skipped: shutdown must not rewrite a session that did not change. The
+    /// first sighting after a restart compares against the files on disk, which
+    /// are warm in the page cache right after restore.
     pub fn save_streams(
         &self,
         info_hash_hex: &str,
@@ -469,17 +554,81 @@ impl SessionWriter {
         }
 
         let file_path = DownloadStorer::build_path(&self.path, info_hash_hex)?;
+        if self.already_published(
+            info_hash_hex,
+            torrent_stream,
+            rtorrent_stream,
+            libtorrent_stream,
+            &file_path,
+        ) {
+            stats::record_skipped_entry();
+            return Ok(());
+        }
+
         let bytes = torrent_stream.map_or(0, |stream| stream.len() as u64)
             + rtorrent_stream.len() as u64
             + libtorrent_stream.len() as u64;
         stats::record_save_streams(torrent_stream.is_some(), bytes);
-        DownloadStorer::save_and_move_streams(
+        let result = DownloadStorer::save_and_move_streams(
             &file_path,
             self.use_fsyncdisk,
             torrent_stream,
             rtorrent_stream,
             libtorrent_stream,
-        )
+        );
+        let mut cache = self.cache.lock().unwrap();
+        match &result {
+            Ok(()) => cache.remember(
+                info_hash_hex,
+                torrent_stream,
+                rtorrent_stream,
+                libtorrent_stream,
+            ),
+            // A failed publish must not leave "this entry is current" behind.
+            Err(_) => cache.forget(info_hash_hex),
+        }
+        result
+    }
+
+    /// Returns `true` when the entry does not need to be written.
+    fn already_published(
+        &self,
+        info_hash_hex: &str,
+        torrent_stream: Option<&[u8]>,
+        rtorrent_stream: &[u8],
+        libtorrent_stream: &[u8],
+        file_path: &str,
+    ) -> bool {
+        if let Some(unchanged) = self.cache.lock().unwrap().matches(
+            info_hash_hex,
+            torrent_stream,
+            rtorrent_stream,
+            libtorrent_stream,
+        ) {
+            return unchanged;
+        }
+
+        // First sighting in this process: the files on disk are the last
+        // committed generation.
+        if !file_holds(&format!("{file_path}.rtorrent"), rtorrent_stream) {
+            return false;
+        }
+        if !file_holds(&format!("{file_path}.libtorrent_resume"), libtorrent_stream) {
+            return false;
+        }
+        if let Some(stream) = torrent_stream {
+            if !file_holds(file_path, stream) {
+                return false;
+            }
+        }
+
+        self.cache.lock().unwrap().remember(
+            info_hash_hex,
+            torrent_stream,
+            rtorrent_stream,
+            libtorrent_stream,
+        );
+        true
     }
 
     pub fn save_resume(&self, entry: &SessionCommitEntry) -> io::Result<()> {

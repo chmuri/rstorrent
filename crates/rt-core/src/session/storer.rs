@@ -45,6 +45,17 @@ pub fn is_correct_format(f: &str) -> bool {
     f.as_bytes()[..40].iter().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Returns `true` when `path` holds exactly `expected`.
+///
+/// Used to skip rewriting a session stream that already matches what the
+/// writer is about to publish.
+pub fn file_holds(path: &str, expected: &[u8]) -> bool {
+    match fs::read(path) {
+        Ok(bytes) => bytes == expected,
+        Err(_) => false,
+    }
+}
+
 /// Loads a `.libtorrent_resume` file.
 pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
     let bytes = fs::read(path)?;

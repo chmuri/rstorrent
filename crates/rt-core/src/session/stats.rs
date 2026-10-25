@@ -28,6 +28,8 @@ pub struct SessionWriteStats {
     pub dir_sync_calls: u64,
     /// Calls to [`crate::session::SessionManager::commit`].
     pub commit_calls: u64,
+    /// Entries skipped because their bytes already matched the session files.
+    pub skipped_entries: u64,
 }
 
 static ENTRIES: AtomicU64 = AtomicU64::new(0);
@@ -39,6 +41,7 @@ static BYTES: AtomicU64 = AtomicU64::new(0);
 static FDATASYNC_CALLS: AtomicU64 = AtomicU64::new(0);
 static DIR_SYNC_CALLS: AtomicU64 = AtomicU64::new(0);
 static COMMIT_CALLS: AtomicU64 = AtomicU64::new(0);
+static SKIPPED_ENTRIES: AtomicU64 = AtomicU64::new(0);
 
 /// Records one `save_streams` attempt.
 pub(crate) fn record_save_streams(torrent_stream: bool, bytes: u64) {
@@ -78,6 +81,11 @@ pub(crate) fn record_commit() {
     COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
 }
 
+/// Records one entry skipped because its bytes already match the disk.
+pub(crate) fn record_skipped_entry() {
+    SKIPPED_ENTRIES.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Reads all counters.
 pub fn snapshot() -> SessionWriteStats {
     SessionWriteStats {
@@ -90,6 +98,7 @@ pub fn snapshot() -> SessionWriteStats {
         fdatasync_calls: FDATASYNC_CALLS.load(Ordering::Relaxed),
         dir_sync_calls: DIR_SYNC_CALLS.load(Ordering::Relaxed),
         commit_calls: COMMIT_CALLS.load(Ordering::Relaxed),
+        skipped_entries: SKIPPED_ENTRIES.load(Ordering::Relaxed),
     }
 }
 
@@ -109,11 +118,12 @@ impl SessionWriteStats {
             fdatasync_calls: self.fdatasync_calls.saturating_sub(earlier.fdatasync_calls),
             dir_sync_calls: self.dir_sync_calls.saturating_sub(earlier.dir_sync_calls),
             commit_calls: self.commit_calls.saturating_sub(earlier.commit_calls),
+            skipped_entries: self.skipped_entries.saturating_sub(earlier.skipped_entries),
         }
     }
 
     /// Flattens the counters into `("name", value)` pairs for metrics output.
-    pub fn as_fields(&self) -> [(&'static str, u64); 9] {
+    pub fn as_fields(&self) -> [(&'static str, u64); 10] {
         [
             ("session_entries", self.entries),
             ("session_torrent_streams", self.torrent_streams),
@@ -124,6 +134,7 @@ impl SessionWriteStats {
             ("session_fdatasync_calls", self.fdatasync_calls),
             ("session_dir_sync_calls", self.dir_sync_calls),
             ("session_commit_calls", self.commit_calls),
+            ("session_skipped_entries", self.skipped_entries),
         ]
     }
 }

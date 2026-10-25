@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 const LISTENER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const DHT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const COORDINATOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
-const DISK_FLUSH_TIMEOUT: Duration = Duration::from_secs(35);
+const DISK_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 const DISK_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const SESSION_SAVE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a timed-out session writer gets to stop at an entry boundary
