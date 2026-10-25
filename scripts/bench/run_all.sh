@@ -221,7 +221,7 @@ for name in (
     keys = (
         "full_s", "rows", "peak", "first_frame_s", "exit_s", "lock_free_s",
         "files_rewritten", "files_added", "bytes_on_disk_delta",
-        "proc_write_bytes", "timed_out",
+        "proc_write_bytes", "timed_out", "session_save_timed_out",
         "p50_ms", "p95_ms", "p99_ms",
         "wall_s", "mb_per_s", "peak_active_checks", "peak_threads",
     )

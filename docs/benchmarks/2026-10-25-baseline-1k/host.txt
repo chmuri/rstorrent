@@ -1,0 +1,6 @@
+Linux pop-os 7.2.6-76070206-generic #202609141300~1792433904~24.04~141c6f5 SMP PREEMPT_DYNAMIC Mon O x86_64 x86_64 x86_64 GNU/Linux
+nproc: 8
+nofile: 1048576
+work fs: ext2/ext3
+rstorrent 0.14.0
+Python 3.12.3

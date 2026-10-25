@@ -1388,14 +1388,14 @@ impl Control {
     }
 
     /// Hash scheduler and coordinator counters for the startup/shutdown
-    /// summaries. Missing scheduler counters read as zero.
+    /// summaries. A scheduler that was never created reports zeros so the
+    /// schema is stable across runs.
     fn runtime_stats_fields(&self) -> Vec<(&'static str, u64)> {
         let mut fields = Vec::with_capacity(5);
-        if let Some(stats) = self.download_list.read().unwrap().hash_scheduler_stats() {
-            fields.push(("hash_queued", stats.queued as u64));
-            fields.push(("hash_active", stats.active as u64));
-            fields.push(("hash_peak", stats.peak as u64));
-        }
+        let stats = self.download_list.read().unwrap().hash_scheduler_stats();
+        fields.push(("hash_queued", stats.map_or(0, |s| s.queued as u64)));
+        fields.push(("hash_active", stats.map_or(0, |s| s.active as u64)));
+        fields.push(("hash_peak", stats.map_or(0, |s| s.peak as u64)));
         let (spawned, peak) = rt_core::network_runtime::coordinator_stats();
         fields.push(("coordinators_spawned", spawned));
         fields.push(("coordinators_peak", peak));

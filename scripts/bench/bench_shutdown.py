@@ -219,6 +219,8 @@ def main(argv=None) -> int:
             if write_before is not None and "proc_write_bytes" in summary:
                 result["proc_write_bytes"] = summary["proc_write_bytes"] - write_before
             result["shutdown_phases_ms"] = (metrics or {}).get("shutdown_phases_ms", {})
+            save_event = (metrics or {}).get("shutdown_phase_events", {}).get("session_save", {})
+            result["session_save_timed_out"] = bool(save_event.get("timed_out", 0))
         finally:
             if process.poll() is None:
                 process.kill()
