@@ -1045,12 +1045,12 @@ impl RootUI {
         let view_name = win.view_name.clone();
 
         if let Some(v) = &view_arc {
-            v.write().unwrap().next_focus(1);
+            Self::advance_focus(&mut v.write().unwrap(), 1);
             win.mark_dirty();
         } else if let Some(vm) = &vm_arc {
             let mut guard = vm.write().unwrap();
             if let Some(v) = guard.find_mut(&view_name) {
-                v.next_focus(1);
+                Self::advance_focus(v, 1);
                 win.mark_dirty();
             }
         }
@@ -1072,6 +1072,143 @@ impl RootUI {
                 win.mark_dirty();
             }
         }
+    }
+
+    /// Moves the download-list focus by one visible page.
+    pub fn page_down_download(&mut self) {
+        let page = self.window_download_list.lock().unwrap().page_len();
+        self.scroll_download_by(page as isize);
+    }
+
+    pub fn page_up_download(&mut self) {
+        let page = self.window_download_list.lock().unwrap().page_len();
+        self.scroll_download_by(-(page as isize));
+    }
+
+    /// Moves the download-list focus by `delta` rows. The renderer keeps the
+    /// focused row on screen, so this is also how the mouse wheel scrolls.
+    pub fn scroll_download_by(&mut self, delta: isize) {
+        if delta == 0 {
+            return;
+        }
+        let mut win = self.window_download_list.lock().unwrap();
+        let view_arc = win.view.clone();
+        let vm_arc = win.view_manager.clone();
+        let view_name = win.view_name.clone();
+
+        let apply = |view: &mut View| Self::advance_focus(view, delta);
+
+        if let Some(v) = &view_arc {
+            apply(&mut v.write().unwrap());
+            win.mark_dirty();
+        } else if let Some(vm) = &vm_arc {
+            let mut guard = vm.write().unwrap();
+            if let Some(v) = guard.find_mut(&view_name) {
+                apply(v);
+                win.mark_dirty();
+            }
+        }
+    }
+
+    /// Moves the view focus by `delta`, clamped to the real entries.
+    ///
+    /// `View` keeps `focus == size` as a "no selection" sentinel (used after an
+    /// erase). Navigation must never land there, and must never leave the viewport
+    /// pointing at a torrent that does not exist.
+    fn advance_focus(view: &mut View, delta: isize) {
+        let size = view.size_visible();
+        if size == 0 {
+            return;
+        }
+        let last = size - 1;
+        let current = view.focus_index();
+        let next = if current >= size {
+            if delta > 0 {
+                0
+            } else {
+                last
+            }
+        } else if delta > 0 {
+            current.saturating_add(delta as usize).min(last)
+        } else {
+            current.saturating_sub(delta.unsigned_abs())
+        };
+        view.set_focus_index(next);
+    }
+
+    /// Handles one mouse-wheel notch. `delta` is negative for up.
+    ///
+    /// Returns `true` when the active screen consumed the event.
+    pub fn handle_mouse_scroll(&mut self, delta: isize) -> bool {
+        const WHEEL_ROWS: isize = 3;
+        if delta == 0 {
+            return false;
+        }
+        match self.active_screen {
+            ActiveScreen::DownloadList => self.scroll_download_by(delta * WHEEL_ROWS),
+            ActiveScreen::DownloadDetails => {
+                let mut details = self.window_details.lock().unwrap();
+                for _ in 0..delta.unsigned_abs() * WHEEL_ROWS as usize {
+                    if delta > 0 {
+                        details.scroll_down();
+                    } else {
+                        details.scroll_up();
+                    }
+                }
+            }
+            ActiveScreen::FileList => {
+                let mut window = self.window_file_list.lock().unwrap();
+                for _ in 0..delta.unsigned_abs() * WHEEL_ROWS as usize {
+                    if delta > 0 {
+                        window.move_down();
+                    } else {
+                        window.move_up();
+                    }
+                }
+            }
+            ActiveScreen::ChunksSeen => {
+                let mut window = self.window_chunks_seen.lock().unwrap();
+                for _ in 0..delta.unsigned_abs() * WHEEL_ROWS as usize {
+                    if delta > 0 {
+                        window.move_down();
+                    } else {
+                        window.move_up();
+                    }
+                }
+            }
+            ActiveScreen::PeerList => {
+                let mut window = self.window_peer_list.lock().unwrap();
+                for _ in 0..delta.unsigned_abs() * WHEEL_ROWS as usize {
+                    if delta > 0 {
+                        window.select_next();
+                    } else {
+                        window.select_prev();
+                    }
+                }
+            }
+            ActiveScreen::TrackerList => {
+                let mut window = self.window_tracker_list.lock().unwrap();
+                for _ in 0..delta.unsigned_abs() * WHEEL_ROWS as usize {
+                    if delta > 0 {
+                        window.select_next();
+                    } else {
+                        window.select_prev();
+                    }
+                }
+            }
+            ActiveScreen::TransferList => {
+                let mut window = self.window_transfer_list.lock().unwrap();
+                for _ in 0..delta.unsigned_abs() * WHEEL_ROWS as usize {
+                    if delta > 0 {
+                        window.select_next();
+                    } else {
+                        window.select_prev();
+                    }
+                }
+            }
+            ActiveScreen::Log => return false,
+        }
+        true
     }
 
     pub fn toggle_layout(&mut self) {
@@ -1492,6 +1629,14 @@ impl RootUI {
             if self.active_screen == ActiveScreen::DownloadList {
                 self.end_download();
             }
+        } else if self.active_screen == ActiveScreen::DownloadList
+            && keymap.matches(NavigationKey::PageUp, k)
+        {
+            self.page_up_download();
+        } else if self.active_screen == ActiveScreen::DownloadList
+            && keymap.matches(NavigationKey::PageDown, k)
+        {
+            self.page_down_download();
         } else if keymap.matches(NavigationKey::Up, k) {
             // Up arrow / style-specific key
             if self.active_screen == ActiveScreen::DownloadDetails {

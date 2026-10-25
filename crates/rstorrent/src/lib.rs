@@ -178,10 +178,17 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Mouse/focus handlers are not required yet; consuming
                 // them here keeps the event loop alive and bounded.
-                TerminalEvent::Mouse(_)
-                | TerminalEvent::FocusGained
-                | TerminalEvent::FocusLost
-                | TerminalEvent::Unknown => {}
+                TerminalEvent::Mouse(mouse) => {
+                    let delta = match mouse.kind {
+                        crossterm::event::MouseEventKind::ScrollUp => -1isize,
+                        crossterm::event::MouseEventKind::ScrollDown => 1,
+                        _ => 0,
+                    };
+                    if delta != 0 {
+                        control.root_ui.lock().unwrap().handle_mouse_scroll(delta);
+                    }
+                }
+                TerminalEvent::FocusGained | TerminalEvent::FocusLost | TerminalEvent::Unknown => {}
             }
         }
 
