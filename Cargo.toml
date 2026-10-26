@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 rust-version = "1.99"
 authors = ["chmuri <chmuri@gmail.com>"]
@@ -62,6 +62,9 @@ base64 = "0.23"
 sha1 = "0.11"
 rc4 = "0.2"
 getrandom = "0.4"
+crossbeam-queue = "0.3"
+rayon = "1.10"
+rustc-hash = "2.1"
 hickory-resolver = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 quick-xml = { version = "0.37", features = ["serialize"] }

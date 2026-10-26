@@ -15,3 +15,6 @@ libc.workspace = true
 nix.workspace = true
 bytes.workspace = true
 bitflags.workspace = true
+rayon.workspace = true
+crossbeam-queue.workspace = true
+rustc-hash.workspace = true

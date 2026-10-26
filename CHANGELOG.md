@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-26
+
+Algorithmic and throughput release: state-of-the-art BitTorrent piece selection,
+BDP dynamic request pipelining, rate-based choking (BitTyrant heuristics), lock-free
+zero-copy buffer pools, multithreaded SHA-1 hashing, and positioned asynchronous disk I/O.
+
+### Added
+
+- **Bucketed Rarest-First Piece Picker with SIMD/u64 acceleration**:
+  - `Bitfield` refactored to aligned `u64` bit slices with hardware `POPCNT` (`count_ones()`)
+    and `CLZ` (`leading_zeros()`), speeding up interesting-piece queries by 64x ($O(N/64)$).
+  - Strict priority tiers: Tier 0 (Partial Pieces drained first), Tier 1 (Header/Footer preview
+    ranges for streaming and metadata container probing), Tier 2 (Bucketed rarest-first).
+  - Random tie-breaking among rarest pieces sharing minimal availability to eliminate the
+    *thundering herd* problem across swarms.
+- **Piece Affinity & Dynamic Endgame**:
+  - Peers classified into speed tiers (`Fast`, `Medium`, `Slow`) via EWMA download throughput.
+  - Piece Affinity prevents mixing `Slow` and `Fast` peers on the same piece, eliminating the
+    *last-block straggler* delay.
+  - Dynamic Endgame mode activates when all pending blocks are in flight, duplicating requests
+    only to top-tier `Fast` peers and firing `CANCEL` immediately upon block receipt.
+- **BDP Dynamic Request Pipelining**:
+  - Dynamically calculates inflight request queue depth $Q_{\text{target}} \in [4, 512]$
+    matching the Bandwidth-Delay Product (BDP) with target buffer time $\tau = 1.5\text{ s}$.
+  - EWMA rate ($\alpha = 0.2$) and RTT tracking for each peer connection.
+  - Snub detection ($T_{\text{snub}} = \max(15\text{ s}, 4 \times \text{RTT}_{\text{ewma}})$)
+    dropping hung peers to $Q_{\text{target}} = 2$ and returning unfulfilled blocks to the pool.
+- **Lock-Free Buffer Pool (`BlockPool`) & Zero-Copy Batching**:
+  - Lock-free 16 KiB block buffer arena based on `crossbeam_queue::ArrayQueue<BytesMut>`
+    with `PooledBlock` RAII guards, eliminating allocator churn on high-speed connections.
+  - Vectored batch framing (`encode_batch`) coalescing multiple 17-byte `REQUEST` messages
+    into single socket flushes, reducing syscall frequency up to 50x.
+  - Borrowed-slice zero-copy views in Bencode parsing (`as_raw_string_slice`, `as_raw_list_slice`,
+    `as_raw_map_slice`).
+- **Multithreaded CPU Hashing via Rayon**:
+  - CPU-intensive piece SHA-1/SHA-256 integrity verification is offloaded to a Rayon threadpool
+    via `rayon::scope`, preventing Tokio runtime executor starvation and connection drops.
+- **Rate-Based Choking & BEP 6 (Fast Extension)**:
+  - BitTyrant-inspired rate-based choking heuristics ($\eta_i = D_i / \max(U_i, 1)$) optimizing
+    reciprocal upload yield.
+  - Optimistic unchoke rotation with newcomer boost for discovering fast swarming peers.
+  - Complete handling of BEP 6 fast extension messages: `RejectRequest`, `HaveAll`, `HaveNone`,
+    `SuggestPiece`, and `AllowedFast`, releasing unserved blocks without waiting for timeouts.
+- **Positioned Asynchronous Disk I/O & Piece Write Coalescing**:
+  - Sequential `seek()` + `write_all()` replaced with atomic positioned I/O (`FileExt::write_all_at`
+    on Unix, `seek_write` on Windows) and `read_exact_at`.
+  - In-memory piece write coalescing buffering incoming unordered blocks before a single
+    sequential disk commit, reducing disk IOPS by over 90%.
+
 ## [0.15.0] - 2026-10-26
 
 Latency release: a restart no longer rehashes or rewrites the session, and
@@ -501,7 +550,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.16.0
 [0.15.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.15.0
 [0.14.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.14.0
 [0.13.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.13.0

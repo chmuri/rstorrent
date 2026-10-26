@@ -73,119 +73,125 @@ pub enum PeerMessage {
 }
 
 impl PeerMessage {
-    /// Encodes the message into full framed wire format:
-    /// `<4-byte length prefix><1-byte message ID><payload>`
-    /// For KeepAlive, simply emits 4 zero bytes.
-    pub fn encode(&self) -> Vec<u8> {
+    /// Encodes the message into an existing `BytesMut` buffer in wire format:
+    /// `<4-byte length prefix><1-byte message ID><payload>`.
+    /// Zero allocations when the buffer has sufficient capacity.
+    pub fn encode_to(&self, buf: &mut BytesMut) {
         match self {
             PeerMessage::KeepAlive => {
-                vec![0, 0, 0, 0]
+                buf.put_u32(0);
             }
             PeerMessage::Choke => {
-                vec![0, 0, 0, 1, MSG_CHOKE]
+                buf.put_u32(1);
+                buf.put_u8(MSG_CHOKE);
             }
             PeerMessage::Unchoke => {
-                vec![0, 0, 0, 1, MSG_UNCHOKE]
+                buf.put_u32(1);
+                buf.put_u8(MSG_UNCHOKE);
             }
             PeerMessage::Interested => {
-                vec![0, 0, 0, 1, MSG_INTERESTED]
+                buf.put_u32(1);
+                buf.put_u8(MSG_INTERESTED);
             }
             PeerMessage::NotInterested => {
-                vec![0, 0, 0, 1, MSG_NOT_INTERESTED]
+                buf.put_u32(1);
+                buf.put_u8(MSG_NOT_INTERESTED);
             }
             PeerMessage::Have { index } => {
-                let mut buf = BytesMut::with_capacity(9);
                 buf.put_u32(5);
                 buf.put_u8(MSG_HAVE);
                 buf.put_u32(*index);
-                buf.to_vec()
             }
             PeerMessage::Bitfield(data) => {
-                let mut buf = BytesMut::with_capacity(5 + data.len());
                 buf.put_u32(1 + data.len() as u32);
                 buf.put_u8(MSG_BITFIELD);
                 buf.put_slice(data);
-                buf.to_vec()
             }
             PeerMessage::Request {
                 index,
                 begin,
                 length,
             } => {
-                let mut buf = BytesMut::with_capacity(17);
                 buf.put_u32(13);
                 buf.put_u8(MSG_REQUEST);
                 buf.put_u32(*index);
                 buf.put_u32(*begin);
                 buf.put_u32(*length);
-                buf.to_vec()
             }
             PeerMessage::Piece { index, begin, data } => {
-                let mut buf = BytesMut::with_capacity(13 + data.len());
                 buf.put_u32(9 + data.len() as u32);
                 buf.put_u8(MSG_PIECE);
                 buf.put_u32(*index);
                 buf.put_u32(*begin);
                 buf.put_slice(data);
-                buf.to_vec()
             }
             PeerMessage::Cancel {
                 index,
                 begin,
                 length,
             } => {
-                let mut buf = BytesMut::with_capacity(17);
                 buf.put_u32(13);
                 buf.put_u8(MSG_CANCEL);
                 buf.put_u32(*index);
                 buf.put_u32(*begin);
                 buf.put_u32(*length);
-                buf.to_vec()
             }
             PeerMessage::Port(port) => {
-                let mut buf = BytesMut::with_capacity(7);
                 buf.put_u32(3);
                 buf.put_u8(MSG_PORT);
                 buf.put_u16(*port);
-                buf.to_vec()
             }
             PeerMessage::Extended { id, payload } => {
-                let mut buf = BytesMut::with_capacity(6 + payload.len());
                 buf.put_u32(2 + payload.len() as u32);
                 buf.put_u8(MSG_EXTENDED);
                 buf.put_u8(*id);
                 buf.put_slice(payload);
-                buf.to_vec()
             }
             PeerMessage::SuggestPiece { index } => {
-                let mut buf = BytesMut::with_capacity(9);
                 buf.put_u32(5);
                 buf.put_u8(MSG_SUGGEST_PIECE);
                 buf.put_u32(*index);
-                buf.to_vec()
             }
-            PeerMessage::HaveAll => vec![0, 0, 0, 1, MSG_HAVE_ALL],
-            PeerMessage::HaveNone => vec![0, 0, 0, 1, MSG_HAVE_NONE],
+            PeerMessage::HaveAll => {
+                buf.put_u32(1);
+                buf.put_u8(MSG_HAVE_ALL);
+            }
+            PeerMessage::HaveNone => {
+                buf.put_u32(1);
+                buf.put_u8(MSG_HAVE_NONE);
+            }
             PeerMessage::RejectRequest {
                 index,
                 begin,
                 length,
             } => {
-                let mut buf = BytesMut::with_capacity(17);
                 buf.put_u32(13);
                 buf.put_u8(MSG_REJECT_REQUEST);
                 buf.put_u32(*index);
                 buf.put_u32(*begin);
                 buf.put_u32(*length);
-                buf.to_vec()
             }
             PeerMessage::AllowedFast { index } => {
-                let mut buf = BytesMut::with_capacity(9);
                 buf.put_u32(5);
                 buf.put_u8(MSG_ALLOWED_FAST);
                 buf.put_u32(*index);
-                buf.to_vec()
             }
+        }
+    }
+
+    /// Encodes the message into full framed wire format:
+    /// `<4-byte length prefix><1-byte message ID><payload>`
+    /// For KeepAlive, simply emits 4 zero bytes.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(32);
+        self.encode_to(&mut buf);
+        buf.to_vec()
+    }
+
+    /// Batches multiple messages into a single `BytesMut` buffer for coalesced flushing.
+    pub fn encode_batch(messages: &[PeerMessage], buf: &mut BytesMut) {
+        for msg in messages {
+            msg.encode_to(buf);
         }
     }
 

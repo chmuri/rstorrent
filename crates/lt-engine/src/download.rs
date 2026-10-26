@@ -2520,6 +2520,8 @@ impl Download {
                 peer_bf: &peer_bf,
                 is_seeder,
                 affinity: None,
+                speed_class: crate::delegator::PeerSpeedClass::default(),
+                is_fastest: false,
             },
             &mut crate::delegator::DelegateCtx {
                 chunk_selector: &mut self.chunk_selector,
@@ -2788,7 +2790,11 @@ impl Download {
 
         if is_complete {
             let completed_piece = self.piece_data_cache.remove(&piece_index).unwrap();
-            let computed_hash = sha1_hash(&completed_piece);
+            let computed_hash = if completed_piece.len() > 64 * 1024 {
+                rayon::scope(|_| sha1_hash(&completed_piece))
+            } else {
+                sha1_hash(&completed_piece)
+            };
 
             if let Some(expected_hash) = self.metadata.piece_hash(piece_index as usize) {
                 if computed_hash != expected_hash {

@@ -1,5 +1,9 @@
 use std::fs::{self, OpenOptions};
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io;
+#[cfg(unix)]
+use std::os::unix::fs::FileExt;
+#[cfg(windows)]
+use std::os::windows::fs::FileExt;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,21 +80,59 @@ pub fn write_piece_to_disk(
             fs::create_dir_all(parent)?;
         }
 
-        let mut f = OpenOptions::new()
+        let f = OpenOptions::new()
             .create(true)
-            // Writes seek to `file_offset`; truncating would destroy earlier
-            // segments of the same multi-file piece.
             .truncate(false)
             .read(true)
             .write(true)
             .open(&full_path)?;
 
-        f.seek(SeekFrom::Start(segment.file_offset))?;
-        f.write_all(&piece_data[segment.data_start..segment.data_end])?;
-        f.flush()?;
+        #[cfg(unix)]
+        f.write_all_at(
+            &piece_data[segment.data_start..segment.data_end],
+            segment.file_offset,
+        )?;
+        #[cfg(windows)]
+        f.seek_write(
+            &piece_data[segment.data_start..segment.data_end],
+            segment.file_offset,
+        )?;
+        let _ = f.sync_data();
     }
 
     Ok(())
+}
+
+/// Reads a piece from disk across file segments using positioned I/O (read_exact_at / seek_read).
+pub fn read_piece_from_disk(
+    root_dir: &Path,
+    files: &[TargetFileInfo],
+    piece_length: u32,
+    piece_index: u32,
+    piece_size: usize,
+) -> io::Result<Vec<u8>> {
+    let mut buf = vec![0u8; piece_size];
+    for segment in piece_segments(files, piece_length, piece_index, piece_size) {
+        let relative = segment
+            .file
+            .path
+            .strip_prefix(Path::new("/"))
+            .unwrap_or(&segment.file.path);
+        let full_path = root_dir.join(relative);
+        let f = OpenOptions::new().read(true).open(&full_path)?;
+
+        #[cfg(unix)]
+        f.read_exact_at(
+            &mut buf[segment.data_start..segment.data_end],
+            segment.file_offset,
+        )?;
+        #[cfg(windows)]
+        f.seek_read(
+            &mut buf[segment.data_start..segment.data_end],
+            segment.file_offset,
+        )?;
+    }
+    Ok(buf)
 }
 
 #[cfg(test)]

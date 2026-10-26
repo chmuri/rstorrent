@@ -171,3 +171,24 @@ fn choke_drains_outstanding_requests_for_requeue() {
     assert!(list.register(drained[0].transfer, Instant::now()));
     assert_eq!(list.queue_depth(), 1);
 }
+
+#[test]
+fn dynamic_bdp_pipelining_and_snubbing() {
+    let mut list = RequestList::new();
+    let now = Instant::now();
+    let sent_at = now - Duration::from_millis(20);
+
+    // 16KB received in 20ms -> 800 KB/s rate -> target ~ 73 blocks
+    list.on_block_received(16384, Some(sent_at), now);
+    assert!(list.rate_ewma() > 100_000.0);
+    assert!(list.queue_limit() >= 50);
+
+    // Register an outstanding request
+    assert!(list.register(BlockTransfer::new(1, 0, 16384), now));
+    assert!(!list.check_snubbing(now + Duration::from_secs(5)));
+
+    // After 16 seconds of inactivity: snubbing triggers
+    assert!(list.check_snubbing(now + Duration::from_secs(16)));
+    assert!(list.is_snubbed());
+    assert_eq!(list.queue_limit(), 2);
+}

@@ -1,3 +1,5 @@
+use rustc_hash::FxHashMap;
+
 use crate::chunk_selector::ChunkSelector;
 use crate::chunk_statistics::ChunkStatistics;
 use lt_common::bitfield::Bitfield;
@@ -6,12 +8,23 @@ use lt_storage::block::{BlockList, TransferList, DEFAULT_BLOCK_SIZE};
 use lt_storage::file::Priority;
 use lt_storage::piece::Piece;
 
+/// Peer speed tier for Piece Affinity and dynamic Endgame block stealing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum PeerSpeedClass {
+    #[default]
+    Medium,
+    Slow,
+    Fast,
+}
+
 /// Peer-specific inputs for [`Delegator::delegate`].
 pub struct DelegatePeer<'a> {
     pub peer_id: usize,
     pub peer_bf: &'a Bitfield,
     pub is_seeder: bool,
     pub affinity: Option<u32>,
+    pub speed_class: PeerSpeedClass,
+    pub is_fastest: bool,
 }
 
 /// Shared per-download state borrowed by [`Delegator::delegate`].
@@ -25,6 +38,7 @@ pub struct DelegateCtx<'a> {
 #[derive(Debug, Default)]
 pub struct Delegator {
     transfers: TransferList,
+    piece_speed_class: FxHashMap<u32, PeerSpeedClass>,
     aggressive: bool,
 }
 
@@ -32,6 +46,7 @@ impl Delegator {
     pub fn new() -> Self {
         Self {
             transfers: TransferList::new(),
+            piece_speed_class: FxHashMap::default(),
             aggressive: false,
         }
     }
@@ -101,6 +116,21 @@ impl Delegator {
         self.aggressive = aggressive;
     }
 
+    /// Dynamically evaluates whether Endgame mode should be activated:
+    /// UnrequestedBlocks == 0 && InFlightBlocks <= TotalPipelineCapacity.
+    pub fn evaluate_endgame(
+        &mut self,
+        unrequested_blocks: usize,
+        in_flight_blocks: usize,
+        total_pipeline_capacity: usize,
+    ) -> bool {
+        let should_be_aggressive = unrequested_blocks == 0
+            && in_flight_blocks > 0
+            && in_flight_blocks <= total_pipeline_capacity;
+        self.set_aggressive(should_be_aggressive);
+        should_be_aggressive
+    }
+
     /// Delegates up to `max_pieces` blocks for a peer.
     /// Returns the allocated block transfers (piece, offset, length, peer_id).
     pub fn delegate<F>(
@@ -125,17 +155,32 @@ impl Delegator {
             }
         }
 
-        // 2. Prioritize full seeders
-        if peer.is_seeder {
-            for bl in self.transfers.iter_mut() {
-                if new_transfers.len() >= max_pieces {
-                    return new_transfers;
-                }
-                if bl.by_seeder() {
-                    Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
+        // Tier 0: Partial pieces (kawałki napoczęte)
+        // Always assign missing blocks from existing in-progress pieces before starting new ones.
+        // Piece Affinity: Protect Fast pieces from Slow peer stragglers outside Endgame.
+        for bl in self.transfers.iter_mut() {
+            if new_transfers.len() >= max_pieces {
+                return new_transfers;
+            }
+            if !peer.peer_bf.get(bl.index() as usize) || bl.priority() == Priority::Off {
+                continue;
+            }
+            if !self.aggressive && peer.speed_class == PeerSpeedClass::Slow {
+                if let Some(&cls) = self.piece_speed_class.get(&bl.index()) {
+                    if cls == PeerSpeedClass::Fast {
+                        continue;
+                    }
                 }
             }
+            Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
+        }
 
+        if new_transfers.len() >= max_pieces {
+            return new_transfers;
+        }
+
+        // 2. Prioritize full seeders
+        if peer.is_seeder {
             self.delegate_new_chunks(
                 &mut new_transfers,
                 max_pieces,
@@ -158,17 +203,7 @@ impl Delegator {
             return new_transfers;
         }
 
-        // 3. Find existing high-priority pieces
-        for bl in self.transfers.iter_mut() {
-            if new_transfers.len() >= max_pieces {
-                return new_transfers;
-            }
-            if bl.priority() == Priority::High && peer.peer_bf.get(bl.index() as usize) {
-                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
-            }
-        }
-
-        // 4. Create new high-priority pieces
+        // 3. Create new high-priority pieces
         self.delegate_new_chunks(
             &mut new_transfers,
             max_pieces,
@@ -182,17 +217,7 @@ impl Delegator {
             return new_transfers;
         }
 
-        // 5. Find existing normal-priority pieces
-        for bl in self.transfers.iter_mut() {
-            if new_transfers.len() >= max_pieces {
-                return new_transfers;
-            }
-            if bl.priority() == Priority::Normal && peer.peer_bf.get(bl.index() as usize) {
-                Self::delegate_from_blocklist(&mut new_transfers, max_pieces, bl, peer.peer_id);
-            }
-        }
-
-        // 6. Create new normal-priority pieces
+        // 4. Create new normal-priority pieces
         self.delegate_new_chunks(
             &mut new_transfers,
             max_pieces,
@@ -207,6 +232,11 @@ impl Delegator {
         }
 
         // 7. Endgame (aggressive) mode: duplicate requests across peers for unfinished blocks
+        // In Endgame, only fast peers steal/duplicate remaining in-flight blocks to guarantee fast completion.
+        if peer.speed_class == PeerSpeedClass::Slow && !peer.is_fastest {
+            return new_transfers;
+        }
+
         let mut overlapped = 5;
         for bl in self.transfers.iter_mut() {
             if new_transfers.len() >= max_pieces {
@@ -264,6 +294,8 @@ impl Delegator {
                 Priority::Normal
             });
 
+            self.piece_speed_class.insert(chunk_idx, peer.speed_class);
+
             Self::delegate_from_blocklist(transfers, max_pieces, bl, peer.peer_id);
         }
     }
@@ -320,6 +352,8 @@ mod tests {
                 peer_bf: &peer_bf,
                 is_seeder: false,
                 affinity: None,
+                speed_class: PeerSpeedClass::Medium,
+                is_fastest: false,
             },
             &mut DelegateCtx {
                 chunk_selector: &mut selector,
@@ -339,5 +373,64 @@ mod tests {
         assert_eq!(delegated[1].length(), 16384);
 
         assert_eq!(delegator.transfers().len(), 1);
+    }
+
+    #[test]
+    fn test_piece_affinity_and_endgame() {
+        let mut delegator = Delegator::new();
+        let mut selector = ChunkSelector::new(4);
+        let stats = ChunkStatistics::new(4);
+        let mut peer_cache = PartialQueue::new();
+
+        let mut peer_fast_bf = Bitfield::new(4);
+        peer_fast_bf.set(2);
+
+        // Fast peer starts piece 2
+        let delegated_fast = delegator.delegate(
+            DelegatePeer {
+                peer_id: 1,
+                peer_bf: &peer_fast_bf,
+                is_seeder: false,
+                affinity: None,
+                speed_class: PeerSpeedClass::Fast,
+                is_fastest: true,
+            },
+            &mut DelegateCtx {
+                chunk_selector: &mut selector,
+                stats: &stats,
+                peer_cache: &mut peer_cache,
+            },
+            1,
+            |_| 32768, // 2 blocks total, so 1 block remains
+        );
+        assert_eq!(delegated_fast.len(), 1);
+
+        // Slow peer tries to pick piece 2; outside Endgame, piece affinity protects it
+        let mut peer_slow_bf = Bitfield::new(4);
+        peer_slow_bf.set(2);
+        let mut slow_cache = PartialQueue::new();
+        let delegated_slow = delegator.delegate(
+            DelegatePeer {
+                peer_id: 2,
+                peer_bf: &peer_slow_bf,
+                is_seeder: false,
+                affinity: None,
+                speed_class: PeerSpeedClass::Slow,
+                is_fastest: false,
+            },
+            &mut DelegateCtx {
+                chunk_selector: &mut selector,
+                stats: &stats,
+                peer_cache: &mut slow_cache,
+            },
+            1,
+            |_| 32768,
+        );
+        // Slow peer was not assigned the remaining block from Fast peer's piece
+        assert_eq!(delegated_slow.len(), 0);
+
+        // When evaluating endgame:
+        assert!(delegator.evaluate_endgame(0, 1, 10));
+        assert!(delegator.is_aggressive());
     }
 }

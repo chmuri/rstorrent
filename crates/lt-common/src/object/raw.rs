@@ -60,6 +60,21 @@ impl RawBencode {
         Ok(RawString(self.0[colon_pos + 1..].to_vec()))
     }
 
+    /// Zero-copy borrowed slice of the raw string payload.
+    pub fn as_raw_string_slice(&self) -> Result<&[u8], BencodeError> {
+        if !self.is_raw_string() {
+            return Err(BencodeError::WrongType {
+                expected: "string",
+                actual: "non-string",
+            });
+        }
+        let colon_pos =
+            self.0.iter().position(|&b| b == b':').ok_or_else(|| {
+                BencodeError::InvalidData("Invalid bencode in raw_bencode".into())
+            })?;
+        Ok(&self.0[colon_pos + 1..])
+    }
+
     pub fn as_raw_list(&self) -> Result<RawList, BencodeError> {
         if !self.is_raw_list() || self.0.last() != Some(&b'e') {
             return Err(BencodeError::WrongType {
@@ -70,6 +85,17 @@ impl RawBencode {
         Ok(RawList(self.0[1..self.0.len() - 1].to_vec()))
     }
 
+    /// Zero-copy borrowed slice of the raw list contents.
+    pub fn as_raw_list_slice(&self) -> Result<&[u8], BencodeError> {
+        if !self.is_raw_list() || self.0.last() != Some(&b'e') {
+            return Err(BencodeError::WrongType {
+                expected: "list",
+                actual: "non-list",
+            });
+        }
+        Ok(&self.0[1..self.0.len() - 1])
+    }
+
     pub fn as_raw_map(&self) -> Result<RawMap, BencodeError> {
         if !self.is_raw_map() || self.0.last() != Some(&b'e') {
             return Err(BencodeError::WrongType {
@@ -78,6 +104,17 @@ impl RawBencode {
             });
         }
         Ok(RawMap(self.0[1..self.0.len() - 1].to_vec()))
+    }
+
+    /// Zero-copy borrowed slice of the raw map contents.
+    pub fn as_raw_map_slice(&self) -> Result<&[u8], BencodeError> {
+        if !self.is_raw_map() || self.0.last() != Some(&b'e') {
+            return Err(BencodeError::WrongType {
+                expected: "map",
+                actual: "non-map",
+            });
+        }
+        Ok(&self.0[1..self.0.len() - 1])
     }
 }
 
