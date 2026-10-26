@@ -7,6 +7,7 @@
 //! - Handshake serialization (68 bytes) & MSE/PE protocol encryption (DH 768-bit + RC4)
 //! - Peer connections, client identification (ClientList), ConnectionList & InitialSeeding (BEP 16)
 
+pub mod block_pool;
 pub mod buffer;
 pub mod client_list;
 pub mod connection;
@@ -21,6 +22,7 @@ pub mod mse;
 pub mod peer_list;
 pub mod request_list;
 
+pub use block_pool::{BlockPool, PooledBlock, DEFAULT_BLOCK_CAPACITY};
 pub use buffer::{ProtocolBuffer, ProtocolError};
 pub use client_list::{ClientInfo, ClientList, ClientType};
 pub use connection::{PeerConnection, PeerDirection};

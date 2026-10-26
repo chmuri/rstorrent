@@ -10,6 +10,7 @@ pub enum Heuristics {
     UploadSeed,
     UploadLeechExperimental,
     DownloadLeech,
+    RateBasedBitTyrant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -481,6 +482,24 @@ impl ChokeQueue {
                     ORDER_BASE.saturating_sub(1).saturating_sub(rate)
                 } else {
                     rate
+                }
+            }
+            Heuristics::RateBasedBitTyrant => {
+                if is_unchoked {
+                    // Lower efficiency (D_i / max(U_i, 1)) choked first
+                    let ratio = (peer.rate_down.saturating_mul(1000) / peer.rate_up.max(1)) as u32;
+                    ORDER_BASE.saturating_sub(1).saturating_sub(ratio)
+                } else {
+                    if peer.is_local_unchoked {
+                        let ratio =
+                            (peer.rate_down.saturating_mul(1000) / peer.rate_up.max(1)) as u32;
+                        3 * ORDER_BASE + ratio
+                    } else {
+                        // Optimistic unchoke with newcomer boost (peers not yet choked or newly connected)
+                        let newcomer_boost = if peer.time_last_choke == 0 { 2 } else { 1 };
+                        let order = newcomer_boost + (peer.is_preferred as u32);
+                        order * ORDER_BASE + (peer.peer_id as u32 % 1024)
+                    }
                 }
             }
         }

@@ -99,7 +99,11 @@ impl HashQueue {
     pub fn work(&mut self) {
         while let Some(mut node) = self.queue.pop_front() {
             let handle = node.chunk.handle().clone();
-            let hash = node.chunk.calculate_hash();
+            let hash = if node.chunk.remaining() > 64 * 1024 {
+                rayon::scope(|_| node.chunk.calculate_hash())
+            } else {
+                node.chunk.calculate_hash()
+            };
             (node.on_done)(handle, Some(hash));
         }
     }

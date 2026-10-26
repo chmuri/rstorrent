@@ -2479,6 +2479,7 @@ async fn run_peer_session(
                             }
 
                             let received = request_list.take_block_at(index, begin);
+                            request_list.on_block_received(data.len(), received.first().map(|r| r.sent_at), Instant::now());
 
                             // All copies except the one we just received are
                             // endgame duplicates sent to this peer; cancel

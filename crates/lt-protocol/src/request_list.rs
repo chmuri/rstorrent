@@ -11,6 +11,11 @@ pub const DEFAULT_BLOCK_SIZE: u32 = 16 * 1024;
 /// `reqq` field.
 pub const DEFAULT_PEER_REQUEST_QUEUE: usize = 250;
 
+/// Minimum and maximum dynamic queue depth under BDP pipelining.
+pub const MIN_DYNAMIC_QUEUE: usize = 4;
+pub const MAX_DYNAMIC_QUEUE: usize = 512;
+pub const DEFAULT_BUFFER_TIME_SECS: f64 = 1.5;
+
 /// Hard upper bound for a peer advertised request queue. Matches the legacy
 /// protocol limit (2048) so a malicious/broken peer cannot make us allocate
 /// an unbounded pipeline.
@@ -66,6 +71,13 @@ pub struct RequestList {
     block_size: u32,
     request_timeout: Duration,
     max_endgame_duplicates: usize,
+
+    // Dynamic BDP pipelining state
+    rate_ewma: f64,
+    rtt_ewma: Duration,
+    last_block_at: Option<Instant>,
+    is_snubbed: bool,
+    dynamic_pipelining: bool,
 }
 
 impl Default for RequestList {
@@ -97,6 +109,11 @@ impl RequestList {
             block_size: DEFAULT_BLOCK_SIZE,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             max_endgame_duplicates: MAX_ENDGAME_DUPLICATES,
+            rate_ewma: 0.0,
+            rtt_ewma: Duration::ZERO,
+            last_block_at: None,
+            is_snubbed: false,
+            dynamic_pipelining: true,
         }
     }
 
@@ -244,6 +261,97 @@ impl RequestList {
 
     pub fn set_request_timeout(&mut self, timeout: Duration) {
         self.request_timeout = timeout;
+    }
+
+    pub fn enable_dynamic_pipelining(&mut self, enabled: bool) {
+        self.dynamic_pipelining = enabled;
+    }
+
+    pub fn is_dynamic_pipelining(&self) -> bool {
+        self.dynamic_pipelining
+    }
+
+    pub fn is_snubbed(&self) -> bool {
+        self.is_snubbed
+    }
+
+    pub fn set_snubbed(&mut self, snubbed: bool) {
+        self.is_snubbed = snubbed;
+        if snubbed {
+            self.max_queue = 2;
+        }
+    }
+
+    pub fn rate_ewma(&self) -> f64 {
+        self.rate_ewma
+    }
+
+    pub fn rtt_ewma(&self) -> Duration {
+        self.rtt_ewma
+    }
+
+    /// Updates download rate and RTT measurement upon receiving a block.
+    /// Recalculates `max_queue` dynamically according to BDP:
+    /// Q_target = clamp(ceil((R_ewma * 1.5) / 16384), 4, 512)
+    pub fn on_block_received(
+        &mut self,
+        block_bytes: usize,
+        sent_at: Option<Instant>,
+        now: Instant,
+    ) {
+        self.last_block_at = Some(now);
+        self.is_snubbed = false;
+
+        if let Some(sent) = sent_at {
+            if let Some(rtt) = now.checked_duration_since(sent) {
+                if self.rtt_ewma.is_zero() {
+                    self.rtt_ewma = rtt;
+                } else {
+                    let rtt_nanos =
+                        0.2 * rtt.as_nanos() as f64 + 0.8 * self.rtt_ewma.as_nanos() as f64;
+                    self.rtt_ewma = Duration::from_nanos(rtt_nanos as u64);
+                }
+
+                let rtt_secs = rtt.as_secs_f64().max(0.001);
+                let inst_rate = block_bytes as f64 / rtt_secs;
+                if self.rate_ewma <= 0.0 {
+                    self.rate_ewma = inst_rate;
+                } else {
+                    self.rate_ewma = 0.2 * inst_rate + 0.8 * self.rate_ewma;
+                }
+
+                if self.dynamic_pipelining {
+                    let target = ((self.rate_ewma * DEFAULT_BUFFER_TIME_SECS)
+                        / DEFAULT_BLOCK_SIZE as f64)
+                        .ceil() as usize;
+                    self.max_queue = target.clamp(MIN_DYNAMIC_QUEUE, MAX_DYNAMIC_QUEUE);
+                }
+            }
+        }
+    }
+
+    /// Checks if the peer has timed out without delivering any block.
+    /// T_snub = max(15s, 4 * RTT_ewma).
+    /// If snubbed, sets max_queue = 2 and returns true.
+    pub fn check_snubbing(&mut self, now: Instant) -> bool {
+        if self.in_flight.is_empty() {
+            return false;
+        }
+
+        let min_snub = Duration::from_secs(15);
+        let rtt_snub = self.rtt_ewma.saturating_mul(4);
+        let t_snub = min_snub.max(rtt_snub);
+
+        let last_activity = self
+            .last_block_at
+            .unwrap_or_else(|| self.in_flight.front().map(|r| r.sent_at).unwrap_or(now));
+
+        if now.duration_since(last_activity) >= t_snub {
+            self.set_snubbed(true);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn max_endgame_duplicates(&self) -> usize {

@@ -12,7 +12,8 @@ lt-net.workspace = true
 lt-storage.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }
 bytes.workspace = true
+crossbeam-queue.workspace = true
 getrandom.workspace = true
 bitflags.workspace = true

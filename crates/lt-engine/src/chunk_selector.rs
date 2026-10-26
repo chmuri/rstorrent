@@ -10,12 +10,14 @@ pub const INVALID_CHUNK: u32 = u32::MAX;
 pub struct ChunkSelector {
     untouched: Bitfield,
     completed: Bitfield,
+    preview_priority: Ranges<u32>,
     high_priority: Ranges<u32>,
     normal_priority: Ranges<u32>,
     shared_queue: PartialQueue,
     position: u32,
     size: usize,
     sequential: bool,
+    rng_seed: u64,
 }
 
 impl ChunkSelector {
@@ -36,17 +38,29 @@ impl ChunkSelector {
         Self {
             untouched,
             completed,
+            preview_priority: Ranges::new(),
             high_priority: Ranges::new(),
             normal_priority,
             shared_queue,
             position: 0,
             size,
             sequential: false,
+            rng_seed: 0x9e3779b97f4a7c15,
         }
     }
 
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    /// Sets header/footer preview pieces (Tier 1 Priority).
+    pub fn set_preview_priority(&mut self, preview: Ranges<u32>) {
+        self.preview_priority = preview;
+        self.update_priorities();
+    }
+
+    pub fn preview_priority(&self) -> &Ranges<u32> {
+        &self.preview_priority
     }
 
     /// Sequential mode picks the lowest available piece index at/after the
@@ -129,7 +143,9 @@ impl ChunkSelector {
         if idx >= self.size || !self.untouched.get(idx) {
             return false;
         }
-        self.high_priority.has(index) || self.normal_priority.has(index)
+        self.preview_priority.has(index)
+            || self.high_priority.has(index)
+            || self.normal_priority.has(index)
     }
 
     pub fn received_have_chunk(
@@ -195,41 +211,63 @@ impl ChunkSelector {
         }
 
         if found.is_none() {
-            queue.clear();
-
-            // 1. Search high priority
-            let size_u32 = self.size as u32;
-            let pos = self.position;
-
-            self.search_linear(
-                peer_bf,
-                queue,
-                &self.high_priority.clone(),
-                pos,
-                size_u32,
-                stats,
-            );
-            self.search_linear(peer_bf, queue, &self.high_priority.clone(), 0, pos, stats);
-
-            if queue.prepare_pop() {
-                found = queue.pop();
+            // Tier 1: Header/Footer preview pieces
+            if !self.preview_priority.is_empty() {
+                found = self.search_bucketed_rarest(peer_bf, &self.preview_priority.clone(), stats);
             }
 
+            // Tier 2: Bucketed Rarest-First on high priority with random tie-break
+            if found.is_none() && !self.high_priority.is_empty() {
+                found = self.search_bucketed_rarest(peer_bf, &self.high_priority.clone(), stats);
+            }
+
+            // Tier 3: Bucketed Rarest-First on normal priority with random tie-break
+            if found.is_none() && !self.normal_priority.is_empty() {
+                found = self.search_bucketed_rarest(peer_bf, &self.normal_priority.clone(), stats);
+            }
+
+            // Fallback to queue if needed
             if found.is_none() {
-                // 2. Search normal priority
                 queue.clear();
+                let size_u32 = self.size as u32;
+                let pos = self.position;
+
                 self.search_linear(
                     peer_bf,
                     queue,
-                    &self.normal_priority.clone(),
+                    &self.high_priority.clone(),
                     pos,
                     size_u32,
                     stats,
                 );
-                self.search_linear(peer_bf, queue, &self.normal_priority.clone(), 0, pos, stats);
+                self.search_linear(peer_bf, queue, &self.high_priority.clone(), 0, pos, stats);
 
                 if queue.prepare_pop() {
                     found = queue.pop();
+                }
+
+                if found.is_none() {
+                    queue.clear();
+                    self.search_linear(
+                        peer_bf,
+                        queue,
+                        &self.normal_priority.clone(),
+                        pos,
+                        size_u32,
+                        stats,
+                    );
+                    self.search_linear(
+                        peer_bf,
+                        queue,
+                        &self.normal_priority.clone(),
+                        0,
+                        pos,
+                        stats,
+                    );
+
+                    if queue.prepare_pop() {
+                        found = queue.pop();
+                    }
                 }
             }
         }
@@ -239,6 +277,59 @@ impl ChunkSelector {
         }
 
         found
+    }
+
+    /// Bucketed Rarest-First: Finds all pieces available from `peer_bf` in `ranges`,
+    /// groups them by rarity, and breaks ties randomly to prevent the thundering herd problem.
+    fn search_bucketed_rarest(
+        &mut self,
+        peer_bf: &Bitfield,
+        ranges: &Ranges<u32>,
+        stats: &ChunkStatistics,
+    ) -> Option<u32> {
+        if ranges.is_empty() || self.is_empty() {
+            return None;
+        }
+
+        let mut min_rarity = u16::MAX;
+        let mut candidates = Vec::new();
+
+        for &(r_start, r_end) in ranges.iter() {
+            let start = (r_start as usize).min(self.size);
+            let end = (r_end as usize).min(self.size);
+            if start >= end {
+                continue;
+            }
+
+            for idx in start..end {
+                if self.untouched.get(idx) && peer_bf.get(idx) {
+                    let r = stats.rarity(idx) as u16;
+                    if r < min_rarity {
+                        min_rarity = r;
+                        candidates.clear();
+                        candidates.push(idx as u32);
+                    } else if r == min_rarity {
+                        candidates.push(idx as u32);
+                    }
+                }
+            }
+        }
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        if candidates.len() == 1 {
+            return Some(candidates[0]);
+        }
+
+        // Random tie-break among pieces with identical minimum availability
+        self.rng_seed = self
+            .rng_seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1);
+        let chosen_idx = (self.rng_seed as usize) % candidates.len();
+        Some(candidates[chosen_idx])
     }
 
     fn find_sequential(&self, peer_bf: &Bitfield) -> Option<u32> {
@@ -339,7 +430,9 @@ impl ChunkSelector {
         let size_u32 = self.size as u32;
 
         let pos = self
-            .find_next_wanted(&self.high_priority, start, size_u32)
+            .find_next_wanted(&self.preview_priority, start, size_u32)
+            .or_else(|| self.find_next_wanted(&self.preview_priority, 0, start))
+            .or_else(|| self.find_next_wanted(&self.high_priority, start, size_u32))
             .or_else(|| self.find_next_wanted(&self.high_priority, 0, start))
             .or_else(|| self.find_next_wanted(&self.normal_priority, start, size_u32))
             .or_else(|| self.find_next_wanted(&self.normal_priority, 0, start));
