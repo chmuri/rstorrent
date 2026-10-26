@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-26
+
+Latency release: a restart no longer rehashes or rewrites the session, and
+Ctrl+C is bounded by the work actually pending instead of by a fixed timeout.
+Numbers are measured at 10,000 torrents in `docs/benchmarks/`.
+
+### Added
+
+- **Watch directory (`-w/--watch-dir`, alias `--watch`)**: every `.torrent`
+  file directly inside the directory is imported and started at startup, in
+  sorted order, case-insensitively on the extension. Malformed torrents and an
+  unusable directory are logged and skipped without aborting startup.
+- **Startup and shutdown metrics (`RSTORRENT_METRICS_FILE`)**: one JSON object
+  per line with per-phase timings (`startup.phase`, `startup.summary`,
+  `shutdown.phase`, `shutdown.summary`, `exit.summary`), session-writer
+  counters (entries, staged files, `fdatasync` and directory syncs, bytes,
+  skipped entries, commit calls) and the process write volume from
+  `/proc/self/io`. Written by the process itself, so it also works in the TUI
+  where no `tracing` subscriber is installed.
+- **`-d/--directory` long form** (alias `--download-dir`) alongside the existing
+  short flag.
+- **Benchmark coverage for shutdown and the TUI**: `bench_shutdown.py`,
+  `bench_start.py --pty`, `--metrics`, and `run_all.sh --payload --shutdown
+  --pty`. Reports `exit_s`, `lock_free_s`, `files_rewritten`,
+  `proc_write_bytes` and `first_frame_s`.
+
+### Changed
+
+- **Session writes no longer hold the session mutex**: `SessionManager::writer()`
+  snapshots the directory and fsync policy, so `stop()` and shutdown never wait
+  behind a multi-thousand-entry commit. Entries are published across a small
+  worker pool; each entry still gets its own `fdatasync` and directory `fsync`.
+- **Unchanged entries are not rewritten**: the writer compares the serialized
+  streams byte-for-byte with the last published generation, and with the files
+  on disk on the first sighting after a restart. An idle shutdown now rewrites
+  one file (`dht.cache`) instead of 30,001.
+- **Shutdown deadlines stop the writer** instead of abandoning it: a timed-out
+  save sets an abort flag checked between entries, then waits a short grace
+  period before the session lock is released.
+- **Watch-directory imports are persisted off the startup path** by the periodic
+  checkpoint and by shutdown. The watch directory remains the source of truth,
+  so a crash before the first checkpoint re-imports it on the next start.
+- **`session.checkpoint` uses the same writer** and writes the static `.torrent`
+  anchor for torrents that do not have one yet.
+- **`DISK_FLUSH_TIMEOUT` 35s → 5s**: the final flush is best-effort; pieces are
+  already synced per hash pass.
+- **Remote build/test wrapper**: `scripts/remote-ci.sh` runs
+  `cargo build|check|test|clippy|fmt` on a Docker builder over SSH, and
+  `.opencode/plugins/remote-ci/index.ts` routes agent shell calls through it so
+  compilation does not compete with the workstation. See `docs/remote-ci.md`.
+- **Metrics are opt-in** via `RSTORRENT_METRICS_FILE=/path/metrics.jsonl`.
+  Watch-directory imports reach the session at the checkpoint interval
+  (`session.save_interval`, 300s by default) and at shutdown; the first shutdown
+  after importing 10,000 torrents is still a one-time bounded write (~36s),
+  every later shutdown is the idle case.
+
+### Fixed
+
+- **Ctrl+C no longer hangs**: shutdown at 10,000 torrents dropped from 84.5s to
+  0.52s idle, 0.87s with rechecks running and 3.07s through the TUI. The 30s
+  session-save timeout no longer *adds* time to shutdown, and the 54s wait for
+  the session lock is gone.
+- **Trusted resume data is kept**: restore queued a recheck for every torrent
+  regardless of a validated bitfield; now only entries without resume data, or
+  with no completed pieces, verify the payload.
+- **A verification in flight no longer persists an empty bitfield**: such a
+  download writes only its static `.torrent`; resume data is left to the next
+  completed pass.
+- **Watch-directory startup**: 56.1s → 0.82s at 10,000 torrents (the
+  synchronous session commit was removed from `initialize`).
+- **The download list scrolls**: the viewport now follows the focused row, so
+  every torrent is reachable with the arrow keys, Home/End, PageUp/PageDown and
+  the mouse wheel. Focus no longer walks past the last torrent, and the counter
+  never shows `N+1 of N`. PageUp/PageDown previously only worked in the other
+  windows, and mouse events were read but ignored by the event loop.
+
 ## [0.14.0] - 2026-10-24
 
 Scalability release: the daemon is now usable with 14,000+ torrents and
@@ -425,7 +501,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.15.0
 [0.14.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.14.0
 [0.13.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.13.0
 [0.12.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.12.0
