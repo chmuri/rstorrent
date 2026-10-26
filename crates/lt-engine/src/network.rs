@@ -1647,8 +1647,9 @@ fn fill_request_pipeline(
         if dl.is_done() {
             return Vec::new();
         }
-        let aggressive = dl.delegator().is_aggressive();
+        dl.set_peer_rate_ewma(*peer_id, request_list.rate_ewma());
         let pieces = dl.delegate_for_peer(peer_id, slots);
+        let aggressive = dl.delegator().is_aggressive();
         (pieces, aggressive)
     };
 
@@ -1701,19 +1702,19 @@ fn fill_request_pipeline(
 }
 
 async fn send_requests(tx: &mpsc::Sender<PeerMessage>, transfers: &[BlockTransfer]) {
-    for transfer in transfers {
-        if tx
-            .send(PeerMessage::Request {
-                index: transfer.piece_index,
-                begin: transfer.block_offset,
-                length: transfer.block_length,
-            })
-            .await
-            .is_err()
-        {
-            break;
-        }
+    if transfers.is_empty() {
+        return;
     }
+    let reqs: Vec<PeerMessage> = transfers
+        .iter()
+        .map(|transfer| PeerMessage::Request {
+            index: transfer.piece_index,
+            begin: transfer.block_offset,
+            length: transfer.block_length,
+        })
+        .collect();
+
+    let _ = tx.send(PeerMessage::Batch(reqs)).await;
 }
 
 /// Drops requests for blocks that were completed while they were in flight
@@ -2078,7 +2079,13 @@ async fn run_peer_session(
                 msg_opt = rx.recv() => {
                     match msg_opt {
                         Some(msg) => {
-                            let mut frame = msg.encode();
+                            let mut messages = vec![msg];
+                            while let Ok(next) = rx.try_recv() {
+                                messages.push(next);
+                            }
+                            let mut buf = bytes::BytesMut::with_capacity(messages.len() * 32);
+                            PeerMessage::encode_batch(&messages, &mut buf);
+                            let mut frame = buf.to_vec();
                             if let Some(cipher) = write_cipher.as_mut() {
                                 cipher.crypt(&mut frame);
                             }
@@ -2201,6 +2208,12 @@ async fn run_peer_session(
                     let _ = tx.send(message).await;
                 }
 
+                if request_list.check_snubbing(now) {
+                    update_peer_flags(&download, &peer_id, |peer| {
+                        peer.is_snubbed = true;
+                    });
+                }
+
                 // Blocks completed by another peer (endgame winner) no longer
                 // need to be requested from this peer.
                 let _ = cancel_completed_requests(&download, &mut request_list, &tx).await;
@@ -2268,14 +2281,32 @@ async fn run_peer_session(
                     break;
                 }
 
-                let mut payload = vec![0u8; length];
-                if reader.read_exact(&mut payload).await.is_err() {
+                let mut pooled = if length <= lt_protocol::DEFAULT_BLOCK_CAPACITY + 128 {
+                    Some(lt_protocol::PooledBlock::from_global())
+                } else {
+                    None
+                };
+
+                let mut fallback_payload;
+                let payload: &mut [u8] = if let Some(p) = pooled.as_mut() {
+                    let bm = p.as_bytes_mut();
+                    if bm.capacity() < length {
+                        bm.reserve(length - bm.capacity());
+                    }
+                    bm.resize(length, 0);
+                    &mut bm[..]
+                } else {
+                    fallback_payload = vec![0u8; length];
+                    &mut fallback_payload[..]
+                };
+
+                if reader.read_exact(payload).await.is_err() {
                     break;
                 }
 
                 if encrypted {
                     if let Some(cipher) = cipher_dec.as_mut() {
-                        cipher.crypt(&mut payload);
+                        cipher.crypt(payload);
                     }
                 }
 

@@ -75,6 +75,7 @@ pub struct RequestList {
     // Dynamic BDP pipelining state
     rate_ewma: f64,
     rtt_ewma: Duration,
+    min_rtt: Duration,
     last_block_at: Option<Instant>,
     is_snubbed: bool,
     dynamic_pipelining: bool,
@@ -111,6 +112,7 @@ impl RequestList {
             max_endgame_duplicates: MAX_ENDGAME_DUPLICATES,
             rate_ewma: 0.0,
             rtt_ewma: Duration::ZERO,
+            min_rtt: Duration::ZERO,
             last_block_at: None,
             is_snubbed: false,
             dynamic_pipelining: true,
@@ -290,6 +292,10 @@ impl RequestList {
         self.rtt_ewma
     }
 
+    pub fn min_rtt(&self) -> Duration {
+        self.min_rtt
+    }
+
     /// Updates download rate and RTT measurement upon receiving a block.
     /// Recalculates `max_queue` dynamically according to BDP:
     /// Q_target = clamp(ceil((R_ewma * 1.5) / 16384), 4, 512)
@@ -299,32 +305,54 @@ impl RequestList {
         sent_at: Option<Instant>,
         now: Instant,
     ) {
+        let prev_block_at = self.last_block_at;
         self.last_block_at = Some(now);
         self.is_snubbed = false;
 
+        let arrival_dt = if let Some(prev) = prev_block_at {
+            now.saturating_duration_since(prev).as_secs_f64()
+        } else if let Some(sent) = sent_at {
+            now.saturating_duration_since(sent).as_secs_f64()
+        } else {
+            0.0
+        };
+
+        if arrival_dt > 0.000_01 {
+            let inst_rate = block_bytes as f64 / arrival_dt;
+            if self.rate_ewma <= 0.0 {
+                self.rate_ewma = inst_rate;
+            } else {
+                self.rate_ewma = 0.2 * inst_rate + 0.8 * self.rate_ewma;
+            }
+
+            if self.dynamic_pipelining {
+                let target = ((self.rate_ewma * DEFAULT_BUFFER_TIME_SECS)
+                    / DEFAULT_BLOCK_SIZE as f64)
+                    .ceil() as usize;
+                self.max_queue = target.clamp(MIN_DYNAMIC_QUEUE, MAX_DYNAMIC_QUEUE);
+            }
+        }
+
         if let Some(sent) = sent_at {
-            if let Some(rtt) = now.checked_duration_since(sent) {
+            if let Some(raw_rtt) = now.checked_duration_since(sent) {
+                let rtt = if self.in_flight.len() <= 2 {
+                    raw_rtt
+                } else if !self.min_rtt.is_zero() {
+                    raw_rtt.min(self.min_rtt.saturating_mul(2))
+                } else {
+                    raw_rtt
+                };
+
+                if self.min_rtt.is_zero() || rtt < self.min_rtt {
+                    self.min_rtt = rtt;
+                }
+
                 if self.rtt_ewma.is_zero() {
                     self.rtt_ewma = rtt;
                 } else {
                     let rtt_nanos =
                         0.2 * rtt.as_nanos() as f64 + 0.8 * self.rtt_ewma.as_nanos() as f64;
                     self.rtt_ewma = Duration::from_nanos(rtt_nanos as u64);
-                }
-
-                let rtt_secs = rtt.as_secs_f64().max(0.001);
-                let inst_rate = block_bytes as f64 / rtt_secs;
-                if self.rate_ewma <= 0.0 {
-                    self.rate_ewma = inst_rate;
-                } else {
-                    self.rate_ewma = 0.2 * inst_rate + 0.8 * self.rate_ewma;
-                }
-
-                if self.dynamic_pipelining {
-                    let target = ((self.rate_ewma * DEFAULT_BUFFER_TIME_SECS)
-                        / DEFAULT_BLOCK_SIZE as f64)
-                        .ceil() as usize;
-                    self.max_queue = target.clamp(MIN_DYNAMIC_QUEUE, MAX_DYNAMIC_QUEUE);
                 }
             }
         }

@@ -43,4 +43,4 @@ pub use mse::{
     accept as mse_accept, initiate as mse_initiate, obfuscated_info_hash, MseError, MseSession,
 };
 pub use peer_list::{ConnectionList, ConnectionListError};
-pub use request_list::{BlockTransfer, RequestList};
+pub use request_list::{BlockTransfer, RequestList, DEFAULT_PEER_REQUEST_QUEUE};

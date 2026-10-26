@@ -212,6 +212,7 @@ pub struct Download {
     tracker_controller: TrackerController,
     peer_caches: HashMap<usize, PartialQueue>,
     piece_data_cache: HashMap<u32, Vec<u8>>,
+    peer_rate_ewma: rustc_hash::FxHashMap<HashString, f64>,
 
     rate_up: Rate,
     rate_down: Rate,
@@ -353,6 +354,7 @@ impl Download {
             tracker_controller,
             peer_caches: HashMap::new(),
             piece_data_cache: HashMap::new(),
+            peer_rate_ewma: rustc_hash::FxHashMap::default(),
 
             rate_up: Rate::new(20),
             rate_down: Rate::new(20),
@@ -456,7 +458,7 @@ impl Download {
                         "Could not retry queued disk write; piece will be requested again"
                     );
                     self.chunk_selector.not_using_index(queued.piece_index);
-                    let _ = self.delegator.transfers_mut().erase(queued.piece_index);
+                    let _ = self.delegator.erase_transfer(queued.piece_index);
                 }
             }
         }
@@ -496,7 +498,7 @@ impl Download {
                         "Disk write failed; piece will be requested again"
                     );
                     self.chunk_selector.not_using_index(pending.piece_index);
-                    let _ = self.delegator.transfers_mut().erase(pending.piece_index);
+                    let _ = self.delegator.erase_transfer(pending.piece_index);
                 }
             }
         }
@@ -736,7 +738,7 @@ impl Download {
                         "Could not queue disk hash; piece will be requested again"
                     );
                     self.chunk_selector.not_using_index(piece_index);
-                    let _ = self.delegator.transfers_mut().erase(piece_index);
+                    let _ = self.delegator.erase_transfer(piece_index);
                 }
             }
         }
@@ -787,7 +789,7 @@ impl Download {
                         }
                         Some(_) => {
                             self.chunk_selector.not_using_index(piece_index);
-                            let _ = self.delegator.transfers_mut().erase(piece_index);
+                            let _ = self.delegator.erase_transfer(piece_index);
                             applied += 1;
                         }
                         None => {
@@ -811,7 +813,7 @@ impl Download {
                         "Disk hash failed; piece will be requested again"
                     );
                     self.chunk_selector.not_using_index(pending.piece_index);
-                    let _ = self.delegator.transfers_mut().erase(pending.piece_index);
+                    let _ = self.delegator.erase_transfer(pending.piece_index);
                 }
             }
         }
@@ -1929,6 +1931,10 @@ impl Download {
         }
         self.initial_seeding = None;
 
+        if !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty() {
+            let _ = lt_storage::writer::sync_files(&self.save_directory, &self.target_files);
+        }
+
         self.tracker_controller.send_stop_event();
         self.tracker_controller.disable();
         self.clear_peers();
@@ -1961,6 +1967,9 @@ impl Download {
         if !self.pending_writes.is_empty() || !self.queued_writes.is_empty() {
             let _ = self.flush_disk();
         }
+        if !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty() {
+            let _ = lt_storage::writer::sync_files(&self.save_directory, &self.target_files);
+        }
         self.clear_hash_check_queue();
         self.piece_data_cache.clear();
         self.initial_seeding = None;
@@ -1982,6 +1991,9 @@ impl Download {
 
         if !self.pending_writes.is_empty() || !self.queued_writes.is_empty() {
             let _ = self.flush_disk();
+        }
+        if !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty() {
+            let _ = lt_storage::writer::sync_files(&self.save_directory, &self.target_files);
         }
         self.clear_hash_check_queue();
         self.piece_data_cache.clear();
@@ -2485,12 +2497,51 @@ impl Download {
             .cancel_block(Self::peer_number(peer_id), piece_index, block_offset)
     }
 
+    pub fn set_peer_rate_ewma(&mut self, peer_id: HashString, rate_ewma: f64) {
+        self.peer_rate_ewma.insert(peer_id, rate_ewma);
+    }
+
     pub fn delegate_for_peer(&mut self, peer_id: &HashString, max_pieces: usize) -> Vec<Piece> {
         // A queued or running verification owns the on-disk data. Handing out
         // new requests now could overwrite bytes that are about to be hashed.
         if self.verification_owns_data() {
             return Vec::new();
         }
+
+        // Dynamically evaluate whether Endgame mode should be activated
+        let untouched_chunks = self.chunk_selector.untouched().size_set();
+        let unrequested_blocks = untouched_chunks
+            + self
+                .delegator
+                .transfers()
+                .iter()
+                .map(|bl| {
+                    bl.blocks()
+                        .iter()
+                        .filter(|b| !b.is_finished() && b.size_all() == 0)
+                        .count()
+                })
+                .sum::<usize>();
+
+        let in_flight_blocks = self
+            .delegator
+            .transfers()
+            .iter()
+            .map(|bl| {
+                bl.blocks()
+                    .iter()
+                    .filter(|b| !b.is_finished() && b.size_all() > 0)
+                    .count()
+            })
+            .sum::<usize>();
+
+        let total_pipeline_capacity =
+            self.connection_list.size().max(1) * lt_protocol::DEFAULT_PEER_REQUEST_QUEUE;
+        self.delegator.evaluate_endgame(
+            unrequested_blocks,
+            in_flight_blocks,
+            total_pipeline_capacity,
+        );
 
         let (peer_bf, is_seeder) = match self.connection_list.find_by_id(peer_id) {
             Some(p) => (p.bitfield.clone(), p.is_seeder()),
@@ -2514,14 +2565,38 @@ impl Download {
             piece_len
         };
 
+        let rate_ewma = self
+            .peer_rate_ewma
+            .get(peer_id)
+            .copied()
+            .unwrap_or_else(|| {
+                self.connection_list
+                    .find_by_id_mut(peer_id)
+                    .map(|p| p.down_rate() as f64)
+                    .unwrap_or(0.0)
+            });
+
+        let speed_class = if rate_ewma <= 0.0 {
+            crate::delegator::PeerSpeedClass::Medium
+        } else if rate_ewma < 20_000.0 {
+            crate::delegator::PeerSpeedClass::Slow
+        } else if rate_ewma > 200_000.0 {
+            crate::delegator::PeerSpeedClass::Fast
+        } else {
+            crate::delegator::PeerSpeedClass::Medium
+        };
+
+        let max_rate = self.peer_rate_ewma.values().copied().fold(0.0f64, f64::max);
+        let is_fastest = max_rate > 0.0 && rate_ewma >= max_rate;
+
         let pieces = self.delegator.delegate(
             crate::delegator::DelegatePeer {
                 peer_id: peer_num,
                 peer_bf: &peer_bf,
                 is_seeder,
                 affinity: None,
-                speed_class: crate::delegator::PeerSpeedClass::default(),
-                is_fastest: false,
+                speed_class,
+                is_fastest,
             },
             &mut crate::delegator::DelegateCtx {
                 chunk_selector: &mut self.chunk_selector,
@@ -2754,7 +2829,7 @@ impl Download {
         // partial transfer so it is requested again once the pass is over.
         if self.verification_owns_data() {
             self.piece_data_cache.remove(&piece_index);
-            let _ = self.delegator.transfers_mut().erase(piece_index);
+            let _ = self.delegator.erase_transfer(piece_index);
             return Ok(false);
         }
 
@@ -2762,10 +2837,17 @@ impl Download {
         self.rate_down.insert(data.len() as u64);
 
         let piece_len = self.chunk_size(piece_index) as usize;
-        let piece_buf = self
-            .piece_data_cache
-            .entry(piece_index)
-            .or_insert_with(|| vec![0u8; piece_len]);
+        let piece_buf = self.piece_data_cache.entry(piece_index).or_insert_with(|| {
+            if piece_len <= lt_protocol::DEFAULT_BLOCK_CAPACITY {
+                let mut b = lt_protocol::BlockPool::global().acquire();
+                b.resize(piece_len, 0);
+                let v = b.to_vec();
+                lt_protocol::BlockPool::global().release(b);
+                v
+            } else {
+                vec![0u8; piece_len]
+            }
+        });
 
         let start = block_offset as usize;
         let end = (start + data.len()).min(piece_buf.len());
@@ -2791,7 +2873,13 @@ impl Download {
         if is_complete {
             let completed_piece = self.piece_data_cache.remove(&piece_index).unwrap();
             let computed_hash = if completed_piece.len() > 64 * 1024 {
-                rayon::scope(|_| sha1_hash(&completed_piece))
+                let mut hash = [0u8; 20];
+                rayon::scope(|s| {
+                    s.spawn(|_| {
+                        hash = sha1_hash(&completed_piece);
+                    });
+                });
+                hash
             } else {
                 sha1_hash(&completed_piece)
             };
@@ -2799,7 +2887,7 @@ impl Download {
             if let Some(expected_hash) = self.metadata.piece_hash(piece_index as usize) {
                 if computed_hash != expected_hash {
                     self.chunk_selector.not_using_index(piece_index);
-                    let _ = self.delegator.transfers_mut().erase(piece_index);
+                    let _ = self.delegator.erase_transfer(piece_index);
                     return Err(format!("Hash check failed for piece {}", piece_index));
                 }
             }
@@ -2888,12 +2976,15 @@ impl Download {
     fn mark_piece_complete(&mut self, piece_index: u32) {
         self.chunk_selector.mark_completed(piece_index);
         self.file_list.mark_completed(piece_index);
-        let _ = self.delegator.transfers_mut().erase(piece_index);
+        let _ = self.delegator.erase_transfer(piece_index);
 
         if self.is_seeder()
             && self.state != DownloadState::Seeding
             && self.transition_to(DownloadState::Seeding)
         {
+            if !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty() {
+                let _ = lt_storage::writer::sync_files(&self.save_directory, &self.target_files);
+            }
             self.tracker_controller.send_completed_event();
         }
     }

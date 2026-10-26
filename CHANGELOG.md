@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-26
+
+Hotfix and runtime engine wiring release: fixes BDP throughput/RTT collapse, Rayon hashing synchronization, per-piece disk sync stalls, Bitfield word desynchronization, and finishes runtime integration of BlockPool, batching, speed classification, and endgame evaluation.
+
+### Fixed
+
+- **BDP Throughput & RTT Calculation**:
+  - Replaced queue sojourn time in `RequestList::on_block_received` with inter-arrival delta calculation, preventing window collapse during pipelined block reception.
+  - Scaled out queuing delay from `rtt_ewma` when inflight requests exceed 2, bounded by `min_rtt * 2`.
+  - Wired snub detection `request_list.check_snubbing()` into the periodic peer tick.
+- **Rayon Worker Hashing**:
+  - Dispatched hash computations asynchronously using `rayon::scope(|s| s.spawn(...))` and parallelized multi-node batches via `into_par_iter()`, eliminating executor thread stalls.
+- **Disk I/O IOPS Stall**:
+  - Removed per-piece `f.sync_data()` call in `write_piece_to_disk`. Added standalone `sync_files` invoked on torrent completion, pause, and graceful shutdown.
+- **Bitfield Synchronization**:
+  - Rebuilt internal `u64` words from raw byte slices in `Bitfield::update` before tail truncation and bit counting.
+- **ChokeQueue Truncation Overflow**:
+  - Clamped `ratio` computation before u32 casting in `Heuristics::RateBasedBitTyrant`.
+
+### Changed
+
+- **Engine Wiring**:
+  - Reordered `PeerSpeedClass` enum to `Slow < Medium < Fast` and wired dynamic speed tiering + endgame evaluation in `Download::delegate_for_peer`.
+  - Optimized `ChunkSelector::search_bucketed_rarest` to perform 64-bit word-level intersections with `leading_zeros()`, eliminating cloning overhead on priority ranges.
+  - Integrated `BlockPool` allocation for incoming piece buffers and coalesced outbound socket request writes with `PeerMessage::Batch` / `encode_batch`.
+
 ## [0.16.0] - 2026-10-26
 
 Algorithmic and throughput release: state-of-the-art BitTorrent piece selection,
@@ -550,7 +576,8 @@ libtorrent architecture, including native gRPC support for Flood.
 - macOS builds and packages are released, but a few storage tests still assert
   Linux-only `posix_fadvise` counters; macOS test results are advisory in CI.
 
-[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/chmuri/rstorrent/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/chmuri/rstorrent/releases/tag/v0.16.1
 [0.16.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.16.0
 [0.15.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.15.0
 [0.14.0]: https://github.com/chmuri/rstorrent/releases/tag/v0.14.0

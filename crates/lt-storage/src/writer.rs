@@ -97,9 +97,22 @@ pub fn write_piece_to_disk(
             &piece_data[segment.data_start..segment.data_end],
             segment.file_offset,
         )?;
-        let _ = f.sync_data();
     }
 
+    Ok(())
+}
+
+/// Synchronizes file modifications to disk for the given files under `root_dir`.
+/// To be called only on torrent completion, pause, or graceful shutdown.
+pub fn sync_files(root_dir: &Path, files: &[TargetFileInfo]) -> io::Result<()> {
+    for file in files {
+        let relative = file.path.strip_prefix(Path::new("/")).unwrap_or(&file.path);
+        let full_path = root_dir.join(relative);
+        if full_path.exists() {
+            let f = OpenOptions::new().write(true).open(&full_path)?;
+            f.sync_data()?;
+        }
+    }
     Ok(())
 }
 

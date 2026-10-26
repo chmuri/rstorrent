@@ -11,9 +11,9 @@ use lt_storage::piece::Piece;
 /// Peer speed tier for Piece Affinity and dynamic Endgame block stealing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum PeerSpeedClass {
+    Slow,
     #[default]
     Medium,
-    Slow,
     Fast,
 }
 
@@ -57,6 +57,16 @@ impl Delegator {
 
     pub fn transfers_mut(&mut self) -> &mut TransferList {
         &mut self.transfers
+    }
+
+    pub fn piece_speed_class(&self) -> &FxHashMap<u32, PeerSpeedClass> {
+        &self.piece_speed_class
+    }
+
+    /// Removes a piece transfer and its speed classification mapping.
+    pub fn erase_transfer(&mut self, piece_index: u32) -> bool {
+        self.piece_speed_class.remove(&piece_index);
+        self.transfers.erase(piece_index).is_some()
     }
 
     /// Marks every outstanding transfer for `peer_id` as cancelled, returning

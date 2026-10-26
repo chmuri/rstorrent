@@ -17,7 +17,7 @@ pub struct ChunkSelector {
     position: u32,
     size: usize,
     sequential: bool,
-    rng_seed: u64,
+    rng_seed: std::cell::Cell<u64>,
 }
 
 impl ChunkSelector {
@@ -45,7 +45,7 @@ impl ChunkSelector {
             position: 0,
             size,
             sequential: false,
-            rng_seed: 0x9e3779b97f4a7c15,
+            rng_seed: std::cell::Cell::new(0x9e3779b97f4a7c15),
         }
     }
 
@@ -213,17 +213,17 @@ impl ChunkSelector {
         if found.is_none() {
             // Tier 1: Header/Footer preview pieces
             if !self.preview_priority.is_empty() {
-                found = self.search_bucketed_rarest(peer_bf, &self.preview_priority.clone(), stats);
+                found = self.search_bucketed_rarest(peer_bf, &self.preview_priority, stats);
             }
 
             // Tier 2: Bucketed Rarest-First on high priority with random tie-break
             if found.is_none() && !self.high_priority.is_empty() {
-                found = self.search_bucketed_rarest(peer_bf, &self.high_priority.clone(), stats);
+                found = self.search_bucketed_rarest(peer_bf, &self.high_priority, stats);
             }
 
             // Tier 3: Bucketed Rarest-First on normal priority with random tie-break
             if found.is_none() && !self.normal_priority.is_empty() {
-                found = self.search_bucketed_rarest(peer_bf, &self.normal_priority.clone(), stats);
+                found = self.search_bucketed_rarest(peer_bf, &self.normal_priority, stats);
             }
 
             // Fallback to queue if needed
@@ -232,15 +232,8 @@ impl ChunkSelector {
                 let size_u32 = self.size as u32;
                 let pos = self.position;
 
-                self.search_linear(
-                    peer_bf,
-                    queue,
-                    &self.high_priority.clone(),
-                    pos,
-                    size_u32,
-                    stats,
-                );
-                self.search_linear(peer_bf, queue, &self.high_priority.clone(), 0, pos, stats);
+                self.search_linear(peer_bf, queue, &self.high_priority, pos, size_u32, stats);
+                self.search_linear(peer_bf, queue, &self.high_priority, 0, pos, stats);
 
                 if queue.prepare_pop() {
                     found = queue.pop();
@@ -248,22 +241,8 @@ impl ChunkSelector {
 
                 if found.is_none() {
                     queue.clear();
-                    self.search_linear(
-                        peer_bf,
-                        queue,
-                        &self.normal_priority.clone(),
-                        pos,
-                        size_u32,
-                        stats,
-                    );
-                    self.search_linear(
-                        peer_bf,
-                        queue,
-                        &self.normal_priority.clone(),
-                        0,
-                        pos,
-                        stats,
-                    );
+                    self.search_linear(peer_bf, queue, &self.normal_priority, pos, size_u32, stats);
+                    self.search_linear(peer_bf, queue, &self.normal_priority, 0, pos, stats);
 
                     if queue.prepare_pop() {
                         found = queue.pop();
@@ -282,7 +261,7 @@ impl ChunkSelector {
     /// Bucketed Rarest-First: Finds all pieces available from `peer_bf` in `ranges`,
     /// groups them by rarity, and breaks ties randomly to prevent the thundering herd problem.
     fn search_bucketed_rarest(
-        &mut self,
+        &self,
         peer_bf: &Bitfield,
         ranges: &Ranges<u32>,
         stats: &ChunkStatistics,
@@ -294,6 +273,9 @@ impl ChunkSelector {
         let mut min_rarity = u16::MAX;
         let mut candidates = Vec::new();
 
+        let untouched_words = self.untouched.words();
+        let peer_words = peer_bf.words();
+
         for &(r_start, r_end) in ranges.iter() {
             let start = (r_start as usize).min(self.size);
             let end = (r_end as usize).min(self.size);
@@ -301,15 +283,46 @@ impl ChunkSelector {
                 continue;
             }
 
-            for idx in start..end {
-                if self.untouched.get(idx) && peer_bf.get(idx) {
-                    let r = stats.rarity(idx) as u16;
-                    if r < min_rarity {
-                        min_rarity = r;
-                        candidates.clear();
-                        candidates.push(idx as u32);
-                    } else if r == min_rarity {
-                        candidates.push(idx as u32);
+            let start_w = start / 64;
+            let end_w = (end - 1) / 64;
+
+            for w in start_w..=end_w {
+                if w >= untouched_words.len() || w >= peer_words.len() {
+                    break;
+                }
+
+                let mut common = untouched_words[w] & peer_words[w];
+                if common == 0 {
+                    continue;
+                }
+
+                if w == start_w {
+                    let start_bit = start % 64;
+                    if start_bit > 0 {
+                        common &= (!0u64) >> start_bit;
+                    }
+                }
+                if w == end_w {
+                    let end_bit = end % 64;
+                    if end_bit > 0 {
+                        common &= (!0u64) << (64 - end_bit);
+                    }
+                }
+
+                while common != 0 {
+                    let lz = common.leading_zeros();
+                    let idx = w * 64 + (lz as usize);
+                    common ^= 1u64 << (63 - lz);
+
+                    if idx < self.size {
+                        let r = stats.rarity(idx) as u16;
+                        if r < min_rarity {
+                            min_rarity = r;
+                            candidates.clear();
+                            candidates.push(idx as u32);
+                        } else if r == min_rarity {
+                            candidates.push(idx as u32);
+                        }
                     }
                 }
             }
@@ -324,11 +337,13 @@ impl ChunkSelector {
         }
 
         // Random tie-break among pieces with identical minimum availability
-        self.rng_seed = self
+        let next_seed = self
             .rng_seed
+            .get()
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1);
-        let chosen_idx = (self.rng_seed as usize) % candidates.len();
+        self.rng_seed.set(next_seed);
+        let chosen_idx = (next_seed as usize) % candidates.len();
         Some(candidates[chosen_idx])
     }
 
