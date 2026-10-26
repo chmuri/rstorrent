@@ -97,14 +97,36 @@ impl HashQueue {
 
     /// Performs hashing work on queued chunks
     pub fn work(&mut self) {
-        while let Some(mut node) = self.queue.pop_front() {
-            let handle = node.chunk.handle().clone();
-            let hash = if node.chunk.remaining() > 64 * 1024 {
-                rayon::scope(|_| node.chunk.calculate_hash())
-            } else {
-                node.chunk.calculate_hash()
-            };
-            (node.on_done)(handle, Some(hash));
+        let nodes: Vec<_> = self.queue.drain(..).collect();
+        if nodes.len() > 1 {
+            use rayon::prelude::*;
+            let results: Vec<_> = nodes
+                .into_par_iter()
+                .map(|mut node| {
+                    let handle = node.chunk.handle().clone();
+                    let hash = node.chunk.calculate_hash();
+                    (node.on_done, handle, hash)
+                })
+                .collect();
+            for (on_done, handle, hash) in results {
+                on_done(handle, Some(hash));
+            }
+        } else {
+            for mut node in nodes {
+                let handle = node.chunk.handle().clone();
+                let hash = if node.chunk.remaining() > 64 * 1024 {
+                    let mut hash = lt_common::hash_string::HashString::default();
+                    rayon::scope(|s| {
+                        s.spawn(|_| {
+                            hash = node.chunk.calculate_hash();
+                        });
+                    });
+                    hash
+                } else {
+                    node.chunk.calculate_hash()
+                };
+                (node.on_done)(handle, Some(hash));
+            }
         }
     }
 }

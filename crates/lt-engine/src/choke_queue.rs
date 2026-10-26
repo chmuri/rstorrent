@@ -487,12 +487,14 @@ impl ChokeQueue {
             Heuristics::RateBasedBitTyrant => {
                 if is_unchoked {
                     // Lower efficiency (D_i / max(U_i, 1)) choked first
-                    let ratio = (peer.rate_down.saturating_mul(1000) / peer.rate_up.max(1)) as u32;
+                    let ratio = (peer.rate_down.saturating_mul(1000) / peer.rate_up.max(1))
+                        .min((ORDER_BASE - 1) as u64) as u32;
                     ORDER_BASE.saturating_sub(1).saturating_sub(ratio)
                 } else {
                     if peer.is_local_unchoked {
-                        let ratio =
-                            (peer.rate_down.saturating_mul(1000) / peer.rate_up.max(1)) as u32;
+                        let ratio = (peer.rate_down.saturating_mul(1000) / peer.rate_up.max(1))
+                            .min((ORDER_BASE - 1) as u64)
+                            as u32;
                         3 * ORDER_BASE + ratio
                     } else {
                         // Optimistic unchoke with newcomer boost (peers not yet choked or newly connected)

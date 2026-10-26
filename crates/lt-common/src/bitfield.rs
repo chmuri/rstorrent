@@ -136,6 +136,17 @@ impl Bitfield {
 
     /// Re-tallies the number of set bits and ensures tail bits are cleared.
     pub fn update(&mut self) {
+        for (w_idx, word) in self.words.iter_mut().enumerate() {
+            let start = w_idx * 8;
+            if start < self.bytes.len() {
+                let mut chunk = [0u8; 8];
+                let take = (self.bytes.len() - start).min(8);
+                chunk[..take].copy_from_slice(&self.bytes[start..start + take]);
+                *word = u64::from_be_bytes(chunk);
+            } else {
+                *word = 0;
+            }
+        }
         self.clear_tail();
         // Hardware POPCNT on each 64-bit word
         self.size_set = self.words.iter().map(|&w| w.count_ones() as usize).sum();
@@ -432,5 +443,21 @@ mod tests {
         assert!(bf.get(2));
         assert!(bf.get(8));
         assert!(bf.get(9));
+    }
+
+    #[test]
+    fn test_as_mut_bytes_update() {
+        let mut bf = Bitfield::new(16);
+        assert_eq!(bf.size_set(), 0);
+        bf.as_mut_bytes()[0] = 0b10110000;
+        bf.as_mut_bytes()[1] = 0b00000001;
+        bf.update();
+        assert_eq!(bf.size_set(), 4);
+        assert!(bf.get(0));
+        assert!(!bf.get(1));
+        assert!(bf.get(2));
+        assert!(bf.get(3));
+        assert!(bf.get(15));
+        assert_eq!(bf.words()[0], 0xb001_0000_0000_0000);
     }
 }

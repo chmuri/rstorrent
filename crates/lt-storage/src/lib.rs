@@ -63,7 +63,7 @@ pub use mmap_safe::{
 pub use piece::Piece;
 pub use resume::{ResumeData, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED};
 pub use socket_file::{FallocateFlags, OpenFlags, SocketFile, INVALID_FD};
-pub use writer::{write_piece_to_disk, TargetFileInfo};
+pub use writer::{sync_files, write_piece_to_disk, TargetFileInfo};
 
 #[cfg(test)]
 mod tests {

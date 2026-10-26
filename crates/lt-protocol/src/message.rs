@@ -70,6 +70,7 @@ pub enum PeerMessage {
     AllowedFast {
         index: u32,
     },
+    Batch(Vec<PeerMessage>),
 }
 
 impl PeerMessage {
@@ -175,6 +176,9 @@ impl PeerMessage {
                 buf.put_u32(5);
                 buf.put_u8(MSG_ALLOWED_FAST);
                 buf.put_u32(*index);
+            }
+            PeerMessage::Batch(msgs) => {
+                Self::encode_batch(msgs, buf);
             }
         }
     }
