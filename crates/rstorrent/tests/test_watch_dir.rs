@@ -400,7 +400,6 @@ async fn initialize_loads_watch_directory_into_session_and_views() {
     fs::create_dir_all(&session).unwrap();
 
     let payload = b"Hello rstorrent watch directory verification!";
-    fs::write(download.join("watched.bin"), payload).unwrap();
     write_torrent(&watch, "watched.torrent", "watched.bin", payload);
 
     let cli = initialize_cli(

@@ -33,6 +33,9 @@ jobs:
           components: clippy
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-clippy"
+          cache-all-crates: "true"
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Run clippy
@@ -53,6 +56,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-test-${{ matrix.os }}"
+          cache-all-crates: "true"
       - name: Install protoc (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -75,6 +81,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-build-${{ matrix.os }}"
+          cache-all-crates: "true"
       - name: Install protoc (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
