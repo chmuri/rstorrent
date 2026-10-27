@@ -14,7 +14,12 @@ path = "src/main.rs"
 clap.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
+rt-grpc.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tonic.workspace = true
+tower.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio-stream = { workspace = true, features = ["net"] }
