@@ -78,6 +78,26 @@ fn torrent_view_model_formats_size_with_binary_unit() {
 }
 
 #[test]
+fn torrent_view_model_formats_terabyte_sizes() {
+    let mut summary = make_proto_summary(0, 0);
+    summary.size_bytes = 1_649_267_441_664; // 1.5 TB
+
+    let vm = TorrentViewModel::from_proto(&summary);
+
+    assert_eq!(vm.size_display, "1.5 TB");
+}
+
+#[test]
+fn torrent_view_model_formats_sub_megabyte_sizes() {
+    let mut summary = make_proto_summary(0, 0);
+    summary.size_bytes = 1536; // 1.5 KB
+
+    let vm = TorrentViewModel::from_proto(&summary);
+
+    assert_eq!(vm.size_display, "1.5 KB");
+}
+
+#[test]
 fn torrent_view_model_computes_progress_percent() {
     let vm = make_vm();
     assert!((vm.progress_percent - 50.0).abs() < f64::EPSILON);
@@ -163,6 +183,25 @@ fn active_view_maps_to_rpc_view_names() {
     ] {
         assert_eq!(view.as_str(), name);
     }
+}
+
+#[test]
+fn focus_down_on_empty_list_keeps_zero() {
+    let mut state = AppState::new();
+
+    state.focus_down();
+
+    assert_eq!(state.focus_index, 0);
+    assert!(state.selected().is_none());
+}
+
+#[test]
+fn connection_status_reports_connected_only_when_connected() {
+    assert!(ConnectionStatus::Connected.is_connected());
+    assert!(!ConnectionStatus::Disconnected {
+        reason: "gone".to_string()
+    }
+    .is_connected());
 }
 
 #[test]

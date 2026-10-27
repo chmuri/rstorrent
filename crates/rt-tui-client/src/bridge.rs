@@ -13,7 +13,7 @@ use rt_grpc::system_service_client::SystemServiceClient;
 use rt_grpc::torrent_service_client::TorrentServiceClient;
 use rt_grpc::{
     CommandRequest, CommandResponse, Empty, GetTorrentRequest, ListTorrentsRequest, ObjectValue,
-    TorrentDetails, TorrentSummary, VersionResponse,
+    SessionStatsResponse, TorrentDetails, TorrentSummary, VersionResponse,
 };
 use tonic::transport::{Channel, Endpoint as TransportEndpoint};
 use tonic::{Response, Status};
@@ -84,6 +84,11 @@ impl GrpcBridge {
         }
 
         Ok(response)
+    }
+
+    /// Reads session-wide transfer statistics.
+    pub async fn session_stats(&mut self) -> Result<SessionStatsResponse, BridgeError> {
+        await_response(self.timeout, self.system.get_session_stats(Empty {})).await
     }
 
     /// Executes a command, optionally scoped to one torrent.
