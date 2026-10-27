@@ -1,0 +1,20 @@
+[package]
+name = "rt-tui-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Standalone gRPC TUI client for rstorrent (ratatui + tonic)"
+
+[[bin]]
+name = "rstorrent-tui"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
