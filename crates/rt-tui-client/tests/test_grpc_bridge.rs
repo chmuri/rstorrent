@@ -188,7 +188,9 @@ impl CommandService for MockDaemon {
         _request: Request<CommandRequest>,
     ) -> Result<Response<CommandResponse>, Status> {
         self.prepare().await?;
-        Ok(Response::new(self.execute_response.clone().unwrap_or_default()))
+        Ok(Response::new(
+            self.execute_response.clone().unwrap_or_default(),
+        ))
     }
 
     async fn multicall(
@@ -228,7 +230,10 @@ fn unique_socket_path() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_nanos())
         .unwrap_or_default();
-    std::env::temp_dir().join(format!("rt-tui-client-bridge-{}-{nanos}.sock", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "rt-tui-client-bridge-{}-{nanos}.sock",
+        std::process::id()
+    ))
 }
 
 /// Starts the mock daemon on a Unix socket and returns its endpoint plus path.
@@ -247,15 +252,14 @@ const SHORT_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[tokio::test]
 async fn list_torrents_returns_summaries() {
-    let endpoint =
-        spawn_tcp_daemon(MockDaemon {
-            summaries: vec![
-                MockDaemon::summary("aaa", "first"),
-                MockDaemon::summary("bbb", "second"),
-            ],
-            ..MockDaemon::default()
-        })
-        .await;
+    let endpoint = spawn_tcp_daemon(MockDaemon {
+        summaries: vec![
+            MockDaemon::summary("aaa", "first"),
+            MockDaemon::summary("bbb", "second"),
+        ],
+        ..MockDaemon::default()
+    })
+    .await;
     let mut bridge = GrpcBridge::connect(&endpoint, SHORT_TIMEOUT)
         .await
         .expect("bridge connects");
@@ -330,16 +334,15 @@ async fn version_rejects_empty_version_string() {
 
 #[tokio::test]
 async fn execute_returns_command_response() {
-    let endpoint =
-        spawn_tcp_daemon(MockDaemon {
-            execute_response: Some(CommandResponse {
-                success: true,
-                result: None,
-                error_message: String::new(),
-            }),
-            ..MockDaemon::default()
-        })
-        .await;
+    let endpoint = spawn_tcp_daemon(MockDaemon {
+        execute_response: Some(CommandResponse {
+            success: true,
+            result: None,
+            error_message: String::new(),
+        }),
+        ..MockDaemon::default()
+    })
+    .await;
     let mut bridge = GrpcBridge::connect(&endpoint, SHORT_TIMEOUT)
         .await
         .expect("bridge connects");
@@ -391,13 +394,41 @@ async fn slow_rpc_is_reported_as_timeout() {
 }
 
 #[tokio::test]
+async fn connects_with_tcp_scheme_prefix() {
+    let endpoint = spawn_tcp_daemon(MockDaemon {
+        summaries: vec![MockDaemon::summary("ddd", "fourth")],
+        ..MockDaemon::default()
+    })
+    .await;
+    let mut bridge = GrpcBridge::connect(&format!("tcp://{endpoint}"), SHORT_TIMEOUT)
+        .await
+        .expect("bridge connects");
+
+    let torrents = bridge.list_torrents("main").await.expect("list succeeds");
+    assert_eq!(torrents.len(), 1);
+}
+
+#[tokio::test]
+async fn empty_endpoint_is_a_connection_error() {
+    let result = GrpcBridge::connect("   ", Duration::from_millis(50)).await;
+
+    assert!(matches!(result, Err(BridgeError::ConnectionLost(_))));
+}
+
+#[tokio::test]
+async fn empty_unix_path_is_a_connection_error() {
+    let result = GrpcBridge::connect("unix://", Duration::from_millis(50)).await;
+
+    assert!(matches!(result, Err(BridgeError::ConnectionLost(_))));
+}
+
+#[tokio::test]
 async fn connects_over_unix_socket() {
-    let (endpoint, path) =
-        spawn_unix_daemon(MockDaemon {
-            summaries: vec![MockDaemon::summary("ccc", "third")],
-            ..MockDaemon::default()
-        })
-        .await;
+    let (endpoint, path) = spawn_unix_daemon(MockDaemon {
+        summaries: vec![MockDaemon::summary("ccc", "third")],
+        ..MockDaemon::default()
+    })
+    .await;
     let mut bridge = GrpcBridge::connect(&endpoint, SHORT_TIMEOUT)
         .await
         .expect("bridge connects over unix socket");
