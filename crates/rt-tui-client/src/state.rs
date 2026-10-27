@@ -210,6 +210,10 @@ pub struct AppState {
     pub active_view: ActiveView,
     /// Focused row in [`AppState::torrents`].
     pub focus_index: FocusIndex,
+    /// Terminal width in columns as last reported by a resize event.
+    pub terminal_cols: u16,
+    /// Terminal height in rows as last reported by a resize event.
+    pub terminal_rows: u16,
 }
 
 impl Default for AppState {
@@ -229,6 +233,8 @@ impl AppState {
             },
             active_view: ActiveView::Main,
             focus_index: 0,
+            terminal_cols: 80,
+            terminal_rows: 24,
         }
     }
 
