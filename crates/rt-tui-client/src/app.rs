@@ -4,6 +4,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::layout::{Constraint, Layout};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
@@ -11,6 +12,8 @@ use crate::bridge::{BridgeError, GrpcBridge};
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
 use crate::state::{AppState, ConnectionStatus};
 use crate::terminal::ClientTerminal;
+use crate::widgets::download_list::visible_rows;
+use crate::widgets::DownloadListWidget;
 
 /// Tick used when the caller does not configure one.
 pub const DEFAULT_TICK: Duration = Duration::from_millis(500);
@@ -72,16 +75,30 @@ impl App {
 
     /// Handles a key press.
     ///
-    /// `^Q` requests a graceful exit; a second `^Q` forces it. Every other key
-    /// stays unbound until TASK-10 adds the shortcut map.
+    /// `^Q` requests a graceful exit; a second `^Q` forces it. The remaining
+    /// bindings are list navigation; TASK-10 adds the torrent actions.
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
-        if let (KeyCode::Char('q'), KeyModifiers::CONTROL) = (code, modifiers) {
-            if self.should_quit {
-                self.force_quit = true;
-            } else {
-                self.should_quit = true;
+        match (code, modifiers) {
+            (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+                if self.should_quit {
+                    self.force_quit = true;
+                } else {
+                    self.should_quit = true;
+                }
             }
+            (KeyCode::Down, _) => self.state.focus_down(),
+            (KeyCode::Up, _) => self.state.focus_up(),
+            (KeyCode::PageDown, _) => self.state.focus_page_down(self.page_size()),
+            (KeyCode::PageUp, _) => self.state.focus_page_up(self.page_size()),
+            (KeyCode::Home, _) => self.state.focus_home(),
+            (KeyCode::End, _) => self.state.focus_end(),
+            _ => {}
         }
+    }
+
+    /// Rows of the torrent list that fit into the current terminal.
+    fn page_size(&self) -> usize {
+        visible_rows(self.state.terminal_rows).max(1)
     }
 
     /// Records the new terminal dimensions.
@@ -111,7 +128,7 @@ impl App {
         Some(result)
     }
 
-    /// Renders one frame.
+    /// Renders one frame: framed torrent list plus a status line.
     pub fn draw(&self, frame: &mut Frame) {
         let area = frame.area();
         let block = Block::default()
@@ -120,13 +137,11 @@ impl App {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        let status = match &self.state.connection {
-            ConnectionStatus::Connected => {
-                format!("connected · {} torrents", self.state.torrents.len())
-            }
-            ConnectionStatus::Disconnected { reason } => format!("disconnected: {reason}"),
-        };
-        frame.render_widget(Paragraph::new(status), inner);
+        let [list_area, status_area] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+
+        frame.render_widget(DownloadListWidget::new(&self.state), list_area);
+        frame.render_widget(Paragraph::new(status_line(&self.state)), status_area);
     }
 
     /// Runs the loop until the user quits.
@@ -194,5 +209,13 @@ fn poll_input(queue: &mut EventQueue, timeout: Duration) -> io::Result<()> {
         }
 
         wait = Duration::ZERO;
+    }
+}
+
+/// One-line connection summary shown under the list.
+fn status_line(state: &AppState) -> String {
+    match &state.connection {
+        ConnectionStatus::Connected => format!("connected · {} torrents", state.torrents.len()),
+        ConnectionStatus::Disconnected { reason } => format!("disconnected: {reason}"),
     }
 }

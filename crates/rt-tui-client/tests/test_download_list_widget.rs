@@ -100,12 +100,18 @@ fn all_columns_fit_a_wide_terminal() {
 fn bar_and_ratio_are_dropped_below_eighty_columns() {
     let columns = columns_for_width(60);
 
-    assert!(!format!("{columns:?}").contains("Bar"), "columns: {columns:?}");
+    assert!(
+        !format!("{columns:?}").contains("Bar"),
+        "columns: {columns:?}"
+    );
     assert!(
         !format!("{columns:?}").contains("Ratio"),
         "columns: {columns:?}"
     );
-    assert!(format!("{columns:?}").contains("Down"), "columns: {columns:?}");
+    assert!(
+        format!("{columns:?}").contains("Down"),
+        "columns: {columns:?}"
+    );
 }
 
 #[test]
@@ -158,7 +164,9 @@ fn renders_progress_bar_and_ratio() {
 #[test]
 fn viewport_scrolls_to_keep_the_focus_visible() {
     let mut state = AppState::new();
-    state.torrents = (0..30).map(|i| make_vm_with_name(&format!("t{i:02}"))).collect();
+    state.torrents = (0..30)
+        .map(|i| make_vm_with_name(&format!("t{i:02}")))
+        .collect();
     state.focus_index = 20;
 
     let text = buffer_to_string(&render(&state, Rect::new(0, 0, 80, 6)));
@@ -173,7 +181,9 @@ fn viewport_scrolls_to_keep_the_focus_visible() {
 
 fn app_with_torrents(count: usize, rows: u16) -> App {
     let mut state = AppState::new();
-    state.torrents = (0..count).map(|i| make_vm_with_name(&format!("t{i:02}"))).collect();
+    state.torrents = (0..count)
+        .map(|i| make_vm_with_name(&format!("t{i:02}")))
+        .collect();
     state.terminal_rows = rows;
     App::new_headless(state)
 }

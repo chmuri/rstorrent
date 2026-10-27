@@ -71,6 +71,10 @@ pub struct TorrentViewModel {
     pub down_total_display: String,
     /// `1.0 KB`
     pub up_total_display: String,
+    /// Share ratio (`uploaded / downloaded`), `0.0` when nothing was downloaded.
+    pub ratio: f64,
+    /// ` 2.000`
+    pub ratio_display: String,
 }
 
 impl TorrentViewModel {
@@ -78,6 +82,12 @@ impl TorrentViewModel {
     pub fn from_proto(summary: &TorrentSummary) -> Self {
         let progress_percent = if summary.size_bytes > 0 {
             (summary.completed_bytes as f64 / summary.size_bytes as f64 * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+
+        let ratio = if summary.down_total_bytes > 0 {
+            (summary.up_total_bytes as f64 / summary.down_total_bytes as f64).max(0.0)
         } else {
             0.0
         };
@@ -96,6 +106,8 @@ impl TorrentViewModel {
             up_rate_display: format_rate(summary.up_rate_bytes_per_sec),
             down_total_display: format_size(summary.down_total_bytes),
             up_total_display: format_size(summary.up_total_bytes),
+            ratio,
+            ratio_display: format!("{ratio:>6.3}"),
         }
     }
 }
@@ -278,6 +290,18 @@ impl AppState {
     /// Moves the focus one row up, stopping at the first torrent.
     pub fn focus_up(&mut self) {
         self.focus_index = self.focus_index.saturating_sub(1);
+    }
+
+    /// Moves the focus `page` rows down, stopping at the last torrent.
+    pub fn focus_page_down(&mut self, page: usize) {
+        if let Some(last) = self.torrents.len().checked_sub(1) {
+            self.focus_index = self.focus_index.saturating_add(page).min(last);
+        }
+    }
+
+    /// Moves the focus `page` rows up, stopping at the first torrent.
+    pub fn focus_page_up(&mut self, page: usize) {
+        self.focus_index = self.focus_index.saturating_sub(page);
     }
 
     /// Moves the focus to the first torrent.
