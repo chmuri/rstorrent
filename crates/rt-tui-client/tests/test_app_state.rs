@@ -115,6 +115,28 @@ fn torrent_view_model_progress_is_zero_when_size_unknown() {
 }
 
 #[test]
+fn torrent_view_model_computes_share_ratio() {
+    let mut summary = make_proto_summary(0, 0);
+    summary.down_total_bytes = 1_073_741_824;
+    summary.up_total_bytes = 2_147_483_648;
+
+    let vm = TorrentViewModel::from_proto(&summary);
+
+    assert!((vm.ratio - 2.0).abs() < f64::EPSILON);
+    assert_eq!(vm.ratio_display, " 2.000");
+}
+
+#[test]
+fn torrent_view_model_ratio_is_zero_without_downloaded_bytes() {
+    let summary = make_proto_summary(0, 0);
+
+    let vm = TorrentViewModel::from_proto(&summary);
+
+    assert_eq!(vm.ratio, 0.0);
+    assert_eq!(vm.ratio_display, " 0.000");
+}
+
+#[test]
 fn torrent_view_model_copies_identity_and_state() {
     let vm = make_vm();
     assert_eq!(vm.hash, "dddddddd");
