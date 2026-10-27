@@ -13,6 +13,7 @@ pub mod events;
 pub mod run;
 pub mod state;
 pub mod terminal;
+pub mod widgets;
 
 pub use app::{App, DEFAULT_TICK};
 pub use bridge::{BridgeError, GrpcBridge, DEFAULT_RPC_TIMEOUT};
@@ -24,3 +25,4 @@ pub use state::{
     ActiveView, AppState, ConnectionStatus, FocusIndex, SessionStats, TorrentViewModel,
 };
 pub use terminal::{install_panic_hook, ClientTerminal, TerminalSession};
+pub use widgets::DownloadListWidget;
