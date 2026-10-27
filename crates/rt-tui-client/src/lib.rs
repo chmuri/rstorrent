@@ -9,8 +9,12 @@ pub mod bridge;
 pub mod cli;
 pub mod endpoint;
 pub mod run;
+pub mod state;
 
 pub use bridge::{BridgeError, GrpcBridge, DEFAULT_RPC_TIMEOUT};
 pub use cli::{Cli, DEFAULT_REFRESH_MS};
 pub use endpoint::{Endpoint, EndpointError, ProbeError, PROBE_TIMEOUT};
 pub use run::{run, StartupError, EXIT_DAEMON_UNREACHABLE, EXIT_INVALID_ENDPOINT};
+pub use state::{
+    ActiveView, AppState, ConnectionStatus, FocusIndex, SessionStats, TorrentViewModel,
+};

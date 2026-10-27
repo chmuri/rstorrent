@@ -82,28 +82,36 @@ impl TorrentService for MockDaemon {
         &self,
         _request: Request<AddTorrentRequest>,
     ) -> Result<Response<AddTorrentResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 
     async fn control_torrent(
         &self,
         _request: Request<ControlTorrentRequest>,
     ) -> Result<Response<ControlTorrentResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 
     async fn remove_torrent(
         &self,
         _request: Request<RemoveTorrentRequest>,
     ) -> Result<Response<RemoveTorrentResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 
     async fn set_torrent_priority(
         &self,
         _request: Request<SetTorrentPriorityRequest>,
     ) -> Result<Response<SetPriorityResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 
     type StreamEventsStream = tokio_stream::Empty<Result<TorrentEvent, Status>>;
@@ -150,7 +158,9 @@ impl SystemService for MockDaemon {
         &self,
         _request: Request<ShutdownRequest>,
     ) -> Result<Response<ShutdownResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 }
 
@@ -170,14 +180,18 @@ impl CommandService for MockDaemon {
         &self,
         _request: Request<MulticallRequest>,
     ) -> Result<Response<MulticallResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 
     async fn list_commands(
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<ListCommandsResponse>, Status> {
-        Err(Status::unimplemented("not needed by the rt-tui-client tests"))
+        Err(Status::unimplemented(
+            "not needed by the rt-tui-client tests",
+        ))
     }
 }
 
