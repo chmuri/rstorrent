@@ -2788,9 +2788,12 @@ dependencies = [
  "clap",
  "crossterm",
  "ratatui",
+ "rt-grpc",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-stream",
  "tonic",
+ "tower",
  "tracing",
 ]
 
