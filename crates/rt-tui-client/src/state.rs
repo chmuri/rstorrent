@@ -203,6 +203,8 @@ pub enum ActiveView {
     /// All torrents.
     #[default]
     Main,
+    /// Sorted by name.
+    Name,
     /// Started torrents.
     Started,
     /// Stopped torrents.
@@ -211,6 +213,12 @@ pub enum ActiveView {
     Complete,
     /// Incomplete torrents.
     Incomplete,
+    /// Hashing / checking torrents.
+    Hashing,
+    /// Seeding torrents.
+    Seeding,
+    /// Leeching / downloading torrents.
+    Leeching,
     /// Torrents with transfer activity.
     Active,
 }
@@ -220,10 +228,14 @@ impl ActiveView {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Main => "main",
+            Self::Name => "name",
             Self::Started => "started",
             Self::Stopped => "stopped",
             Self::Complete => "complete",
             Self::Incomplete => "incomplete",
+            Self::Hashing => "hashing",
+            Self::Seeding => "seeding",
+            Self::Leeching => "leeching",
             Self::Active => "active",
         }
     }
@@ -1152,9 +1164,26 @@ impl AppState {
         Ok(())
     }
 
+    /// Returns the torrents visible under the current filter.
+    pub fn visible_torrents(&self) -> Vec<&TorrentViewModel> {
+        match &self.filter {
+            Some(filter) if !filter.trim().is_empty() => {
+                let needle = filter.trim().to_lowercase();
+                self.torrents
+                    .iter()
+                    .filter(|torrent| {
+                        torrent.name.to_lowercase().contains(&needle)
+                            || torrent.hash.to_lowercase().contains(&needle)
+                    })
+                    .collect()
+            }
+            _ => self.torrents.iter().collect(),
+        }
+    }
+
     /// Moves the focus one row down, stopping at the last torrent.
     pub fn focus_down(&mut self) {
-        if let Some(last) = self.torrents.len().checked_sub(1) {
+        if let Some(last) = self.visible_torrents().len().checked_sub(1) {
             self.focus_index = (self.focus_index + 1).min(last);
         }
     }
@@ -1166,7 +1195,7 @@ impl AppState {
 
     /// Moves the focus `page` rows down, stopping at the last torrent.
     pub fn focus_page_down(&mut self, page: usize) {
-        if let Some(last) = self.torrents.len().checked_sub(1) {
+        if let Some(last) = self.visible_torrents().len().checked_sub(1) {
             self.focus_index = self.focus_index.saturating_add(page).min(last);
         }
     }
@@ -1183,16 +1212,18 @@ impl AppState {
 
     /// Moves the focus to the last torrent.
     pub fn focus_end(&mut self) {
-        self.focus_index = self.torrents.len().saturating_sub(1);
+        self.focus_index = self.visible_torrents().len().saturating_sub(1);
     }
 
     /// The focused torrent, if the list is not empty.
     pub fn selected(&self) -> Option<&TorrentViewModel> {
-        self.torrents.get(self.focus_index)
+        self.visible_torrents().get(self.focus_index).copied()
     }
 
     /// Keeps the focus inside the list after a refresh.
-    fn clamp_focus(&mut self) {
-        self.focus_index = self.focus_index.min(self.torrents.len().saturating_sub(1));
+    pub fn clamp_focus(&mut self) {
+        self.focus_index = self
+            .focus_index
+            .min(self.visible_torrents().len().saturating_sub(1));
     }
 }

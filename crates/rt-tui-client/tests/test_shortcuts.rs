@@ -206,7 +206,7 @@ fn i_toggles_ignore_commands_between_on_and_off() {
 }
 
 #[test]
-fn backspace_and_ctrl_x_open_prompts() {
+fn backspace_and_ctrl_x_and_slash_open_prompts() {
     let mut app = App::new_headless(state_with_active_torrent());
 
     assert_eq!(
@@ -217,6 +217,59 @@ fn backspace_and_ctrl_x_open_prompts() {
         app.handle_key(KeyCode::Char('x'), KeyModifiers::CONTROL),
         Some(TuiAction::OpenPrompt(PromptKind::Command))
     );
+    assert_eq!(
+        app.handle_key(KeyCode::Char('/'), KeyModifiers::NONE),
+        Some(TuiAction::OpenPrompt(PromptKind::Filter))
+    );
+    assert_eq!(
+        app.handle_key(KeyCode::Char('f'), KeyModifiers::NONE),
+        Some(TuiAction::OpenPrompt(PromptKind::Filter))
+    );
+}
+
+#[test]
+fn number_keys_switch_active_views() {
+    use rt_tui_client::state::ActiveView;
+    let mut app = App::new_headless(state_with_active_torrent());
+
+    app.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Main);
+
+    app.handle_key(KeyCode::Char('2'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Name);
+
+    app.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Started);
+
+    app.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Stopped);
+
+    app.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Complete);
+
+    app.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Incomplete);
+
+    app.handle_key(KeyCode::Char('7'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Hashing);
+
+    app.handle_key(KeyCode::Char('8'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Seeding);
+
+    app.handle_key(KeyCode::Char('9'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Leeching);
+
+    app.handle_key(KeyCode::Char('0'), KeyModifiers::NONE);
+    assert_eq!(app.state.active_view, ActiveView::Active);
+}
+
+#[test]
+fn escape_clears_active_filter() {
+    let mut app = App::new_headless(state_with_active_torrent());
+    app.state.filter = Some("test".to_string());
+
+    app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert_eq!(app.state.filter, None);
 }
 
 #[test]

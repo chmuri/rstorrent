@@ -155,6 +155,14 @@ fn log_view_toggles_with_l_and_returns_with_space() {
 
     app.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
     assert!(!app.state.show_log, "space returns to the list");
+
+    app.handle_key(KeyCode::Char('L'), KeyModifiers::SHIFT);
+    app.handle_key(KeyCode::Char('l'), KeyModifiers::NONE);
+    assert!(!app.state.show_log, "lowercase l also returns to the list");
+
+    app.handle_key(KeyCode::Char('L'), KeyModifiers::SHIFT);
+    app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.state.show_log, "esc also returns to the list");
 }
 
 #[test]

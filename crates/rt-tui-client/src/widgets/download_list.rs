@@ -136,7 +136,8 @@ impl<'a> DownloadListWidget<'a> {
 
 impl Widget for DownloadListWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        if self.state.torrents.is_empty() {
+        let visible = self.state.visible_torrents();
+        if visible.is_empty() {
             render_empty(area, buf);
             return;
         }
@@ -153,13 +154,13 @@ impl Widget for DownloadListWidget<'_> {
 
         let range = viewport(
             self.state.focus_index,
-            self.state.torrents.len(),
+            visible.len(),
             visible_rows(area.height),
         );
 
         let rows = range
             .map(|index| {
-                let torrent = &self.state.torrents[index];
+                let torrent = visible[index];
                 let cells = columns
                     .iter()
                     .map(|column| cell_for(*column, torrent))

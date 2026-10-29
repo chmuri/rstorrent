@@ -334,6 +334,34 @@ async fn command_history_survives_reopening_the_prompt() {
     );
 }
 
+#[tokio::test]
+async fn filter_prompt_sets_and_clears_app_filter() {
+    let mut app = App::new_headless(AppState::new());
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Filter,
+        ))
+        .await;
+    assert_eq!(
+        app.prompt.as_ref().map(|p| p.mode()),
+        Some(PromptMode::Filter)
+    );
+
+    app.set_prompt_text("arch");
+    app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.state.filter.as_deref(), Some("arch"));
+
+    // Reopen and submit empty to clear
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Filter,
+        ))
+        .await;
+    app.set_prompt_text("   ");
+    app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.state.filter, None);
+}
+
 #[test]
 fn status_bar_shows_a_notice() {
     let mut state = AppState::new();

@@ -16,8 +16,8 @@ use crate::connection::ConnectionManager;
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
 use crate::key_handler::{self, global_action, torrent_action};
 use crate::state::{
-    AppState, ConnectionStatus, DetailTab, DetailsState, FileListState, MenuEntry, MenuResult,
-    MenuState,
+    ActiveView, AppState, ConnectionStatus, DetailTab, DetailsState, FileListState, MenuEntry,
+    MenuResult, MenuState,
 };
 use crate::stream::{StreamUpdate, Streams};
 use crate::terminal::ClientTerminal;
@@ -263,7 +263,10 @@ impl App {
     /// Keys active while the log view is shown.
     fn handle_log_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
         match (code, modifiers) {
-            (KeyCode::Char(' '), _) | (KeyCode::Esc, _) | (KeyCode::Char('L'), _) => {
+            (KeyCode::Char(' '), _)
+            | (KeyCode::Esc, _)
+            | (KeyCode::Char('L'), _)
+            | (KeyCode::Char('l'), _) => {
                 self.state.show_log = false;
             }
             (KeyCode::Down, _) => self.state.log.scroll_down(),
@@ -329,7 +332,13 @@ impl App {
                 start: false,
             }),
             PromptMode::Filter => {
-                self.state.filter = Some(text.to_string());
+                let clean = text.trim();
+                self.state.filter = if clean.is_empty() {
+                    None
+                } else {
+                    Some(clean.to_string())
+                };
+                self.state.clamp_focus();
                 None
             }
         }
@@ -412,9 +421,35 @@ impl App {
         }
     }
 
+    /// Changes the active view, resets focus, and invalidates the last refresh.
+    pub fn switch_view(&mut self, view: ActiveView) {
+        if self.state.active_view != view {
+            self.state.active_view = view;
+            self.state.focus_index = 0;
+            self.last_refresh = None;
+        }
+    }
+
     /// Keys active while the torrent list is shown.
     fn handle_list_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
         match (code, modifiers) {
+            (KeyCode::Char(d @ '0'..='9'), KeyModifiers::NONE) => {
+                let view = match d {
+                    '1' => ActiveView::Main,
+                    '2' => ActiveView::Name,
+                    '3' => ActiveView::Started,
+                    '4' => ActiveView::Stopped,
+                    '5' => ActiveView::Complete,
+                    '6' => ActiveView::Incomplete,
+                    '7' => ActiveView::Hashing,
+                    '8' => ActiveView::Seeding,
+                    '9' => ActiveView::Leeching,
+                    '0' => ActiveView::Active,
+                    _ => unreachable!(),
+                };
+                self.switch_view(view);
+                return None;
+            }
             (KeyCode::Down, _) => {
                 self.state.focus_down();
                 return None;
@@ -441,7 +476,7 @@ impl App {
                 self.state.focus_end();
                 return None;
             }
-            (KeyCode::Right, _) | (KeyCode::Char('l'), _) => {
+            (KeyCode::Right, _) | (KeyCode::Enter, _) | (KeyCode::Char('l'), _) => {
                 self.details_request = self.state.selected().map(|torrent| torrent.hash.clone());
                 return None;
             }
@@ -451,6 +486,11 @@ impl App {
             }
             (KeyCode::Char('L'), _) => {
                 self.state.show_log = true;
+                return None;
+            }
+            (KeyCode::Esc, _) if self.state.filter.is_some() => {
+                self.state.filter = None;
+                self.state.clamp_focus();
                 return None;
             }
             _ => {}
@@ -518,6 +558,9 @@ impl App {
         };
 
         match (code, modifiers) {
+            (KeyCode::Esc, _) | (KeyCode::Backspace, _) => {
+                self.state.details = None;
+            }
             (KeyCode::Char('h'), _) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
                 self.state.details = None;
             }
@@ -539,26 +582,46 @@ impl App {
                     details.select_tab(number as u8 - b'0');
                 }
             }
-            (KeyCode::Down, _) if active_tab == DetailTab::Files => {
+            (KeyCode::Down, _) => {
                 if let Some(details) = self.state.details.as_mut() {
-                    details.files.focus_down();
+                    match active_tab {
+                        DetailTab::Files => details.files.focus_down(),
+                        DetailTab::Peers => details.peers.focus_down(),
+                        DetailTab::Trackers => details.trackers.focus_down(),
+                        _ => {}
+                    }
                 }
             }
-            (KeyCode::Up, _) if active_tab == DetailTab::Files => {
+            (KeyCode::Up, _) => {
                 if let Some(details) = self.state.details.as_mut() {
-                    details.files.focus_up();
+                    match active_tab {
+                        DetailTab::Files => details.files.focus_up(),
+                        DetailTab::Peers => details.peers.focus_up(),
+                        DetailTab::Trackers => details.trackers.focus_up(),
+                        _ => {}
+                    }
                 }
             }
-            (KeyCode::PageDown, _) if active_tab == DetailTab::Files => {
+            (KeyCode::PageDown, _) => {
                 let page = self.page_size();
                 if let Some(details) = self.state.details.as_mut() {
-                    details.files.focus_page_down(page);
+                    match active_tab {
+                        DetailTab::Files => details.files.focus_page_down(page),
+                        DetailTab::Peers => details.peers.focus_page_down(page),
+                        DetailTab::Trackers => details.trackers.focus_page_down(page),
+                        _ => {}
+                    }
                 }
             }
-            (KeyCode::PageUp, _) if active_tab == DetailTab::Files => {
+            (KeyCode::PageUp, _) => {
                 let page = self.page_size();
                 if let Some(details) = self.state.details.as_mut() {
-                    details.files.focus_page_up(page);
+                    match active_tab {
+                        DetailTab::Files => details.files.focus_page_up(page),
+                        DetailTab::Peers => details.peers.focus_page_up(page),
+                        DetailTab::Trackers => details.trackers.focus_page_up(page),
+                        _ => {}
+                    }
                 }
             }
             (KeyCode::Char(' '), _) | (KeyCode::Char('*'), _) if active_tab == DetailTab::Files => {
@@ -914,6 +977,7 @@ fn prompt_mode(kind: PromptKind) -> PromptMode {
     match kind {
         PromptKind::Command => PromptMode::Command,
         PromptKind::Load => PromptMode::LoadStart,
+        PromptKind::Filter => PromptMode::Filter,
     }
 }
 

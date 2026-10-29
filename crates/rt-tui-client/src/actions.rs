@@ -24,6 +24,8 @@ pub enum PromptKind {
     Load,
     /// `^X` — free-form command prompt.
     Command,
+    /// `/` or `f` — filter torrents by name.
+    Filter,
 }
 
 /// One user intent.

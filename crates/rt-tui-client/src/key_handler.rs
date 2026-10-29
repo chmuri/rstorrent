@@ -31,6 +31,11 @@ pub fn global_action(code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction
         (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
             Some(TuiAction::OpenPrompt(PromptKind::Command))
         }
+        (KeyCode::Char('/'), KeyModifiers::NONE)
+        | (KeyCode::Char('f'), KeyModifiers::NONE)
+        | (KeyCode::Char('F'), KeyModifiers::NONE) => {
+            Some(TuiAction::OpenPrompt(PromptKind::Filter))
+        }
         _ => None,
     }
 }
