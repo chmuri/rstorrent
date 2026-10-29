@@ -9,10 +9,10 @@ use ratatui::Frame;
 
 use crate::bridge::{BridgeError, GrpcBridge};
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
-use crate::state::AppState;
+use crate::state::{AppState, DetailTab, DetailsState};
 use crate::terminal::ClientTerminal;
 use crate::widgets::download_list::visible_rows;
-use crate::widgets::{DownloadListWidget, StatusBarWidget, TitleBarWidget};
+use crate::widgets::{DetailsWidget, DownloadListWidget, StatusBarWidget, TitleBarWidget};
 
 /// Tick used when the caller does not configure one.
 pub const DEFAULT_TICK: Duration = Duration::from_millis(500);
@@ -31,6 +31,7 @@ pub struct App {
     bridge: Option<GrpcBridge>,
     tick: Duration,
     last_refresh: Option<Instant>,
+    details_request: Option<String>,
 }
 
 impl App {
@@ -43,6 +44,7 @@ impl App {
             bridge: Some(bridge),
             tick,
             last_refresh: None,
+            details_request: None,
         }
     }
 
@@ -55,6 +57,7 @@ impl App {
             bridge: None,
             tick: DEFAULT_TICK,
             last_refresh: None,
+            details_request: None,
         }
     }
 
@@ -74,24 +77,92 @@ impl App {
 
     /// Handles a key press.
     ///
-    /// `^Q` requests a graceful exit; a second `^Q` forces it. The remaining
-    /// bindings are list navigation; TASK-10 adds the torrent actions.
+    /// `^Q` requests a graceful exit; a second `^Q` forces it. Everything else
+    /// is dispatched to the list or the details pane, whichever is open.
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
-        match (code, modifiers) {
-            (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
-                if self.should_quit {
-                    self.force_quit = true;
-                } else {
-                    self.should_quit = true;
-                }
+        if let (KeyCode::Char('q'), KeyModifiers::CONTROL) = (code, modifiers) {
+            if self.should_quit {
+                self.force_quit = true;
+            } else {
+                self.should_quit = true;
             }
+            return;
+        }
+
+        if self.state.details.is_some() {
+            self.handle_details_key(code, modifiers);
+        } else {
+            self.handle_list_key(code, modifiers);
+        }
+    }
+
+    /// Keys active while the torrent list is shown.
+    fn handle_list_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        match (code, modifiers) {
             (KeyCode::Down, _) => self.state.focus_down(),
             (KeyCode::Up, _) => self.state.focus_up(),
             (KeyCode::PageDown, _) => self.state.focus_page_down(self.page_size()),
             (KeyCode::PageUp, _) => self.state.focus_page_up(self.page_size()),
             (KeyCode::Home, _) => self.state.focus_home(),
             (KeyCode::End, _) => self.state.focus_end(),
+            (KeyCode::Right, _) | (KeyCode::Char('l'), _) => {
+                self.details_request = self.state.selected().map(|torrent| torrent.hash.clone());
+            }
             _ => {}
+        }
+    }
+
+    /// Keys active while the details pane is shown.
+    ///
+    /// `h`, `^B` and Left on the first tab return to the list; Left/Right (and
+    /// `h`'s counterpart `l`) move between tabs; `1`–`5` select a tab directly.
+    fn handle_details_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        let active_tab = match self.state.details.as_ref() {
+            Some(details) => details.active_tab,
+            None => return,
+        };
+
+        match (code, modifiers) {
+            (KeyCode::Char('h'), _) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+                self.state.details = None;
+            }
+            (KeyCode::Left, _) if active_tab == DetailTab::Info => {
+                self.state.details = None;
+            }
+            (KeyCode::Left, _) => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.previous_tab();
+                }
+            }
+            (KeyCode::Right, _) | (KeyCode::Char('l'), _) => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.next_tab();
+                }
+            }
+            (KeyCode::Char(number @ '1'..='5'), _) => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.select_tab(number as u8 - b'0');
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Takes the hash of a torrent whose details were requested by a key press.
+    pub fn take_details_request(&mut self) -> Option<String> {
+        self.details_request.take()
+    }
+
+    /// Fetches details for `hash` and opens the details pane.
+    pub async fn open_details(&mut self, hash: &str) -> Option<Result<(), BridgeError>> {
+        let bridge = self.bridge.as_mut()?;
+
+        match bridge.get_torrent(hash).await {
+            Ok(details) => {
+                self.state.details = Some(DetailsState::from_proto(&details));
+                Some(Ok(()))
+            }
+            Err(error) => Some(Err(error)),
         }
     }
 
@@ -127,9 +198,9 @@ impl App {
         Some(result)
     }
 
-    /// Renders one frame: title bar, torrent list, status bar.
+    /// Renders one frame: title bar, body (list or details), status bar.
     pub fn draw(&self, frame: &mut Frame) {
-        let [title_area, list_area, status_area] = Layout::vertical([
+        let [title_area, body_area, status_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
@@ -137,7 +208,14 @@ impl App {
         .areas(frame.area());
 
         frame.render_widget(TitleBarWidget::new(&self.state), title_area);
-        frame.render_widget(DownloadListWidget::new(&self.state), list_area);
+
+        match self.state.details.as_ref() {
+            Some(details) => {
+                frame.render_widget(DetailsWidget::new(details, details.active_tab), body_area)
+            }
+            None => frame.render_widget(DownloadListWidget::new(&self.state), body_area),
+        }
+
         frame.render_widget(StatusBarWidget::new(&self.state), status_area);
     }
 
@@ -157,6 +235,12 @@ impl App {
 
             for event in read_events(self.tick.min(MAX_INPUT_WAIT)).await? {
                 self.handle_event(event);
+            }
+
+            if let Some(hash) = self.take_details_request() {
+                if let Some(Err(error)) = self.open_details(&hash).await {
+                    tracing::warn!(%error, "failed to open details for {hash}");
+                }
             }
 
             if self.refresh_due(Instant::now()) {

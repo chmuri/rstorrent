@@ -4,7 +4,7 @@
 //! wrapped in `Arc`/`Mutex`. Proto messages are mapped into display-ready values
 //! here so widgets never format or divide by zero themselves.
 
-use rt_grpc::{SessionStatsResponse, TorrentSummary};
+use rt_grpc::{SessionStatsResponse, TorrentDetails, TorrentSummary};
 
 use crate::bridge::{BridgeError, GrpcBridge};
 
@@ -211,6 +211,176 @@ impl ActiveView {
     }
 }
 
+/// Tabs of the torrent details view.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DetailTab {
+    /// Summary of the torrent (default).
+    #[default]
+    Info,
+    /// File list (TASK-08).
+    Files,
+    /// Connected peers (TASK-09).
+    Peers,
+    /// Trackers (TASK-09).
+    Trackers,
+    /// Piece map.
+    Chunks,
+}
+
+impl DetailTab {
+    /// All tabs in display order.
+    pub const ALL: [Self; 5] = [
+        Self::Info,
+        Self::Files,
+        Self::Peers,
+        Self::Trackers,
+        Self::Chunks,
+    ];
+
+    /// Label shown in the tab bar.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Info => "Info",
+            Self::Files => "Files",
+            Self::Peers => "Peers",
+            Self::Trackers => "Trackers",
+            Self::Chunks => "Chunks",
+        }
+    }
+
+    /// One-based number shown in the tab bar and bound to the number keys.
+    pub fn number(self) -> u8 {
+        match self {
+            Self::Info => 1,
+            Self::Files => 2,
+            Self::Peers => 3,
+            Self::Trackers => 4,
+            Self::Chunks => 5,
+        }
+    }
+
+    /// Tab bound to `number`, if any.
+    pub fn from_number(number: u8) -> Option<Self> {
+        Self::ALL.into_iter().find(|tab| tab.number() == number)
+    }
+
+    /// Next tab, wrapping after the last.
+    pub fn next(self) -> Self {
+        let index = Self::ALL.iter().position(|tab| *tab == self).unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    /// Previous tab, wrapping before the first.
+    pub fn previous(self) -> Self {
+        let index = Self::ALL.iter().position(|tab| *tab == self).unwrap_or(0);
+        Self::ALL[(index + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+}
+
+/// Info tab content for one torrent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DetailsInfo {
+    /// Info-hash of the torrent.
+    pub hash: String,
+    /// Display name.
+    pub name: String,
+    /// Human-readable state, e.g. `downloading`.
+    pub state_name: String,
+    /// `2.0 GB`
+    pub size_display: String,
+    /// `256.0 KB`
+    pub piece_length_display: String,
+    /// Number of pieces.
+    pub piece_count: u32,
+    /// Download directory, or `—` when the daemon does not report one.
+    pub directory: String,
+    /// Daemon message, or `—` when empty.
+    pub message: String,
+    /// Whether the torrent is marked private.
+    pub private: bool,
+    /// Seed connection description.
+    pub connection_seed: String,
+    /// Throttle group name.
+    pub throttle_name: String,
+}
+
+/// Details pane: the active tab plus the data behind it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DetailsState {
+    /// Selected tab.
+    pub active_tab: DetailTab,
+    /// Info tab content.
+    pub info: DetailsInfo,
+    /// Number of files reported by the daemon.
+    pub file_count: usize,
+    /// Number of connected peers.
+    pub peer_count: usize,
+    /// Number of trackers.
+    pub tracker_count: usize,
+}
+
+impl DetailsState {
+    /// Maps a proto `TorrentDetails` into the details view model.
+    pub fn from_proto(details: &TorrentDetails) -> Self {
+        let summary = details.summary.as_ref();
+
+        Self {
+            active_tab: DetailTab::Info,
+            info: DetailsInfo {
+                hash: summary
+                    .map(|summary| summary.hash.clone())
+                    .unwrap_or_default(),
+                name: summary
+                    .map(|summary| summary.name.clone())
+                    .unwrap_or_default(),
+                state_name: summary
+                    .map(|summary| summary.state_name.clone())
+                    .unwrap_or_default(),
+                size_display: format_size(summary.map_or(0, |summary| summary.size_bytes)),
+                piece_length_display: format_size(i64::from(details.piece_length)),
+                piece_count: details.num_pieces,
+                directory: or_dash(summary.map(|summary| summary.directory.as_str())),
+                message: or_dash(summary.map(|summary| summary.message.as_str())),
+                private: details.is_private,
+                connection_seed: details.connection_seed.clone(),
+                throttle_name: details.throttle_name.clone(),
+            },
+            file_count: details.files.len(),
+            peer_count: details.peers.len(),
+            tracker_count: details.trackers.len(),
+        }
+    }
+
+    /// Selects the next tab, wrapping after the last.
+    pub fn next_tab(&mut self) {
+        self.active_tab = self.active_tab.next();
+    }
+
+    /// Selects the previous tab, wrapping before the first.
+    pub fn previous_tab(&mut self) {
+        self.active_tab = self.active_tab.previous();
+    }
+
+    /// Selects a tab by its one-based number; `false` when out of range.
+    pub fn select_tab(&mut self, number: u8) -> bool {
+        match DetailTab::from_number(number) {
+            Some(tab) => {
+                self.active_tab = tab;
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// Falls back to an em dash for empty or missing daemon strings.
+fn or_dash(value: Option<&str>) -> String {
+    match value {
+        Some(text) if !text.is_empty() => text.to_string(),
+        _ => "—".to_string(),
+    }
+}
+
 /// Whether the last refresh reached the daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionStatus {
@@ -249,6 +419,8 @@ pub struct AppState {
     pub terminal_cols: u16,
     /// Terminal height in rows as last reported by a resize event.
     pub terminal_rows: u16,
+    /// Open details pane; `None` while the torrent list is shown.
+    pub details: Option<DetailsState>,
 }
 
 impl Default for AppState {
@@ -270,6 +442,7 @@ impl AppState {
             focus_index: 0,
             terminal_cols: 80,
             terminal_rows: 24,
+            details: None,
         }
     }
 

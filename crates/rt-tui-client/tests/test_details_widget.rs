@@ -110,7 +110,13 @@ fn tab_bar_shows_all_five_labels() {
 
     let text = render_details(&state, DetailTab::Info, AREA);
 
-    for label in ["[1:Info]", "[2:Files]", "[3:Peers]", "[4:Trackers]", "[5:Chunks]"] {
+    for label in [
+        "[1:Info]",
+        "[2:Files]",
+        "[3:Peers]",
+        "[4:Trackers]",
+        "[5:Chunks]",
+    ] {
         assert!(text.contains(label), "missing {label} in: {text}");
     }
 }
@@ -156,11 +162,41 @@ fn info_tab_shows_pieces_directory_privacy_and_throttle() {
 
     assert!(text.contains("256.0 KB"), "piece length missing: {text}");
     assert!(text.contains("8192"), "piece count missing: {text}");
-    assert!(text.contains("/downloads/linux"), "directory missing: {text}");
+    assert!(
+        text.contains("/downloads/linux"),
+        "directory missing: {text}"
+    );
     assert!(text.contains("yes"), "private flag missing: {text}");
     assert!(text.contains("seed-1"), "connection seed missing: {text}");
     assert!(text.contains("main"), "throttle missing: {text}");
     assert!(text.contains("2.0 GB"), "size missing: {text}");
+}
+
+#[test]
+fn trackers_and_chunks_tabs_render_their_counts() {
+    let mut details = make_torrent_details("h", "t");
+    details.trackers = vec![Default::default(); 2];
+    let state = DetailsState::from_proto(&details);
+
+    let trackers = render_details(&state, DetailTab::Trackers, AREA);
+    assert!(trackers.contains("Trackers: 2 entries"), "{trackers}");
+
+    let chunks = render_details(&state, DetailTab::Chunks, AREA);
+    assert!(chunks.contains("Chunks: 8192 entries"), "{chunks}");
+}
+
+#[test]
+fn missing_summary_fields_fall_back_to_dashes() {
+    let mut details = make_torrent_details("h", "t");
+    if let Some(summary) = details.summary.as_mut() {
+        summary.directory = String::new();
+        summary.message = String::new();
+    }
+    let state = DetailsState::from_proto(&details);
+
+    let text = render_details(&state, DetailTab::Info, AREA);
+
+    assert!(text.contains('—'), "missing dash fallback: {text}");
 }
 
 #[test]
@@ -171,10 +207,16 @@ fn non_info_tabs_report_entry_counts() {
     let state = DetailsState::from_proto(&details);
 
     let files = render_details(&state, DetailTab::Files, AREA);
-    assert!(files.contains("Files: 3 entries"), "file count missing: {files}");
+    assert!(
+        files.contains("Files: 3 entries"),
+        "file count missing: {files}"
+    );
 
     let peers = render_details(&state, DetailTab::Peers, AREA);
-    assert!(peers.contains("Peers: 0 entries"), "peer count missing: {peers}");
+    assert!(
+        peers.contains("Peers: 0 entries"),
+        "peer count missing: {peers}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +234,11 @@ fn l_and_right_request_details_for_the_selected_torrent() {
 
     app.handle_key(KeyCode::Right, KeyModifiers::NONE);
     assert_eq!(app.take_details_request().as_deref(), Some("ubuntu-hash"));
-    assert_eq!(app.take_details_request(), None, "request must be consumed once");
+    assert_eq!(
+        app.take_details_request(),
+        None,
+        "request must be consumed once"
+    );
 }
 
 #[test]
@@ -265,7 +311,10 @@ async fn open_details_loads_the_daemon_details() {
         .expect("bridge connects");
     let mut app = App::new(AppState::new(), bridge, SHORT_TIMEOUT);
 
-    let outcome = app.open_details("abc123def").await.expect("bridge attached");
+    let outcome = app
+        .open_details("abc123def")
+        .await
+        .expect("bridge attached");
 
     assert!(outcome.is_ok());
     let details = app.state.details.as_ref().expect("details are open");
