@@ -5,15 +5,14 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
-use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::bridge::{BridgeError, GrpcBridge};
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
-use crate::state::{AppState, ConnectionStatus};
+use crate::state::AppState;
 use crate::terminal::ClientTerminal;
 use crate::widgets::download_list::visible_rows;
-use crate::widgets::DownloadListWidget;
+use crate::widgets::{DownloadListWidget, StatusBarWidget, TitleBarWidget};
 
 /// Tick used when the caller does not configure one.
 pub const DEFAULT_TICK: Duration = Duration::from_millis(500);
@@ -128,20 +127,18 @@ impl App {
         Some(result)
     }
 
-    /// Renders one frame: framed torrent list plus a status line.
+    /// Renders one frame: title bar, torrent list, status bar.
     pub fn draw(&self, frame: &mut Frame) {
-        let area = frame.area();
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" rstorrent-tui ");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        let [title_area, list_area, status_area] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area());
 
-        let [list_area, status_area] =
-            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
-
+        frame.render_widget(TitleBarWidget::new(&self.state), title_area);
         frame.render_widget(DownloadListWidget::new(&self.state), list_area);
-        frame.render_widget(Paragraph::new(status_line(&self.state)), status_area);
+        frame.render_widget(StatusBarWidget::new(&self.state), status_area);
     }
 
     /// Runs the loop until the user quits.
@@ -209,13 +206,5 @@ fn poll_input(queue: &mut EventQueue, timeout: Duration) -> io::Result<()> {
         }
 
         wait = Duration::ZERO;
-    }
-}
-
-/// One-line connection summary shown under the list.
-fn status_line(state: &AppState) -> String {
-    match &state.connection {
-        ConnectionStatus::Connected => format!("connected · {} torrents", state.torrents.len()),
-        ConnectionStatus::Disconnected { reason } => format!("disconnected: {reason}"),
     }
 }

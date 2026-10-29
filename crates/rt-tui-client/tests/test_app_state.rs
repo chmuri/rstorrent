@@ -174,6 +174,8 @@ fn session_stats_maps_from_proto() {
     assert_eq!(stats.listen_port, 6881);
     assert_eq!(stats.throttle_down_limit, 0);
     assert_eq!(stats.throttle_up_limit, 1_000_000);
+    assert_eq!(stats.throttle_down_display, "∞");
+    assert_eq!(stats.throttle_up_display, " 976.6 KB");
 }
 
 // ---------------------------------------------------------------------------
