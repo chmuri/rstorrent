@@ -5,7 +5,9 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
 
 use rt_grpc::TorrentSummary;
-use rt_tui_client::state::{ActiveView, AppState, ConnectionStatus, SessionStats, TorrentViewModel};
+use rt_tui_client::state::{
+    ActiveView, AppState, ConnectionStatus, SessionStats, TorrentViewModel,
+};
 use rt_tui_client::widgets::{StatusBarWidget, TitleBarWidget};
 
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -140,7 +142,8 @@ fn status_bar_shows_rates_port_and_throttles_when_wide() {
 
 #[test]
 fn status_bar_hides_throttles_on_medium_terminals() {
-    let state = AppState::new();
+    let mut state = AppState::new();
+    state.session_stats.listen_port = 6881;
 
     let text = render_status(&state, 55);
 
@@ -176,7 +179,10 @@ fn status_bar_reports_reconnecting_and_disconnected_states() {
 
     state.connection = ConnectionStatus::Reconnecting;
     let reconnecting = render_status(&state, 80);
-    assert!(reconnecting.contains("reconnecting"), "rendered: {reconnecting}");
+    assert!(
+        reconnecting.contains("reconnecting"),
+        "rendered: {reconnecting}"
+    );
 
     state.connection = ConnectionStatus::Disconnected {
         reason: "connection refused".to_string(),

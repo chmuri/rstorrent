@@ -25,4 +25,4 @@ pub use state::{
     ActiveView, AppState, ConnectionStatus, FocusIndex, SessionStats, TorrentViewModel,
 };
 pub use terminal::{install_panic_hook, ClientTerminal, TerminalSession};
-pub use widgets::DownloadListWidget;
+pub use widgets::{DownloadListWidget, StatusBarWidget, TitleBarWidget};

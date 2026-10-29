@@ -42,6 +42,15 @@ fn format_rate(bytes_per_sec: i64) -> String {
     format!("{value:>6.1} {unit}")
 }
 
+/// Throttle limit, where `0` (or anything negative) means unlimited.
+fn throttle_display(limit: i64) -> String {
+    if limit <= 0 {
+        "∞".to_string()
+    } else {
+        format_rate(limit)
+    }
+}
+
 /// One torrent as the UI needs it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TorrentViewModel {
@@ -113,7 +122,7 @@ impl TorrentViewModel {
 }
 
 /// Session-wide transfer statistics for the status bar.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionStats {
     /// Down rate in bytes per second.
     pub down_rate: i64,
@@ -137,6 +146,16 @@ pub struct SessionStats {
     pub throttle_down_limit: i64,
     /// Up throttle in bytes per second, `0` means unlimited.
     pub throttle_up_limit: i64,
+    /// ` 100.0 KB`, or `∞` when unlimited.
+    pub throttle_down_display: String,
+    /// ` 100.0 KB`, or `∞` when unlimited.
+    pub throttle_up_display: String,
+}
+
+impl Default for SessionStats {
+    fn default() -> Self {
+        Self::from_proto(&SessionStatsResponse::default())
+    }
 }
 
 impl SessionStats {
@@ -154,6 +173,8 @@ impl SessionStats {
             listen_port: response.listen_port,
             throttle_down_limit: response.throttle_down_limit,
             throttle_up_limit: response.throttle_up_limit,
+            throttle_down_display: throttle_display(response.throttle_down_limit),
+            throttle_up_display: throttle_display(response.throttle_up_limit),
         }
     }
 }
@@ -195,6 +216,8 @@ impl ActiveView {
 pub enum ConnectionStatus {
     /// The last refresh succeeded.
     Connected,
+    /// A previous refresh failed and the client is retrying (TASK-15).
+    Reconnecting,
     /// The last refresh failed; `reason` is the bridge error.
     Disconnected {
         /// Why the daemon could not be reached.
