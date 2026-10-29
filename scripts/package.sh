@@ -6,6 +6,9 @@
 #   - SHA256SUMS
 #
 # Usage: scripts/package.sh <version> <target-triple> <binary> [output-dir]
+#
+# Set TUI_BINARY to also ship the standalone `rstorrent-tui` client, e.g.
+#   TUI_BINARY=target/<target>/release/rstorrent-tui scripts/package.sh ...
 set -euo pipefail
 
 VERSION="${1:?usage: package.sh <version> <target> <binary> [output-dir]}"
@@ -27,8 +30,15 @@ mkdir -p "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}"
 install -m 0755 "${BINARY}" "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent"
 ln -s rstorrent "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rtorrent"
 
+if [ -n "${TUI_BINARY:-}" ] && [ -f "${TUI_BINARY}" ]; then
+    install -m 0755 "${TUI_BINARY}" "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent-tui"
+fi
+
 if [[ "${TARGET}" == *"apple-darwin"* ]] && command -v codesign >/dev/null 2>&1; then
     codesign -s - "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent" || true
+    if [ -f "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent-tui" ]; then
+        codesign -s - "${STAGE_DIR}/${PACKAGE_NAME}-${VERSION}/rstorrent-tui" || true
+    fi
 fi
 
 for doc in README.md CHANGELOG.md LICENSE CONTRIBUTING.md; do
@@ -61,6 +71,10 @@ if [ -n "${DEB_ARCH}" ]; then
     install -m 0755 "${BINARY}" "${DEB_ROOT}/usr/bin/rstorrent"
     ln -s rstorrent "${DEB_ROOT}/usr/bin/rtorrent"
 
+    if [ -n "${TUI_BINARY:-}" ] && [ -f "${TUI_BINARY}" ]; then
+        install -m 0755 "${TUI_BINARY}" "${DEB_ROOT}/usr/bin/rstorrent-tui"
+    fi
+
     install -m 0644 "${ROOT_DIR}/README.md" "${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}/README.md"
     install -m 0644 "${ROOT_DIR}/CHANGELOG.md" "${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}/CHANGELOG.md"
     install -m 0644 "${ROOT_DIR}/LICENSE" "${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}/LICENSE"
@@ -88,7 +102,8 @@ Description: High-performance BitTorrent client and engine written in Rust
  libtorrent. It speaks SCGI, XML-RPC, JSON-RPC and a native gRPC API, ships an
  interactive TUI and a headless daemon, and integrates with Flood and ruTorrent.
  .
- The package provides both the rstorrent and rtorrent binaries.
+ The package provides the rstorrent and rtorrent binaries plus the standalone
+ rstorrent-tui client.
 EOF
 
     dpkg-deb --build --root-owner-group "${DEB_ROOT}" \
