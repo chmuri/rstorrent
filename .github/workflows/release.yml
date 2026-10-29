@@ -41,12 +41,13 @@ jobs:
       - name: Build release binary
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target "${{ matrix.target }}" -p rstorrent
+            cross build --release --target "${{ matrix.target }}" -p rstorrent -p rt-tui-client
           else
-            cargo build --release --target "${{ matrix.target }}" -p rstorrent
+            cargo build --release --target "${{ matrix.target }}" -p rstorrent -p rt-tui-client
           fi
       - name: Package
         run: |
+          TUI_BINARY="target/${{ matrix.target }}/release/rstorrent-tui" \
           bash scripts/package.sh "${GITHUB_REF_NAME#v}" "${{ matrix.target }}" \
             "target/${{ matrix.target }}/release/rstorrent" dist
       - name: Upload packages
@@ -80,9 +81,10 @@ jobs:
       - name: Install protoc
         run: brew install protobuf
       - name: Build release binary
-        run: cargo build --release --target "${{ matrix.target }}" -p rstorrent
+        run: cargo build --release --target "${{ matrix.target }}" -p rstorrent -p rt-tui-client
       - name: Package
         run: |
+          TUI_BINARY="target/${{ matrix.target }}/release/rstorrent-tui" \
           bash scripts/package.sh "${GITHUB_REF_NAME#v}" "${{ matrix.target }}" \
             "target/${{ matrix.target }}/release/rstorrent" dist
       - name: Upload packages

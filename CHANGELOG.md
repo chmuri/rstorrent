@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-29
+
+### Fixed
+
+- **Release packages now ship `rstorrent-tui`**: the release workflow only built
+  `-p rstorrent`, so the standalone TUI client added in 0.17.0 was missing from
+  the tarballs and `.deb` packages. `scripts/package.sh` takes an optional
+  `TUI_BINARY` and installs it next to the daemon (including the macOS codesign
+  pass), and the release workflow builds and packages both binaries.
+
 ## [0.17.0] - 2026-10-29
 
 Standalone gRPC TUI client (`rstorrent-tui`), implemented end to end from
