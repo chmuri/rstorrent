@@ -175,12 +175,17 @@ fn refresh_is_due_before_the_first_fetch_and_after_the_tick() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn draw_renders_title_and_connection_status() {
+fn draw_renders_title_bar_and_status_bar() {
     let app = App::new_headless(AppState::new());
 
     let rendered = render_to_string(&app, 60, 10);
 
-    assert!(rendered.contains("rstorrent-tui"), "rendered: {rendered}");
+    assert!(
+        rendered.contains(&format!("rstorrent v{}", env!("CARGO_PKG_VERSION"))),
+        "rendered: {rendered}"
+    );
+    assert!(rendered.contains("[main]"), "rendered: {rendered}");
+    assert!(rendered.contains('●'), "rendered: {rendered}");
     assert!(rendered.contains("disconnected"), "rendered: {rendered}");
 }
 
