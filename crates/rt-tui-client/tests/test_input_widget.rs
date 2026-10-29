@@ -338,7 +338,7 @@ async fn command_history_survives_reopening_the_prompt() {
 fn status_bar_shows_a_notice() {
     let mut state = AppState::new();
     state.connection = ConnectionStatus::Connected;
-    state.session_stats = SessionStats::default();
+    state.session = SessionStats::default();
     state.notice = Some("command failed".to_string());
     let area = Rect::new(0, 0, 80, 1);
     let mut buffer = Buffer::empty(area);

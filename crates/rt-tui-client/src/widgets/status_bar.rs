@@ -33,14 +33,17 @@ impl<'a> StatusBarWidget<'a> {
 
     /// One line; optional fields drop out as the terminal narrows.
     fn line(&self, width: u16) -> Line<'static> {
-        let stats = &self.state.session_stats;
+        let stats = &self.state.session;
         let mut spans: Vec<Span<'static>> = Vec::new();
 
         if let Some(notice) = &self.state.notice {
             if !spans.is_empty() {
                 spans.push(Span::raw("  "));
             }
-            spans.push(Span::styled(notice.clone(), Style::new().fg(Color::Red)));
+            spans.push(Span::styled(
+                notice.clone(),
+                Style::new().fg(self.state.theme.error),
+            ));
         }
 
         if width >= RATES_MIN_WIDTH {
@@ -75,6 +78,10 @@ impl<'a> StatusBarWidget<'a> {
         spans.push(Span::styled("●", Style::new().fg(color)));
         if width >= LABEL_MIN_WIDTH {
             spans.push(Span::raw(format!(" {label}")));
+        }
+
+        if let Some(seconds) = self.state.reconnect_in {
+            spans.push(Span::raw(format!(" in {seconds}s")));
         }
 
         Line::from(spans)

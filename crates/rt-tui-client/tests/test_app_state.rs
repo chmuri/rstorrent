@@ -149,7 +149,7 @@ fn torrent_view_model_copies_identity_and_state() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn session_stats_maps_from_proto() {
+fn session_maps_from_proto() {
     let response = SessionStatsResponse {
         down_rate_bytes_per_sec: 1_500_000,
         up_rate_bytes_per_sec: 3_000,
@@ -270,7 +270,7 @@ async fn refresh_populates_torrents_and_stats() {
     assert_eq!(state.connection, ConnectionStatus::Connected);
     assert_eq!(state.torrents.len(), 2);
     assert_eq!(state.torrents[1].name, "second");
-    assert_eq!(state.session_stats.active_torrents, 2);
+    assert_eq!(state.session.active_torrents, 2);
 }
 
 #[tokio::test]

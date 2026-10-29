@@ -32,6 +32,8 @@ pub struct MockDaemon {
     pub version: String,
     pub stats: SessionStatsResponse,
     pub execute_response: Option<CommandResponse>,
+    pub events: Vec<TorrentEvent>,
+    pub stats_stream: Vec<SessionStatsResponse>,
     pub delay: Option<Duration>,
     pub error: Option<Status>,
 }
@@ -123,13 +125,16 @@ impl TorrentService for MockDaemon {
         }))
     }
 
-    type StreamEventsStream = tokio_stream::Empty<Result<TorrentEvent, Status>>;
+    type StreamEventsStream = tokio_stream::Iter<std::vec::IntoIter<Result<TorrentEvent, Status>>>;
 
     async fn stream_events(
         &self,
         _request: Request<StreamEventsRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
-        Err(Status::unimplemented("streaming is TASK-14"))
+        let items: Vec<Result<TorrentEvent, Status>> =
+            self.events.iter().cloned().map(Ok).collect();
+
+        Ok(Response::new(tokio_stream::iter(items)))
     }
 }
 
@@ -154,13 +159,17 @@ impl SystemService for MockDaemon {
         Ok(Response::new(self.stats))
     }
 
-    type StreamStatsStream = tokio_stream::Empty<Result<SessionStatsResponse, Status>>;
+    type StreamStatsStream =
+        tokio_stream::Iter<std::vec::IntoIter<Result<SessionStatsResponse, Status>>>;
 
     async fn stream_stats(
         &self,
         _request: Request<StreamStatsRequest>,
     ) -> Result<Response<Self::StreamStatsStream>, Status> {
-        Err(Status::unimplemented("streaming is TASK-14"))
+        let items: Vec<Result<SessionStatsResponse, Status>> =
+            self.stats_stream.iter().copied().map(Ok).collect();
+
+        Ok(Response::new(tokio_stream::iter(items)))
     }
 
     async fn shutdown(

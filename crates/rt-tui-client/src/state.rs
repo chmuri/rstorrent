@@ -4,10 +4,15 @@
 //! wrapped in `Arc`/`Mutex`. Proto messages are mapped into display-ready values
 //! here so widgets never format or divide by zero themselves.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crossterm::event::{KeyCode, KeyModifiers};
 use rt_grpc::{
-    FileInfo, PeerInfo, SessionStatsResponse, TorrentDetails, TorrentSummary, TrackerInfo,
+    FileInfo, PeerInfo, SessionStatsResponse, TorrentDetails, TorrentEvent, TorrentSummary,
+    TrackerInfo,
 };
+
+use crate::config::Theme;
 
 use crate::actions::TuiAction;
 use crate::bridge::{BridgeError, GrpcBridge};
@@ -88,6 +93,8 @@ pub struct TorrentViewModel {
     pub is_active: bool,
     /// Torrent priority: `0` off … `3` high.
     pub priority: u32,
+    /// Whether the daemon reports the download as complete.
+    pub is_complete: bool,
     /// Share ratio (`uploaded / downloaded`), `0.0` when nothing was downloaded.
     pub ratio: f64,
     /// ` 2.000`
@@ -123,6 +130,7 @@ impl TorrentViewModel {
             up_rate_display: format_rate(summary.up_rate_bytes_per_sec),
             is_active: summary.is_active,
             priority: summary.priority,
+            is_complete: summary.is_complete,
             down_total_display: format_size(summary.down_total_bytes),
             up_total_display: format_size(summary.up_total_bytes),
             ratio,
@@ -594,6 +602,97 @@ fn client_name(peer_id: &str) -> String {
     }
 }
 
+/// Entries the log keeps before the oldest are dropped.
+pub const LOG_CAPACITY: usize = 500;
+
+/// One line of the client log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogEntry {
+    /// `HH:MM:SS` (UTC) when the message was recorded.
+    pub timestamp: String,
+    /// Message text.
+    pub message: String,
+}
+
+impl LogEntry {
+    /// Builds an entry stamped with the current time.
+    pub fn new(message: &str) -> Self {
+        Self {
+            timestamp: timestamp_now(),
+            message: message.to_string(),
+        }
+    }
+}
+
+/// Timestamped message log with scrollback.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LogState {
+    entries: Vec<LogEntry>,
+    scroll: usize,
+}
+
+impl LogState {
+    /// Builds a log from existing entries.
+    pub fn new(entries: Vec<LogEntry>) -> Self {
+        Self { entries, scroll: 0 }
+    }
+
+    /// Appends a message, dropping the oldest beyond [`LOG_CAPACITY`].
+    pub fn push(&mut self, message: &str) {
+        self.entries.push(LogEntry::new(message));
+        if self.entries.len() > LOG_CAPACITY {
+            self.entries.remove(0);
+        }
+        self.scroll = 0;
+    }
+
+    /// All retained entries, oldest first.
+    pub fn entries(&self) -> &[LogEntry] {
+        &self.entries
+    }
+
+    /// Number of retained entries.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// `true` when nothing was logged.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Rows scrolled up from the newest entry.
+    pub fn scroll(&self) -> usize {
+        self.scroll
+    }
+
+    /// Scrolls one row up.
+    pub fn scroll_up(&mut self) {
+        self.scroll = (self.scroll + 1).min(self.entries.len().saturating_sub(1));
+    }
+
+    /// Scrolls one row down.
+    pub fn scroll_down(&mut self) {
+        self.scroll = self.scroll.saturating_sub(1);
+    }
+}
+
+/// `HH:MM:SS` in UTC, without pulling in a date library.
+fn timestamp_now() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
+        % 86_400;
+
+    format!(
+        "{:02}:{:02}:{:02}",
+        seconds / 3_600,
+        (seconds % 3_600) / 60,
+        seconds % 60
+    )
+}
+
 /// One entry of the context menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuEntry {
@@ -921,7 +1020,7 @@ pub struct AppState {
     /// Torrents in the current view, in daemon order.
     pub torrents: Vec<TorrentViewModel>,
     /// Session-wide statistics.
-    pub session_stats: SessionStats,
+    pub session: SessionStats,
     /// Reachability of the daemon.
     pub connection: ConnectionStatus,
     /// View the torrent list is showing.
@@ -940,6 +1039,16 @@ pub struct AppState {
     pub notice: Option<String>,
     /// Filter typed in the `/` prompt; not applied to the list yet.
     pub filter: Option<String>,
+    /// Seconds until the next reconnection attempt.
+    pub reconnect_in: Option<u64>,
+    /// `true` while the displayed data is older than the last failed refresh.
+    pub stale: bool,
+    /// Timestamped client log.
+    pub log: LogState,
+    /// `true` while the log view replaces the torrent list.
+    pub show_log: bool,
+    /// Resolved theme colours.
+    pub theme: Theme,
 }
 
 impl Default for AppState {
@@ -953,7 +1062,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             torrents: Vec::new(),
-            session_stats: SessionStats::default(),
+            session: SessionStats::default(),
             connection: ConnectionStatus::Disconnected {
                 reason: "not connected yet".to_string(),
             },
@@ -965,6 +1074,11 @@ impl AppState {
             menu: None,
             notice: None,
             filter: None,
+            reconnect_in: None,
+            stale: false,
+            log: LogState::default(),
+            show_log: false,
+            theme: Theme::default(),
         }
     }
 
@@ -984,6 +1098,46 @@ impl AppState {
         }
     }
 
+    /// Applies one streamed torrent event.
+    ///
+    /// Insert/update replaces the matching row, `erased`/`removed` events drop
+    /// it, and events without a summary are ignored.
+    pub fn apply_event(&mut self, event: &TorrentEvent) {
+        let position = self
+            .torrents
+            .iter()
+            .position(|torrent| torrent.hash == event.hash);
+
+        if event.event_name.contains("erased") || event.event_name.contains("removed") {
+            if let Some(index) = position {
+                self.torrents.remove(index);
+                self.clamp_focus();
+            }
+            return;
+        }
+
+        let Some(summary) = event.summary.as_ref() else {
+            return;
+        };
+
+        let mut model = TorrentViewModel::from_proto(summary);
+        if event.event_name.contains("finished") {
+            model.is_complete = true;
+        }
+
+        match position {
+            Some(index) => self.torrents[index] = model,
+            None => self.torrents.push(model),
+        }
+
+        self.clamp_focus();
+    }
+
+    /// Applies streamed session statistics.
+    pub fn apply_stats(&mut self, stats: &SessionStatsResponse) {
+        self.session = SessionStats::from_proto(stats);
+    }
+
     /// Fetches both RPCs first, then swaps the state in one step.
     async fn fetch(&mut self, bridge: &mut GrpcBridge) -> Result<(), BridgeError> {
         // `as_str` borrows nothing from `self`, so no clone is needed here.
@@ -992,7 +1146,7 @@ impl AppState {
         let stats = bridge.session_stats().await?;
 
         self.torrents = torrents.iter().map(TorrentViewModel::from_proto).collect();
-        self.session_stats = SessionStats::from_proto(&stats);
+        self.session = SessionStats::from_proto(&stats);
         self.clamp_focus();
 
         Ok(())
