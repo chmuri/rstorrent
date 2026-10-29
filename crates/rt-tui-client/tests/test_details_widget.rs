@@ -9,7 +9,7 @@ use ratatui::style::Modifier;
 use ratatui::widgets::Widget;
 
 use common::{spawn_tcp_daemon, MockDaemon};
-use rt_grpc::{FileInfo, TorrentDetails, TorrentSummary};
+use rt_grpc::{FileInfo, TorrentDetails, TorrentSummary, TrackerInfo};
 use rt_tui_client::app::App;
 use rt_tui_client::bridge::GrpcBridge;
 use rt_tui_client::state::{AppState, DetailTab, DetailsState, TorrentViewModel};
@@ -173,13 +173,21 @@ fn info_tab_shows_pieces_directory_privacy_and_throttle() {
 }
 
 #[test]
-fn trackers_and_chunks_tabs_render_their_counts() {
+fn trackers_tab_renders_urls_and_chunks_tab_its_count() {
     let mut details = make_torrent_details("h", "t");
-    details.trackers = vec![Default::default(); 2];
+    details.trackers = vec![TrackerInfo {
+        index: 0,
+        url: "udp://tracker.one:80".to_string(),
+        is_enabled: true,
+        group: 0,
+    }];
     let state = DetailsState::from_proto(&details);
 
     let trackers = render_details(&state, DetailTab::Trackers, AREA);
-    assert!(trackers.contains("Trackers: 2 entries"), "{trackers}");
+    assert!(
+        trackers.contains("tracker.one"),
+        "tracker url missing: {trackers}"
+    );
 
     let chunks = render_details(&state, DetailTab::Chunks, AREA);
     assert!(chunks.contains("Chunks: 8192 entries"), "{chunks}");
@@ -211,10 +219,7 @@ fn files_tab_renders_the_file_list_and_peers_its_count() {
     assert!(files.contains("Priority"), "file header missing: {files}");
 
     let peers = render_details(&state, DetailTab::Peers, AREA);
-    assert!(
-        peers.contains("Peers: 0 entries"),
-        "peer count missing: {peers}"
-    );
+    assert!(peers.contains("No peers"), "empty peer state: {peers}");
 }
 
 // ---------------------------------------------------------------------------

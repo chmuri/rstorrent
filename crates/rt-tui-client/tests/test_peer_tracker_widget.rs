@@ -59,7 +59,11 @@ fn peer_list_renders_address_and_encryption() {
     widget.render(Rect::new(0, 0, 80, 10), &mut buf);
     let text = buffer_to_string(&buf);
     assert!(text.contains("1.2.3.4"));
-    assert!(text.contains('🔒'), "encrypted marker missing: {text}");
+    assert_eq!(
+        text.matches('🔒').count(),
+        2,
+        "header + encrypted row: {text}"
+    );
 }
 
 #[test]
@@ -109,7 +113,11 @@ fn unencrypted_peers_have_no_lock() {
 
     let text = render_peers(&state, AREA);
 
-    assert!(!text.contains('🔒'), "unexpected lock: {text}");
+    assert_eq!(
+        text.matches('🔒').count(),
+        1,
+        "only the header may carry the lock glyph: {text}"
+    );
 }
 
 #[test]

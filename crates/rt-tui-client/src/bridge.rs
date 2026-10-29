@@ -12,9 +12,13 @@ use rt_grpc::command_service_client::CommandServiceClient;
 use rt_grpc::system_service_client::SystemServiceClient;
 use rt_grpc::torrent_service_client::TorrentServiceClient;
 use rt_grpc::{
-    CommandRequest, CommandResponse, Empty, GetTorrentRequest, ListTorrentsRequest, ObjectValue,
-    SessionStatsResponse, TorrentDetails, TorrentSummary, VersionResponse,
+    object_value, CommandRequest, CommandResponse, ControlTorrentRequest, Empty, GetTorrentRequest,
+    ListTorrentsRequest, ObjectValue, RemoveTorrentRequest, SessionStatsResponse,
+    SetTorrentPriorityRequest, TorrentAction as ProtoAction, TorrentDetails, TorrentSummary,
+    VersionResponse,
 };
+
+use crate::actions::TorrentAction;
 use tonic::transport::{Channel, Endpoint as TransportEndpoint};
 use tonic::{Response, Status};
 
@@ -84,6 +88,65 @@ impl GrpcBridge {
         }
 
         Ok(response)
+    }
+
+    /// Starts, stops, closes or re-checks a torrent.
+    pub async fn control_torrent(
+        &mut self,
+        hash: &str,
+        action: TorrentAction,
+    ) -> Result<(), BridgeError> {
+        let request = ControlTorrentRequest {
+            hash: hash.to_string(),
+            action: proto_action(action) as i32,
+        };
+        let response = await_response(self.timeout, self.torrents.control_torrent(request)).await?;
+
+        ensure_success(response.success, "control")
+    }
+
+    /// Removes a torrent from the session, keeping its data on disk.
+    pub async fn remove_torrent(&mut self, hash: &str) -> Result<(), BridgeError> {
+        let request = RemoveTorrentRequest {
+            hash: hash.to_string(),
+            delete_data: false,
+        };
+        let response = await_response(self.timeout, self.torrents.remove_torrent(request)).await?;
+
+        ensure_success(response.success, "remove")
+    }
+
+    /// Sets a torrent's priority (`0` off … `3` high).
+    pub async fn set_torrent_priority(
+        &mut self,
+        hash: &str,
+        priority: u32,
+    ) -> Result<(), BridgeError> {
+        let request = SetTorrentPriorityRequest {
+            hash: hash.to_string(),
+            priority,
+        };
+        let response =
+            await_response(self.timeout, self.torrents.set_torrent_priority(request)).await?;
+
+        ensure_success(response.success, "set priority")
+    }
+
+    /// Runs a command with integer arguments.
+    pub async fn execute_ints(
+        &mut self,
+        command: &str,
+        args: &[i64],
+        target: Option<&str>,
+    ) -> Result<CommandResponse, BridgeError> {
+        let args = args
+            .iter()
+            .map(|value| ObjectValue {
+                kind: Some(object_value::Kind::IntValue(*value)),
+            })
+            .collect();
+
+        self.execute(command, args, target).await
     }
 
     /// Reads session-wide transfer statistics.
@@ -190,4 +253,25 @@ pub enum BridgeError {
     /// The daemon answered successfully but with a payload the client rejects.
     #[error("invalid response: {0}")]
     InvalidResponse(String),
+}
+
+/// Maps the client action onto the proto enum.
+fn proto_action(action: TorrentAction) -> ProtoAction {
+    match action {
+        TorrentAction::Start => ProtoAction::Start,
+        TorrentAction::Stop => ProtoAction::Stop,
+        TorrentAction::Close => ProtoAction::Close,
+        TorrentAction::CheckHash => ProtoAction::CheckHash,
+    }
+}
+
+/// Turns a `success: false` response into a typed error.
+fn ensure_success(success: bool, operation: &str) -> Result<(), BridgeError> {
+    if success {
+        Ok(())
+    } else {
+        Err(BridgeError::InvalidResponse(format!(
+            "daemon rejected `{operation}`"
+        )))
+    }
 }

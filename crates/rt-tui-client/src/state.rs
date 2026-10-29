@@ -4,7 +4,9 @@
 //! wrapped in `Arc`/`Mutex`. Proto messages are mapped into display-ready values
 //! here so widgets never format or divide by zero themselves.
 
-use rt_grpc::{FileInfo, SessionStatsResponse, TorrentDetails, TorrentSummary};
+use rt_grpc::{
+    FileInfo, PeerInfo, SessionStatsResponse, TorrentDetails, TorrentSummary, TrackerInfo,
+};
 
 use crate::bridge::{BridgeError, GrpcBridge};
 
@@ -80,6 +82,10 @@ pub struct TorrentViewModel {
     pub down_total_display: String,
     /// `1.0 KB`
     pub up_total_display: String,
+    /// `true` while the torrent is running.
+    pub is_active: bool,
+    /// Torrent priority: `0` off … `3` high.
+    pub priority: u32,
     /// Share ratio (`uploaded / downloaded`), `0.0` when nothing was downloaded.
     pub ratio: f64,
     /// ` 2.000`
@@ -113,6 +119,8 @@ impl TorrentViewModel {
             down_rate_display: format_rate(summary.down_rate_bytes_per_sec),
             up_rate: summary.up_rate_bytes_per_sec,
             up_rate_display: format_rate(summary.up_rate_bytes_per_sec),
+            is_active: summary.is_active,
+            priority: summary.priority,
             down_total_display: format_size(summary.down_total_bytes),
             up_total_display: format_size(summary.up_total_bytes),
             ratio,
@@ -425,6 +433,165 @@ fn percent(completed: i64, total: i64) -> f64 {
     }
 }
 
+/// One row of the Peers tab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerEntry {
+    /// `ip:port` of the remote peer.
+    pub address: String,
+    /// Client name derived from the peer id, or the raw id.
+    pub client: String,
+    /// `   1.4 MB`
+    pub down_rate_display: String,
+    /// `   1.0 KB`
+    pub up_rate_display: String,
+    /// Whether the connection is encrypted.
+    pub encrypted: bool,
+}
+
+/// Peers tab: rows plus the focused row.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PeerListState {
+    /// Peer rows in daemon order.
+    pub entries: Vec<PeerEntry>,
+    /// Focused row.
+    pub focus_index: usize,
+}
+
+impl PeerListState {
+    /// Maps proto peers into the view model.
+    pub fn from_proto(peers: &[PeerInfo]) -> Self {
+        Self {
+            entries: peers
+                .iter()
+                .map(|peer| PeerEntry {
+                    address: peer.address.clone(),
+                    client: client_name(&peer.peer_id),
+                    down_rate_display: format_rate(peer.down_rate_bytes_per_sec),
+                    up_rate_display: format_rate(peer.up_rate_bytes_per_sec),
+                    encrypted: peer.is_encrypted,
+                })
+                .collect(),
+            focus_index: 0,
+        }
+    }
+
+    /// Moves the focus one row down, clamped.
+    pub fn focus_down(&mut self) {
+        self.focus_index = step(self.focus_index, self.entries.len(), 1);
+    }
+
+    /// Moves the focus one row up, clamped.
+    pub fn focus_up(&mut self) {
+        self.focus_index = step(self.focus_index, self.entries.len(), -1);
+    }
+
+    /// Moves the focus `page` rows down, clamped.
+    pub fn focus_page_down(&mut self, page: usize) {
+        let delta = isize::try_from(page).unwrap_or(isize::MAX);
+        self.focus_index = step(self.focus_index, self.entries.len(), delta);
+    }
+
+    /// Moves the focus `page` rows up, clamped.
+    pub fn focus_page_up(&mut self, page: usize) {
+        let delta = isize::try_from(page).unwrap_or(isize::MAX);
+        self.focus_index = step(self.focus_index, self.entries.len(), -delta);
+    }
+}
+
+/// One row of the Trackers tab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackerEntry {
+    /// Index reported by the daemon.
+    pub index: u32,
+    /// Announce URL.
+    pub url: String,
+    /// Whether the tracker is enabled.
+    pub enabled: bool,
+    /// Tracker group (`tier`).
+    pub group: u32,
+}
+
+/// Trackers tab: rows plus the focused row.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TrackerListState {
+    /// Tracker rows in daemon order.
+    pub entries: Vec<TrackerEntry>,
+    /// Focused row.
+    pub focus_index: usize,
+}
+
+impl TrackerListState {
+    /// Maps proto trackers into the view model.
+    pub fn from_proto(trackers: &[TrackerInfo]) -> Self {
+        Self {
+            entries: trackers
+                .iter()
+                .map(|tracker| TrackerEntry {
+                    index: tracker.index,
+                    url: tracker.url.clone(),
+                    enabled: tracker.is_enabled,
+                    group: tracker.group,
+                })
+                .collect(),
+            focus_index: 0,
+        }
+    }
+
+    /// Moves the focus one row down, clamped.
+    pub fn focus_down(&mut self) {
+        self.focus_index = step(self.focus_index, self.entries.len(), 1);
+    }
+
+    /// Moves the focus one row up, clamped.
+    pub fn focus_up(&mut self) {
+        self.focus_index = step(self.focus_index, self.entries.len(), -1);
+    }
+
+    /// Moves the focus `page` rows down, clamped.
+    pub fn focus_page_down(&mut self, page: usize) {
+        let delta = isize::try_from(page).unwrap_or(isize::MAX);
+        self.focus_index = step(self.focus_index, self.entries.len(), delta);
+    }
+
+    /// Moves the focus `page` rows up, clamped.
+    pub fn focus_page_up(&mut self, page: usize) {
+        let delta = isize::try_from(page).unwrap_or(isize::MAX);
+        self.focus_index = step(self.focus_index, self.entries.len(), -delta);
+    }
+}
+
+/// Clamps `index + delta` into `0..len`.
+fn step(index: usize, len: usize, delta: isize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    let last = len - 1;
+    let moved = if delta >= 0 {
+        index.saturating_add(delta.unsigned_abs())
+    } else {
+        index.saturating_sub(delta.unsigned_abs())
+    };
+
+    moved.min(last)
+}
+
+/// Maps a peer id prefix such as `-qB4650-` onto a client name.
+fn client_name(peer_id: &str) -> String {
+    let code = peer_id.strip_prefix('-').and_then(|rest| rest.get(..2));
+
+    match code {
+        Some("qB") => "qBittorrent".to_string(),
+        Some("TR") => "Transmission".to_string(),
+        Some("UT") => "uTorrent".to_string(),
+        Some("DE") => "Deluge".to_string(),
+        Some("AZ") => "Azureus".to_string(),
+        Some("LT") => "libtorrent".to_string(),
+        _ if peer_id.is_empty() => "unknown".to_string(),
+        _ => peer_id.to_string(),
+    }
+}
+
 /// Tabs of the torrent details view.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DetailTab {
@@ -527,10 +694,10 @@ pub struct DetailsState {
     pub info: DetailsInfo,
     /// Files tab content.
     pub files: FileListState,
-    /// Number of connected peers.
-    pub peer_count: usize,
-    /// Number of trackers.
-    pub tracker_count: usize,
+    /// Peers tab content.
+    pub peers: PeerListState,
+    /// Trackers tab content.
+    pub trackers: TrackerListState,
 }
 
 impl DetailsState {
@@ -560,8 +727,8 @@ impl DetailsState {
                 throttle_name: details.throttle_name.clone(),
             },
             files: FileListState::from_proto(&details.files),
-            peer_count: details.peers.len(),
-            tracker_count: details.trackers.len(),
+            peers: PeerListState::from_proto(&details.peers),
+            trackers: TrackerListState::from_proto(&details.trackers),
         }
     }
 

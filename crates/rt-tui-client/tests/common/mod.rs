@@ -89,29 +89,38 @@ impl TorrentService for MockDaemon {
 
     async fn control_torrent(
         &self,
-        _request: Request<ControlTorrentRequest>,
+        request: Request<ControlTorrentRequest>,
     ) -> Result<Response<ControlTorrentResponse>, Status> {
-        Err(Status::unimplemented(
-            "not needed by the rt-tui-client tests",
-        ))
+        self.prepare().await?;
+        Ok(Response::new(ControlTorrentResponse {
+            success: true,
+            hash: request.into_inner().hash,
+            current_state: 0,
+            error_message: String::new(),
+        }))
     }
 
     async fn remove_torrent(
         &self,
-        _request: Request<RemoveTorrentRequest>,
+        request: Request<RemoveTorrentRequest>,
     ) -> Result<Response<RemoveTorrentResponse>, Status> {
-        Err(Status::unimplemented(
-            "not needed by the rt-tui-client tests",
-        ))
+        self.prepare().await?;
+        Ok(Response::new(RemoveTorrentResponse {
+            success: true,
+            hash: request.into_inner().hash,
+            error_message: String::new(),
+        }))
     }
 
     async fn set_torrent_priority(
         &self,
         _request: Request<SetTorrentPriorityRequest>,
     ) -> Result<Response<SetPriorityResponse>, Status> {
-        Err(Status::unimplemented(
-            "not needed by the rt-tui-client tests",
-        ))
+        self.prepare().await?;
+        Ok(Response::new(SetPriorityResponse {
+            success: true,
+            error_message: String::new(),
+        }))
     }
 
     type StreamEventsStream = tokio_stream::Empty<Result<TorrentEvent, Status>>;
