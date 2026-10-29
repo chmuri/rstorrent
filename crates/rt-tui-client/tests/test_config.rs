@@ -79,7 +79,9 @@ fn config_path_follows_xdg() {
 
     assert_eq!(
         path,
-        Some(PathBuf::from("/tmp/rstorrent-xdg/rstorrent-tui/config.toml"))
+        Some(PathBuf::from(
+            "/tmp/rstorrent-xdg/rstorrent-tui/config.toml"
+        ))
     );
 }
 
@@ -153,6 +155,26 @@ fn log_view_toggles_with_l_and_returns_with_space() {
 
     app.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
     assert!(!app.state.show_log, "space returns to the list");
+}
+
+#[test]
+fn draw_renders_the_log_view_when_toggled() {
+    let mut app = App::new_headless(AppState::new());
+    app.log("torrent added: ubuntu.iso");
+    app.handle_key(KeyCode::Char('L'), KeyModifiers::SHIFT);
+
+    let backend = ratatui::backend::TestBackend::new(80, 20);
+    let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+    terminal.draw(|frame| app.draw(frame)).expect("draw");
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+
+    assert!(text.contains("ubuntu.iso"), "log body missing: {text}");
 }
 
 #[test]

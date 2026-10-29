@@ -151,7 +151,7 @@ fn app_with_limits(up: i64, down: i64) -> App {
         name: "test.torrent".to_string(),
         ..TorrentSummary::default()
     })];
-    state.session_stats = SessionStats::from_proto(&SessionStatsResponse {
+    state.session = SessionStats::from_proto(&SessionStatsResponse {
         throttle_up_limit: up,
         throttle_down_limit: down,
         ..SessionStatsResponse::default()
@@ -227,7 +227,7 @@ fn lowering_below_zero_saturates() {
 #[test]
 fn throttle_keys_work_without_a_focused_torrent() {
     let mut state = AppState::new();
-    state.session_stats = SessionStats::from_proto(&SessionStatsResponse {
+    state.session = SessionStats::from_proto(&SessionStatsResponse {
         throttle_up_limit: 4096,
         ..SessionStatsResponse::default()
     });

@@ -10,19 +10,23 @@ use ratatui::Frame;
 use rt_grpc::{object_value, CommandResponse, ObjectValue};
 
 use crate::actions::{PromptKind, TuiAction};
-use crate::bridge::{BridgeError, GrpcBridge};
+use crate::bridge::{BridgeError, GrpcBridge, DEFAULT_RPC_TIMEOUT};
+use crate::config::Theme;
+use crate::connection::ConnectionManager;
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
 use crate::key_handler::{self, global_action, torrent_action};
 use crate::state::{
-    AppState, DetailTab, DetailsState, FileListState, MenuEntry, MenuResult, MenuState,
+    AppState, ConnectionStatus, DetailTab, DetailsState, FileListState, MenuEntry, MenuResult,
+    MenuState,
 };
+use crate::stream::{StreamUpdate, Streams};
 use crate::terminal::ClientTerminal;
 use crate::throttle::{ThrottleAction, ThrottleKeyMap};
 use crate::widgets::download_list::visible_rows;
 use crate::widgets::input::{InputResult, InputState, PromptMode};
 use crate::widgets::InputWidget;
 use crate::widgets::{
-    DetailsWidget, DownloadListWidget, MenuWidget, StatusBarWidget, TitleBarWidget,
+    DetailsWidget, DownloadListWidget, LogWidget, MenuWidget, StatusBarWidget, TitleBarWidget,
 };
 
 /// Tick used when the caller does not configure one.
@@ -65,6 +69,10 @@ pub struct App {
     /// Open input prompt, if any.
     pub prompt: Option<InputState>,
     prompt_history: Vec<String>,
+    streams: Option<Streams>,
+    connection: ConnectionManager,
+    endpoint: Option<String>,
+    timeout: Duration,
     throttle: ThrottleKeyMap,
 }
 
@@ -83,6 +91,10 @@ impl App {
             ignored: HashSet::new(),
             prompt: None,
             prompt_history: Vec::new(),
+            streams: None,
+            connection: ConnectionManager::new(),
+            endpoint: None,
+            timeout: DEFAULT_RPC_TIMEOUT,
             throttle: ThrottleKeyMap::new("qwerty"),
         }
     }
@@ -101,6 +113,10 @@ impl App {
             ignored: HashSet::new(),
             prompt: None,
             prompt_history: Vec::new(),
+            streams: None,
+            connection: ConnectionManager::new(),
+            endpoint: None,
+            timeout: DEFAULT_RPC_TIMEOUT,
             throttle: ThrottleKeyMap::new("qwerty"),
         }
     }
@@ -109,6 +125,86 @@ impl App {
     pub fn with_tick(mut self, tick: Duration) -> Self {
         self.tick = tick;
         self
+    }
+
+    /// Remembers the endpoint so health checks can reconnect lazily.
+    pub fn with_endpoint(mut self, endpoint: &str) -> Self {
+        self.endpoint = Some(endpoint.to_string());
+        self
+    }
+
+    /// Starts the background event and stats streams for `endpoint`.
+    pub fn with_streams(mut self, endpoint: &str) -> Self {
+        self.endpoint = Some(endpoint.to_string());
+        self.streams = Some(Streams::spawn(endpoint, self.timeout));
+        self
+    }
+
+    /// Applies the configured theme.
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.state.theme = theme;
+        self
+    }
+
+    /// Overrides the per-RPC timeout used for lazy reconnects.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Appends a message to the log view.
+    pub fn log(&mut self, message: &str) {
+        self.state.log.push(message);
+    }
+
+    /// Applies everything the background streams buffered so far.
+    pub fn poll_streams(&mut self) -> usize {
+        let mut applied = 0;
+
+        while let Some(update) = self.streams.as_mut().and_then(Streams::try_recv) {
+            match update {
+                StreamUpdate::Event(event) => self.state.apply_event(&event),
+                StreamUpdate::Stats(stats) => self.state.apply_stats(&stats),
+            }
+            applied += 1;
+        }
+
+        applied
+    }
+
+    /// Pings the daemon, reconnecting lazily when the channel is gone.
+    pub async fn check_health(&mut self) -> Option<bool> {
+        let endpoint = self.endpoint.clone()?;
+        self.connection.mark_health_checked(Instant::now());
+
+        if self.bridge.is_none() {
+            return Some(match GrpcBridge::connect(&endpoint, self.timeout).await {
+                Ok(bridge) => {
+                    self.bridge = Some(bridge);
+                    self.log("reconnected to the daemon");
+                    let _ = self.refresh().await;
+                    true
+                }
+                Err(error) => {
+                    self.record_failure(&error);
+                    false
+                }
+            });
+        }
+
+        let version = self.bridge.as_mut()?.version().await;
+        match version {
+            Ok(_) => {
+                self.connection.record_success();
+                self.state.connection = ConnectionStatus::Connected;
+                self.state.reconnect_in = None;
+                Some(true)
+            }
+            Err(error) => {
+                self.record_failure(&error);
+                Some(false)
+            }
+        }
     }
 
     /// Uses the throttle key layout (`qwerty`, `azerty`, `qwertz`, `dvorak`).
@@ -144,6 +240,10 @@ impl App {
             return None;
         }
 
+        if self.state.show_log {
+            return self.handle_log_key(code, modifiers);
+        }
+
         if self.prompt.is_some() {
             return self.handle_prompt_key(code, modifiers);
         }
@@ -158,6 +258,20 @@ impl App {
         }
 
         self.handle_list_key(code, modifiers)
+    }
+
+    /// Keys active while the log view is shown.
+    fn handle_log_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
+        match (code, modifiers) {
+            (KeyCode::Char(' '), _) | (KeyCode::Esc, _) | (KeyCode::Char('L'), _) => {
+                self.state.show_log = false;
+            }
+            (KeyCode::Down, _) => self.state.log.scroll_down(),
+            (KeyCode::Up, _) => self.state.log.scroll_up(),
+            _ => {}
+        }
+
+        None
     }
 
     /// Keys active while a prompt is open.
@@ -335,6 +449,10 @@ impl App {
                 self.open_menu();
                 return None;
             }
+            (KeyCode::Char('L'), _) => {
+                self.state.show_log = true;
+                return None;
+            }
             _ => {}
         }
 
@@ -372,10 +490,10 @@ impl App {
     fn throttle_action(&mut self, action: ThrottleAction) -> Option<TuiAction> {
         let current = match action {
             ThrottleAction::UploadUp(_) | ThrottleAction::UploadDown(_) => {
-                self.state.session_stats.throttle_up_limit
+                self.state.session.throttle_up_limit
             }
             ThrottleAction::DownloadUp(_) | ThrottleAction::DownloadDown(_) => {
-                self.state.session_stats.throttle_down_limit
+                self.state.session.throttle_down_limit
             }
         };
 
@@ -497,7 +615,37 @@ impl App {
         let bridge = self.bridge.as_mut()?;
         let result = self.state.refresh(bridge).await;
         self.mark_refreshed(Instant::now());
+
+        match &result {
+            Ok(()) => {
+                let was_disconnected = self.state.connection != ConnectionStatus::Connected;
+                self.connection.record_success();
+                self.state.connection = ConnectionStatus::Connected;
+                self.state.reconnect_in = None;
+                self.state.stale = false;
+                if was_disconnected {
+                    self.log("connected to the daemon");
+                }
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.record_failure(error);
+                self.state.notice = Some(message.clone());
+                self.log(&format!("refresh failed: {message}"));
+            }
+        }
+
         Some(result)
+    }
+
+    /// Records a failed call and publishes the reconnection countdown.
+    fn record_failure(&mut self, error: &BridgeError) {
+        self.connection.record_failure();
+        self.state.connection = ConnectionStatus::Reconnecting;
+        self.state.reconnect_in = Some(self.connection.next_backoff().as_secs());
+        self.state.stale = true;
+        let message = error.to_string();
+        self.state.notice = Some(message);
     }
 
     /// Cycles the focused file's priority and queues the matching command.
@@ -621,11 +769,15 @@ impl App {
 
         frame.render_widget(TitleBarWidget::new(&self.state), title_area);
 
-        match self.state.details.as_ref() {
-            Some(details) => {
-                frame.render_widget(DetailsWidget::new(details, details.active_tab), body_area)
+        if self.state.show_log {
+            frame.render_widget(LogWidget::new(&self.state.log), body_area);
+        } else {
+            match self.state.details.as_ref() {
+                Some(details) => {
+                    frame.render_widget(DetailsWidget::new(details, details.active_tab), body_area)
+                }
+                None => frame.render_widget(DownloadListWidget::new(&self.state), body_area),
             }
-            None => frame.render_widget(DownloadListWidget::new(&self.state), body_area),
         }
 
         if let Some(menu) = self.state.menu.as_ref() {
@@ -675,6 +827,12 @@ impl App {
                     Some(Err(error)) => tracing::warn!(%error, "priority change failed"),
                     _ => {}
                 }
+            }
+
+            self.poll_streams();
+
+            if self.connection.health_due(Instant::now()) && !self.refresh_due(Instant::now()) {
+                let _ = self.check_health().await;
             }
 
             if self.refresh_due(Instant::now()) {

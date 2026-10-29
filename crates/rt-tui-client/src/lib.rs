@@ -9,11 +9,14 @@ pub mod actions;
 pub mod app;
 pub mod bridge;
 pub mod cli;
+pub mod config;
+pub mod connection;
 pub mod endpoint;
 pub mod events;
 pub mod key_handler;
 pub mod run;
 pub mod state;
+pub mod stream;
 pub mod terminal;
 pub mod throttle;
 pub mod widgets;
@@ -22,17 +25,20 @@ pub use actions::{PromptKind, TorrentAction, TuiAction};
 pub use app::{App, PriorityCommand, DEFAULT_TICK};
 pub use bridge::{BridgeError, GrpcBridge, DEFAULT_RPC_TIMEOUT};
 pub use cli::{Cli, DEFAULT_REFRESH_MS};
+pub use config::{Theme, TuiConfig};
+pub use connection::{ConnectionManager, ConnectionState};
 pub use endpoint::{Endpoint, EndpointError, ProbeError, PROBE_TIMEOUT};
 pub use events::{AppEvent, EventPushOutcome, EventQueue, EventQueueConfig, ResizePolicy};
 pub use run::{run, StartupError, EXIT_DAEMON_UNREACHABLE, EXIT_INVALID_ENDPOINT};
 pub use state::{
     ActiveView, AppState, ConnectionStatus, DetailTab, DetailsInfo, DetailsState, FileEntry,
-    FileListState, FocusIndex, MenuEntry, MenuResult, MenuState, PeerEntry, PeerListState,
-    SessionStats, TorrentViewModel, TrackerEntry, TrackerListState,
+    FileListState, FocusIndex, LogEntry, LogState, MenuEntry, MenuResult, MenuState, PeerEntry,
+    PeerListState, SessionStats, TorrentViewModel, TrackerEntry, TrackerListState,
 };
+pub use stream::{StreamUpdate, Streams, STREAM_CAPACITY};
 pub use terminal::{install_panic_hook, ClientTerminal, TerminalSession};
 pub use throttle::{StepSize, ThrottleAction, ThrottleKeyMap};
 pub use widgets::{
-    DetailsWidget, DownloadListWidget, FileListWidget, InputWidget, MenuWidget, PeerListWidget,
-    StatusBarWidget, TitleBarWidget, TrackerListWidget,
+    DetailsWidget, DownloadListWidget, FileListWidget, InputWidget, LogWidget, MenuWidget,
+    PeerListWidget, StatusBarWidget, TitleBarWidget, TrackerListWidget,
 };

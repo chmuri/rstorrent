@@ -123,7 +123,7 @@ fn title_bar_keeps_only_the_view_when_very_narrow() {
 #[test]
 fn status_bar_shows_rates_port_and_throttles_when_wide() {
     let mut state = AppState::new();
-    state.session_stats = SessionStats {
+    state.session = SessionStats {
         up_rate_display: "   1.4 MB".to_string(),
         down_rate_display: " 146.5 KB".to_string(),
         throttle_up_display: " 100.0 KB".to_string(),
@@ -143,7 +143,7 @@ fn status_bar_shows_rates_port_and_throttles_when_wide() {
 #[test]
 fn status_bar_hides_throttles_on_medium_terminals() {
     let mut state = AppState::new();
-    state.session_stats.listen_port = 6881;
+    state.session.listen_port = 6881;
 
     let text = render_status(&state, 55);
 
@@ -197,8 +197,8 @@ fn status_bar_reports_reconnecting_and_disconnected_states() {
 #[test]
 fn status_bar_marks_unlimited_throttle() {
     let mut state = AppState::new();
-    state.session_stats.throttle_up_display = "∞".to_string();
-    state.session_stats.throttle_down_display = "∞".to_string();
+    state.session.throttle_up_display = "∞".to_string();
+    state.session.throttle_down_display = "∞".to_string();
 
     let text = render_status(&state, 100);
 

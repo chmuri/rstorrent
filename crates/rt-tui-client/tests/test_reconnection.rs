@@ -171,11 +171,7 @@ fn status_bar_shows_the_reconnection_countdown() {
 
     rt_tui_client::widgets::StatusBarWidget::new(&state).render(area, &mut buffer);
 
-    let text: String = buffer
-        .content()
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect();
+    let text: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
     assert!(text.contains("reconnecting"), "rendered: {text}");
     assert!(text.contains('3'), "countdown missing: {text}");
 }

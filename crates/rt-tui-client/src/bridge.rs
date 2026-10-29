@@ -14,8 +14,8 @@ use rt_grpc::torrent_service_client::TorrentServiceClient;
 use rt_grpc::{
     object_value, CommandRequest, CommandResponse, ControlTorrentRequest, Empty, GetTorrentRequest,
     ListTorrentsRequest, ObjectValue, RemoveTorrentRequest, SessionStatsResponse,
-    SetTorrentPriorityRequest, TorrentAction as ProtoAction, TorrentDetails, TorrentSummary,
-    VersionResponse,
+    SetTorrentPriorityRequest, StreamEventsRequest, StreamStatsRequest,
+    TorrentAction as ProtoAction, TorrentDetails, TorrentEvent, TorrentSummary, VersionResponse,
 };
 
 use crate::actions::TorrentAction;
@@ -164,6 +164,38 @@ impl GrpcBridge {
             .collect();
 
         self.execute(command, args, target).await
+    }
+
+    /// Subscribes to the torrent event stream.
+    pub async fn stream_events(&mut self) -> Result<tonic::Streaming<TorrentEvent>, BridgeError> {
+        let request = StreamEventsRequest {
+            event_filter: Vec::new(),
+        };
+
+        match tokio::time::timeout(self.timeout, self.torrents.stream_events(request)).await {
+            Ok(Ok(response)) => Ok(response.into_inner()),
+            Ok(Err(status)) => Err(BridgeError::ServerError {
+                code: status.code(),
+                message: status.message().to_string(),
+            }),
+            Err(_elapsed) => Err(BridgeError::Timeout(self.timeout)),
+        }
+    }
+
+    /// Subscribes to the session statistics stream.
+    pub async fn stream_stats(
+        &mut self,
+    ) -> Result<tonic::Streaming<SessionStatsResponse>, BridgeError> {
+        let request = StreamStatsRequest { interval_ms: 1000 };
+
+        match tokio::time::timeout(self.timeout, self.system.stream_stats(request)).await {
+            Ok(Ok(response)) => Ok(response.into_inner()),
+            Ok(Err(status)) => Err(BridgeError::ServerError {
+                code: status.code(),
+                message: status.message().to_string(),
+            }),
+            Err(_elapsed) => Err(BridgeError::Timeout(self.timeout)),
+        }
     }
 
     /// Reads session-wide transfer statistics.
