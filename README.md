@@ -72,7 +72,8 @@ rstorrent/
 │   ├── rt-scgi       # Non-blocking SCGI server over TCP & UNIX sockets with keep-alive
 │   ├── rt-grpc       # gRPC rtorrent.v1 service endpoints & push streams (Tonic)
 │   ├── rt-core       # Session manager, download views, schedules, throttle groups
-│   ├── rt-tui        # Terminal UI (Ratatui / Crossterm), views, canvas buffer, frame balancing
+│   ├── rt-tui        # In-process Terminal UI (Ratatui / Crossterm), views, canvas buffer, frame balancing
+│   ├── rt-tui-client # Standalone gRPC TUI client (`rstorrent-tui`), view model + widgets
 │   └── rstorrent     # CLI entry point, signal handlers, lifecycle supervisor
 ```
 
