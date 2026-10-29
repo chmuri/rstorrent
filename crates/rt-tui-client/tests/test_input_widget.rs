@@ -130,7 +130,11 @@ fn history_is_bounded() {
         input.add_history(&format!("cmd{index}"));
     }
 
-    assert!(input.history_len() <= 100, "history grew to {}", input.history_len());
+    assert!(
+        input.history_len() <= 100,
+        "history grew to {}",
+        input.history_len()
+    );
 }
 
 #[test]
@@ -189,12 +193,18 @@ fn widget_uses_a_distinct_label_per_mode() {
 async fn ctrl_x_opens_the_command_prompt() {
     let mut app = App::new_headless(AppState::new());
 
-    app.handle_key(KeyCode::Char('x'), KeyModifiers::CONTROL);
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Command,
-    ))
-    .await
-    .expect("prompt needs no bridge");
+    assert_eq!(
+        app.handle_key(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        Some(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command
+        ))
+    );
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command,
+        ))
+        .await
+        .expect("prompt needs no bridge");
 
     let prompt = app.prompt.as_ref().expect("prompt opened");
     assert_eq!(prompt.mode(), PromptMode::Command);
@@ -203,10 +213,11 @@ async fn ctrl_x_opens_the_command_prompt() {
 #[tokio::test]
 async fn escape_closes_the_prompt() {
     let mut app = App::new_headless(AppState::new());
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Command,
-    ))
-    .await;
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command,
+        ))
+        .await;
 
     app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
 
@@ -216,10 +227,11 @@ async fn escape_closes_the_prompt() {
 #[tokio::test]
 async fn typing_and_submitting_returns_a_command_action() {
     let mut app = App::new_headless(AppState::new());
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Command,
-    ))
-    .await;
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command,
+        ))
+        .await;
 
     for ch in "d.priority.set=3".chars() {
         app.handle_key(KeyCode::Char(ch), KeyModifiers::NONE);
@@ -227,7 +239,11 @@ async fn typing_and_submitting_returns_a_command_action() {
     let action = app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
 
     match action {
-        Some(rt_tui_client::actions::TuiAction::Execute { command, args, hash }) => {
+        Some(rt_tui_client::actions::TuiAction::Execute {
+            command,
+            args,
+            hash,
+        }) => {
             assert_eq!(command, "d.priority.set");
             assert_eq!(args, vec![3]);
             assert_eq!(hash, None);
@@ -240,10 +256,11 @@ async fn typing_and_submitting_returns_a_command_action() {
 #[tokio::test]
 async fn invalid_command_text_does_not_submit_and_reports_it() {
     let mut app = App::new_headless(AppState::new());
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Command,
-    ))
-    .await;
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command,
+        ))
+        .await;
     app.set_prompt_text("d.priority.set=not-a-number");
 
     let action = app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
@@ -255,10 +272,11 @@ async fn invalid_command_text_does_not_submit_and_reports_it() {
 #[tokio::test]
 async fn load_prompt_produces_a_load_action() {
     let mut app = App::new_headless(AppState::new());
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Load,
-    ))
-    .await;
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Load,
+        ))
+        .await;
     app.set_prompt_text("/tmp/debian.iso.torrent");
 
     let action = app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
@@ -295,17 +313,19 @@ async fn submitted_commands_reach_the_daemon() {
 #[tokio::test]
 async fn command_history_survives_reopening_the_prompt() {
     let mut app = App::new_headless(AppState::new());
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Command,
-    ))
-    .await;
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command,
+        ))
+        .await;
     app.set_prompt_text("d.start=");
     app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
 
-    app.execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
-        rt_tui_client::actions::PromptKind::Command,
-    ))
-    .await;
+    let _ = app
+        .execute_action(rt_tui_client::actions::TuiAction::OpenPrompt(
+            rt_tui_client::actions::PromptKind::Command,
+        ))
+        .await;
     app.handle_key(KeyCode::Up, KeyModifiers::NONE);
 
     assert_eq!(

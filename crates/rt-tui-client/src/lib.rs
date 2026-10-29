@@ -15,6 +15,7 @@ pub mod key_handler;
 pub mod run;
 pub mod state;
 pub mod terminal;
+pub mod throttle;
 pub mod widgets;
 
 pub use actions::{PromptKind, TorrentAction, TuiAction};
@@ -26,11 +27,12 @@ pub use events::{AppEvent, EventPushOutcome, EventQueue, EventQueueConfig, Resiz
 pub use run::{run, StartupError, EXIT_DAEMON_UNREACHABLE, EXIT_INVALID_ENDPOINT};
 pub use state::{
     ActiveView, AppState, ConnectionStatus, DetailTab, DetailsInfo, DetailsState, FileEntry,
-    FileListState, FocusIndex, PeerEntry, PeerListState, SessionStats, TorrentViewModel,
-    TrackerEntry, TrackerListState,
+    FileListState, FocusIndex, MenuEntry, MenuResult, MenuState, PeerEntry, PeerListState,
+    SessionStats, TorrentViewModel, TrackerEntry, TrackerListState,
 };
 pub use terminal::{install_panic_hook, ClientTerminal, TerminalSession};
+pub use throttle::{StepSize, ThrottleAction, ThrottleKeyMap};
 pub use widgets::{
-    DetailsWidget, DownloadListWidget, FileListWidget, PeerListWidget, StatusBarWidget,
-    TitleBarWidget, TrackerListWidget,
+    DetailsWidget, DownloadListWidget, FileListWidget, InputWidget, MenuWidget, PeerListWidget,
+    StatusBarWidget, TitleBarWidget, TrackerListWidget,
 };

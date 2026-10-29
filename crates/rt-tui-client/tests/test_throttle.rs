@@ -56,24 +56,57 @@ fn unknown_layout_falls_back_to_qwerty() {
 fn qwerty_covers_small_medium_large_in_both_directions() {
     let map = ThrottleKeyMap::new("qwerty");
 
-    assert_eq!(map.lookup('s'), Some(ThrottleAction::UploadUp(StepSize::Medium)));
-    assert_eq!(map.lookup('d'), Some(ThrottleAction::UploadUp(StepSize::Large)));
-    assert_eq!(map.lookup('z'), Some(ThrottleAction::UploadDown(StepSize::Small)));
-    assert_eq!(map.lookup('x'), Some(ThrottleAction::UploadDown(StepSize::Medium)));
-    assert_eq!(map.lookup('c'), Some(ThrottleAction::UploadDown(StepSize::Large)));
-    assert_eq!(map.lookup('S'), Some(ThrottleAction::DownloadUp(StepSize::Medium)));
-    assert_eq!(map.lookup('C'), Some(ThrottleAction::DownloadDown(StepSize::Large)));
+    assert_eq!(
+        map.lookup('s'),
+        Some(ThrottleAction::UploadUp(StepSize::Medium))
+    );
+    assert_eq!(
+        map.lookup('d'),
+        Some(ThrottleAction::UploadUp(StepSize::Large))
+    );
+    assert_eq!(
+        map.lookup('z'),
+        Some(ThrottleAction::UploadDown(StepSize::Small))
+    );
+    assert_eq!(
+        map.lookup('x'),
+        Some(ThrottleAction::UploadDown(StepSize::Medium))
+    );
+    assert_eq!(
+        map.lookup('c'),
+        Some(ThrottleAction::UploadDown(StepSize::Large))
+    );
+    assert_eq!(
+        map.lookup('S'),
+        Some(ThrottleAction::DownloadUp(StepSize::Medium))
+    );
+    assert_eq!(
+        map.lookup('C'),
+        Some(ThrottleAction::DownloadDown(StepSize::Large))
+    );
 }
 
 #[test]
 fn azerty_and_qwertz_remap_the_letter_keys() {
     let azerty = ThrottleKeyMap::new("azerty");
-    assert_eq!(azerty.lookup('q'), Some(ThrottleAction::UploadUp(StepSize::Small)));
-    assert_eq!(azerty.lookup('w'), Some(ThrottleAction::UploadDown(StepSize::Small)));
+    assert_eq!(
+        azerty.lookup('q'),
+        Some(ThrottleAction::UploadUp(StepSize::Small))
+    );
+    assert_eq!(
+        azerty.lookup('w'),
+        Some(ThrottleAction::UploadDown(StepSize::Small))
+    );
 
     let qwertz = ThrottleKeyMap::new("qwertz");
-    assert_eq!(qwertz.lookup('y'), Some(ThrottleAction::UploadDown(StepSize::Small)));
-    assert_eq!(qwertz.lookup('a'), Some(ThrottleAction::UploadUp(StepSize::Small)));
+    assert_eq!(
+        qwertz.lookup('y'),
+        Some(ThrottleAction::UploadDown(StepSize::Small))
+    );
+    assert_eq!(
+        qwertz.lookup('a'),
+        Some(ThrottleAction::UploadUp(StepSize::Small))
+    );
 }
 
 #[test]
@@ -144,10 +177,26 @@ fn a_raises_the_upload_limit_through_a_command() {
 }
 
 #[test]
-fn uppercase_a_lowers_the_download_limit() {
+fn uppercase_a_raises_the_download_limit() {
     let mut app = app_with_limits(10_000, 20_000);
 
     let action = app.handle_key(KeyCode::Char('A'), KeyModifiers::NONE);
+
+    assert_eq!(
+        action,
+        Some(TuiAction::Execute {
+            command: "throttle.global_down.max_rate.set".to_string(),
+            args: vec![21_024],
+            hash: None,
+        })
+    );
+}
+
+#[test]
+fn uppercase_z_lowers_the_download_limit() {
+    let mut app = app_with_limits(10_000, 20_000);
+
+    let action = app.handle_key(KeyCode::Char('Z'), KeyModifiers::NONE);
 
     assert_eq!(
         action,

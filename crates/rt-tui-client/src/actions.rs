@@ -29,6 +29,8 @@ pub enum PromptKind {
 /// One user intent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TuiAction {
+    /// Does nothing; used for menu entries without behaviour.
+    Noop,
     /// Start/stop/close/check a torrent.
     ControlTorrent {
         /// Info-hash of the target torrent.
@@ -51,11 +53,18 @@ pub enum TuiAction {
     /// Run an rTorrent command, optionally scoped to one torrent.
     Execute {
         /// rTorrent command name, e.g. `d.ignore_commands.set`.
-        command: &'static str,
+        command: String,
         /// Integer arguments.
         args: Vec<i64>,
         /// Torrent the command applies to, if any.
         hash: Option<String>,
+    },
+    /// Load a `.torrent` file or magnet link.
+    Load {
+        /// Path or URI to load.
+        path: String,
+        /// Whether to start the torrent right away.
+        start: bool,
     },
     /// Open an input prompt.
     OpenPrompt(PromptKind),

@@ -149,6 +149,23 @@ impl GrpcBridge {
         self.execute(command, args, target).await
     }
 
+    /// Runs a command with string arguments (used by the load prompt).
+    pub async fn execute_strings(
+        &mut self,
+        command: &str,
+        args: &[String],
+        target: Option<&str>,
+    ) -> Result<CommandResponse, BridgeError> {
+        let args = args
+            .iter()
+            .map(|value| ObjectValue {
+                kind: Some(object_value::Kind::StringValue(value.clone())),
+            })
+            .collect();
+
+        self.execute(command, args, target).await
+    }
+
     /// Reads session-wide transfer statistics.
     pub async fn session_stats(&mut self) -> Result<SessionStatsResponse, BridgeError> {
         await_response(self.timeout, self.system.get_session_stats(Empty {})).await

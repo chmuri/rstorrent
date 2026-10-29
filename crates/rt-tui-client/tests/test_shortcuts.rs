@@ -138,13 +138,11 @@ fn ctrl_k_ignores_stops_and_closes() {
     match action {
         Some(TuiAction::Batch(steps)) => {
             assert_eq!(steps.len(), 3);
-            assert!(matches!(
-                steps[0],
-                TuiAction::Execute {
-                    command: "d.ignore_commands.set",
-                    ..
-                }
-            ));
+            assert!(
+                matches!(&steps[0], TuiAction::Execute { command, .. } if command == "d.ignore_commands.set"),
+                "unexpected first step: {:?}",
+                steps[0]
+            );
             assert!(matches!(
                 steps[1],
                 TuiAction::ControlTorrent {
@@ -173,13 +171,11 @@ fn ctrl_r_resets_completion_and_checks_the_hash() {
     match action {
         Some(TuiAction::Batch(steps)) => {
             assert_eq!(steps.len(), 2);
-            assert!(matches!(
-                steps[0],
-                TuiAction::Execute {
-                    command: "d.complete.set",
-                    ..
-                }
-            ));
+            assert!(
+                matches!(&steps[0], TuiAction::Execute { command, .. } if command == "d.complete.set"),
+                "unexpected first step: {:?}",
+                steps[0]
+            );
             assert!(matches!(
                 steps[1],
                 TuiAction::ControlTorrent {
@@ -263,7 +259,7 @@ async fn batch_actions_execute_every_step() {
     let mut app = App::new(AppState::new(), bridge, SHORT_TIMEOUT);
     let action = TuiAction::Batch(vec![
         TuiAction::Execute {
-            command: "d.ignore_commands.set",
+            command: "d.ignore_commands.set".to_string(),
             args: vec![1],
             hash: Some(HASH.to_string()),
         },
@@ -283,7 +279,7 @@ async fn batch_actions_execute_every_step() {
 }
 
 #[tokio::test]
-async fn prompt_actions_only_queue_a_request() {
+async fn prompt_actions_open_the_input_line() {
     let mut app = App::new_headless(AppState::new());
 
     let outcome = app
@@ -291,8 +287,10 @@ async fn prompt_actions_only_queue_a_request() {
         .await;
 
     assert!(outcome.is_some(), "prompts need no bridge");
-    assert_eq!(app.take_prompt_request(), Some(PromptKind::Load));
-    assert_eq!(app.take_prompt_request(), None);
+    assert_eq!(
+        app.prompt.as_ref().map(|prompt| prompt.mode()),
+        Some(rt_tui_client::widgets::input::PromptMode::LoadStart)
+    );
 }
 
 #[tokio::test]

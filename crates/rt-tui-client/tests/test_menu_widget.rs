@@ -141,8 +141,14 @@ fn widget_fits_tall_lists_into_the_screen() {
     MenuWidget::new(&state).render(area, &mut buffer);
     let text = buffer_to_string(&buffer);
 
-    assert!(text.contains("entry-30"), "selection must stay visible: {text}");
-    assert!(!text.contains("entry-00"), "first entry must scroll away: {text}");
+    assert!(
+        text.contains("entry-30"),
+        "selection must stay visible: {text}"
+    );
+    assert!(
+        !text.contains("entry-00"),
+        "first entry must scroll away: {text}"
+    );
 }
 
 // ---------------------------------------------------------------------------

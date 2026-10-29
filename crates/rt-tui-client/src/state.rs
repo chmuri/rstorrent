@@ -4,10 +4,12 @@
 //! wrapped in `Arc`/`Mutex`. Proto messages are mapped into display-ready values
 //! here so widgets never format or divide by zero themselves.
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use rt_grpc::{
     FileInfo, PeerInfo, SessionStatsResponse, TorrentDetails, TorrentSummary, TrackerInfo,
 };
 
+use crate::actions::TuiAction;
 use crate::bridge::{BridgeError, GrpcBridge};
 
 /// Index of the focused row in the torrent list.
@@ -592,6 +594,136 @@ fn client_name(peer_id: &str) -> String {
     }
 }
 
+/// One entry of the context menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuEntry {
+    /// Text shown in the popup.
+    pub label: String,
+    /// Action executed when the entry is activated.
+    pub action: TuiAction,
+    /// Whether the entry can be selected and activated.
+    pub enabled: bool,
+}
+
+impl MenuEntry {
+    /// Builds an entry.
+    pub fn new(label: impl Into<String>, action: TuiAction, enabled: bool) -> Self {
+        Self {
+            label: label.into(),
+            action,
+            enabled,
+        }
+    }
+}
+
+/// What a key press did to the menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MenuResult {
+    /// The menu stays open.
+    Pending,
+    /// The menu was dismissed.
+    Closed,
+    /// The user activated an entry.
+    Activated(TuiAction),
+}
+
+/// Open context menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuState {
+    entries: Vec<MenuEntry>,
+    selected: usize,
+}
+
+impl MenuState {
+    /// Builds a menu, focusing the first enabled entry.
+    pub fn new(entries: Vec<MenuEntry>) -> Self {
+        let selected = entries.iter().position(|entry| entry.enabled).unwrap_or(0);
+
+        Self { entries, selected }
+    }
+
+    /// All entries in display order.
+    pub fn entries(&self) -> &[MenuEntry] {
+        &self.entries
+    }
+
+    /// Number of entries.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// `true` when the menu has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Index of the focused entry.
+    pub fn selected(&self) -> usize {
+        self.selected
+    }
+
+    /// Focuses `index`, ignoring out-of-range values.
+    pub fn select(&mut self, index: usize) {
+        if index < self.entries.len() {
+            self.selected = index;
+        }
+    }
+
+    /// Entry with the given label.
+    pub fn entry(&self, label: &str) -> Option<&MenuEntry> {
+        self.entries.iter().find(|entry| entry.label == label)
+    }
+
+    /// Action of the focused entry, if it is enabled.
+    pub fn activate(&self) -> Option<TuiAction> {
+        self.entries
+            .get(self.selected)
+            .filter(|entry| entry.enabled)
+            .map(|entry| entry.action.clone())
+    }
+
+    /// Applies one key press.
+    pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> MenuResult {
+        match (code, modifiers) {
+            (KeyCode::Up, _) => {
+                self.move_selection(false);
+                MenuResult::Pending
+            }
+            (KeyCode::Down, _) => {
+                self.move_selection(true);
+                MenuResult::Pending
+            }
+            (KeyCode::Enter, _) => match self.activate() {
+                Some(action) => MenuResult::Activated(action),
+                None => MenuResult::Pending,
+            },
+            (KeyCode::Esc, _) => MenuResult::Closed,
+            _ => MenuResult::Pending,
+        }
+    }
+
+    /// Moves the focus to the next enabled entry, wrapping.
+    fn move_selection(&mut self, forward: bool) {
+        if self.entries.is_empty() {
+            return;
+        }
+
+        let mut index = self.selected;
+        for _ in 0..self.entries.len() {
+            index = if forward {
+                (index + 1) % self.entries.len()
+            } else {
+                (index + self.entries.len() - 1) % self.entries.len()
+            };
+
+            if self.entries[index].enabled {
+                self.selected = index;
+                return;
+            }
+        }
+    }
+}
+
 /// Tabs of the torrent details view.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DetailTab {
@@ -802,6 +934,12 @@ pub struct AppState {
     pub terminal_rows: u16,
     /// Open details pane; `None` while the torrent list is shown.
     pub details: Option<DetailsState>,
+    /// Open context menu, if any.
+    pub menu: Option<MenuState>,
+    /// Transient message shown in the status bar (command failures, …).
+    pub notice: Option<String>,
+    /// Filter typed in the `/` prompt; not applied to the list yet.
+    pub filter: Option<String>,
 }
 
 impl Default for AppState {
@@ -824,6 +962,9 @@ impl AppState {
             terminal_cols: 80,
             terminal_rows: 24,
             details: None,
+            menu: None,
+            notice: None,
+            filter: None,
         }
     }
 
