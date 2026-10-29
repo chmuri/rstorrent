@@ -1,5 +1,6 @@
 //! Application shell: key handling, refresh scheduling, rendering and the loop.
 
+use std::collections::HashSet;
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -8,8 +9,10 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::Frame;
 use rt_grpc::{object_value, CommandResponse, ObjectValue};
 
+use crate::actions::{PromptKind, TuiAction};
 use crate::bridge::{BridgeError, GrpcBridge};
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
+use crate::key_handler::{self, torrent_action};
 use crate::state::{AppState, DetailTab, DetailsState, FileListState};
 use crate::terminal::ClientTerminal;
 use crate::widgets::download_list::visible_rows;
@@ -48,6 +51,8 @@ pub struct App {
     last_refresh: Option<Instant>,
     details_request: Option<String>,
     priority_command: Option<PriorityCommand>,
+    ignored: HashSet<String>,
+    prompt_request: Option<PromptKind>,
 }
 
 impl App {
@@ -62,6 +67,8 @@ impl App {
             last_refresh: None,
             details_request: None,
             priority_command: None,
+            ignored: HashSet::new(),
+            prompt_request: None,
         }
     }
 
@@ -76,6 +83,8 @@ impl App {
             last_refresh: None,
             details_request: None,
             priority_command: None,
+            ignored: HashSet::new(),
+            prompt_request: None,
         }
     }
 
@@ -86,10 +95,15 @@ impl App {
     }
 
     /// Dispatches one already-read terminal event.
-    pub fn handle_event(&mut self, event: AppEvent) {
+    ///
+    /// Returns the action the front end still has to execute, if any.
+    pub fn handle_event(&mut self, event: AppEvent) -> Option<TuiAction> {
         match event {
             AppEvent::Key { code, modifiers } => self.handle_key(code, modifiers),
-            AppEvent::Resize { cols, rows } => self.handle_resize(cols, rows),
+            AppEvent::Resize { cols, rows } => {
+                self.handle_resize(cols, rows);
+                None
+            }
         }
     }
 
@@ -97,37 +111,74 @@ impl App {
     ///
     /// `^Q` requests a graceful exit; a second `^Q` forces it. Everything else
     /// is dispatched to the list or the details pane, whichever is open.
-    pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+    pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
         if let (KeyCode::Char('q'), KeyModifiers::CONTROL) = (code, modifiers) {
             if self.should_quit {
                 self.force_quit = true;
             } else {
                 self.should_quit = true;
             }
-            return;
+            return None;
         }
 
         if self.state.details.is_some() {
             self.handle_details_key(code, modifiers);
-        } else {
-            self.handle_list_key(code, modifiers);
+            return None;
         }
+
+        self.handle_list_key(code, modifiers)
     }
 
     /// Keys active while the torrent list is shown.
-    fn handle_list_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+    fn handle_list_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
         match (code, modifiers) {
-            (KeyCode::Down, _) => self.state.focus_down(),
-            (KeyCode::Up, _) => self.state.focus_up(),
-            (KeyCode::PageDown, _) => self.state.focus_page_down(self.page_size()),
-            (KeyCode::PageUp, _) => self.state.focus_page_up(self.page_size()),
-            (KeyCode::Home, _) => self.state.focus_home(),
-            (KeyCode::End, _) => self.state.focus_end(),
+            (KeyCode::Down, _) => {
+                self.state.focus_down();
+                return None;
+            }
+            (KeyCode::Up, _) => {
+                self.state.focus_up();
+                return None;
+            }
+            (KeyCode::PageDown, _) => {
+                let page = self.page_size();
+                self.state.focus_page_down(page);
+                return None;
+            }
+            (KeyCode::PageUp, _) => {
+                let page = self.page_size();
+                self.state.focus_page_up(page);
+                return None;
+            }
+            (KeyCode::Home, _) => {
+                self.state.focus_home();
+                return None;
+            }
+            (KeyCode::End, _) => {
+                self.state.focus_end();
+                return None;
+            }
             (KeyCode::Right, _) | (KeyCode::Char('l'), _) => {
                 self.details_request = self.state.selected().map(|torrent| torrent.hash.clone());
+                return None;
             }
             _ => {}
         }
+
+        let torrent = self.state.selected()?;
+        let ignored = self.ignored.contains(&torrent.hash);
+        let action = torrent_action(code, modifiers, torrent, ignored)?;
+
+        // Reflect `d.ignore_commands` locally as soon as the user asks for it.
+        for (hash, value) in ignore_updates(&action) {
+            if value {
+                self.ignored.insert(hash);
+            } else {
+                self.ignored.remove(&hash);
+            }
+        }
+
+        Some(action)
     }
 
     /// Keys active while the details pane is shown.
@@ -286,6 +337,60 @@ impl App {
         )
     }
 
+    /// Executes one action against the bridge, if one is attached.
+    pub async fn execute_action(&mut self, action: TuiAction) -> Option<Result<(), BridgeError>> {
+        for step in flatten(action) {
+            match self.execute_step(step).await {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+        }
+
+        Some(Ok(()))
+    }
+
+    /// Executes a single (non-batch) action.
+    async fn execute_step(&mut self, action: TuiAction) -> Option<Result<(), BridgeError>> {
+        match action {
+            TuiAction::Batch(_) => Some(Ok(())),
+            TuiAction::ControlTorrent { hash, action } => {
+                let bridge = self.bridge.as_mut()?;
+                Some(bridge.control_torrent(&hash, action).await)
+            }
+            TuiAction::RemoveTorrent { hash } => {
+                let bridge = self.bridge.as_mut()?;
+                Some(bridge.remove_torrent(&hash).await)
+            }
+            TuiAction::SetPriority { hash, priority } => {
+                let bridge = self.bridge.as_mut()?;
+                Some(bridge.set_torrent_priority(&hash, priority).await)
+            }
+            TuiAction::Execute {
+                command,
+                args,
+                hash,
+            } => {
+                let bridge = self.bridge.as_mut()?;
+                Some(
+                    bridge
+                        .execute_ints(command, &args, hash.as_deref())
+                        .await
+                        .map(|_response| ()),
+                )
+            }
+            TuiAction::OpenPrompt(kind) => {
+                self.prompt_request = Some(kind);
+                Some(Ok(()))
+            }
+        }
+    }
+
+    /// Takes the prompt the user asked to open.
+    pub fn take_prompt_request(&mut self) -> Option<PromptKind> {
+        self.prompt_request.take()
+    }
+
     /// Renders one frame: title bar, body (list or details), status bar.
     pub fn draw(&self, frame: &mut Frame) {
         let [title_area, body_area, status_area] = Layout::vertical([
@@ -322,7 +427,11 @@ impl App {
             }
 
             for event in read_events(self.tick.min(MAX_INPUT_WAIT)).await? {
-                self.handle_event(event);
+                if let Some(action) = self.handle_event(event) {
+                    if let Some(Err(error)) = self.execute_action(action).await {
+                        tracing::warn!(%error, "torrent action failed");
+                    }
+                }
             }
 
             if let Some(hash) = self.take_details_request() {
@@ -388,5 +497,29 @@ fn poll_input(queue: &mut EventQueue, timeout: Duration) -> io::Result<()> {
         }
 
         wait = Duration::ZERO;
+    }
+}
+
+/// Expands nested [`TuiAction::Batch`] values into a flat list.
+fn flatten(action: TuiAction) -> Vec<TuiAction> {
+    match action {
+        TuiAction::Batch(actions) => actions.into_iter().flat_map(flatten).collect(),
+        action => vec![action],
+    }
+}
+
+/// Extracts the `d.ignore_commands` values an action wants to set.
+fn ignore_updates(action: &TuiAction) -> Vec<(String, bool)> {
+    match action {
+        TuiAction::Execute {
+            command,
+            args,
+            hash: Some(hash),
+        } if *command == key_handler::IGNORE_COMMANDS => match args.first() {
+            Some(value) => vec![(hash.clone(), *value != 0)],
+            None => Vec::new(),
+        },
+        TuiAction::Batch(steps) => steps.iter().flat_map(ignore_updates).collect(),
+        _ => Vec::new(),
     }
 }

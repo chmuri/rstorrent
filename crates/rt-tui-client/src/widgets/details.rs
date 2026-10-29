@@ -8,6 +8,8 @@ use ratatui::widgets::{Paragraph, Widget};
 
 use crate::state::{DetailTab, DetailsInfo, DetailsState};
 use crate::widgets::file_list::FileListWidget;
+use crate::widgets::peer_list::PeerListWidget;
+use crate::widgets::tracker_list::TrackerListWidget;
 
 /// Details pane for one torrent.
 pub struct DetailsWidget<'a> {
@@ -34,9 +36,11 @@ impl Widget for DetailsWidget<'_> {
             DetailTab::Files => {
                 FileListWidget::new(&self.state.files).render(body_area, buf);
             }
-            DetailTab::Peers => render_count("Peers", self.state.peer_count, body_area, buf),
+            DetailTab::Peers => {
+                PeerListWidget::new(&self.state.peers).render(body_area, buf);
+            }
             DetailTab::Trackers => {
-                render_count("Trackers", self.state.tracker_count, body_area, buf);
+                TrackerListWidget::new(&self.state.trackers).render(body_area, buf);
             }
             DetailTab::Chunks => {
                 render_count(

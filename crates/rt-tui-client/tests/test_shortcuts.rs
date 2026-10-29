@@ -286,7 +286,9 @@ async fn batch_actions_execute_every_step() {
 async fn prompt_actions_only_queue_a_request() {
     let mut app = App::new_headless(AppState::new());
 
-    let outcome = app.execute_action(TuiAction::OpenPrompt(PromptKind::Load)).await;
+    let outcome = app
+        .execute_action(TuiAction::OpenPrompt(PromptKind::Load))
+        .await;
 
     assert!(outcome.is_some(), "prompts need no bridge");
     assert_eq!(app.take_prompt_request(), Some(PromptKind::Load));
