@@ -30,6 +30,12 @@ fn make_vm() -> TorrentViewModel {
     TorrentViewModel::from_proto(&make_proto_summary(0, 0))
 }
 
+fn make_vm_with_name(name: &str) -> TorrentViewModel {
+    let mut proto = make_proto_summary(0, 0);
+    proto.name = name.to_string();
+    TorrentViewModel::from_proto(&proto)
+}
+
 // ---------------------------------------------------------------------------
 // Plan contract
 // ---------------------------------------------------------------------------
@@ -199,14 +205,44 @@ fn app_state_starts_disconnected_on_main_view() {
 fn active_view_maps_to_rpc_view_names() {
     for (view, name) in [
         (ActiveView::Main, "main"),
+        (ActiveView::Name, "name"),
         (ActiveView::Started, "started"),
         (ActiveView::Stopped, "stopped"),
         (ActiveView::Complete, "complete"),
         (ActiveView::Incomplete, "incomplete"),
+        (ActiveView::Hashing, "hashing"),
+        (ActiveView::Seeding, "seeding"),
+        (ActiveView::Leeching, "leeching"),
         (ActiveView::Active, "active"),
     ] {
         assert_eq!(view.as_str(), name);
     }
+}
+
+#[test]
+fn visible_torrents_applies_case_insensitive_filter() {
+    let mut state = AppState::new();
+    let t1 = make_vm_with_name("Ubuntu 22.04 LTS");
+    let t2 = make_vm_with_name("Debian Bookworm");
+    let t3 = make_vm_with_name("Arch Linux ISO");
+    state.torrents = vec![t1, t2, t3];
+
+    assert_eq!(state.visible_torrents().len(), 3);
+
+    state.filter = Some("buntu".to_string());
+    assert_eq!(state.visible_torrents().len(), 1);
+    assert_eq!(state.visible_torrents()[0].name, "Ubuntu 22.04 LTS");
+    assert_eq!(
+        state.selected().map(|t| t.name.as_str()),
+        Some("Ubuntu 22.04 LTS")
+    );
+
+    state.filter = Some("LINUX".to_string());
+    assert_eq!(state.visible_torrents().len(), 1);
+    assert_eq!(state.visible_torrents()[0].name, "Arch Linux ISO");
+
+    state.filter = Some("   ".to_string());
+    assert_eq!(state.visible_torrents().len(), 3);
 }
 
 #[test]

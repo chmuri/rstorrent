@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-10-29
+
+### Added
+
+- **TUI view switching**: keys `1`..`9` and `0` switch views (`main`, `name`,
+  `started`, `stopped`, `complete`, `incomplete`, `hashing`, `seeding`, `leeching`,
+  `active`), matching classic rTorrent behavior and immediately triggering a state refresh.
+- **TUI list filtering**: `/` and `f` open a filter prompt; active filters narrow the
+  displayed torrents in real time, show in the title bar (`[<view>:<filter>]`), and
+  can be dismissed with `Esc` or an empty prompt.
+- **TUI navigation & shortcuts**:
+  - `Enter` opens the details view for the selected torrent (alongside `Right` and `l`).
+  - `Esc` and `Backspace` exit the details pane from any tab back to the torrent list.
+  - Arrow keys and PageUp/PageDown navigate rows in the Peers and Trackers tabs.
+  - `l` and `Esc` close the log view in addition to `Space` and `L`.
+
 ## [0.17.1] - 2026-10-29
 
 ### Fixed

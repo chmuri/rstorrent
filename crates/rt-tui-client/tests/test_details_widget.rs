@@ -227,7 +227,7 @@ fn files_tab_renders_the_file_list_and_peers_its_count() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn l_and_right_request_details_for_the_selected_torrent() {
+fn l_and_right_and_enter_request_details_for_the_selected_torrent() {
     let mut app = App::new_headless(AppState::new());
     app.state.torrents = vec![make_vm("ubuntu")];
 
@@ -236,6 +236,9 @@ fn l_and_right_request_details_for_the_selected_torrent() {
     assert_eq!(requested.as_deref(), Some("ubuntu-hash"));
 
     app.handle_key(KeyCode::Right, KeyModifiers::NONE);
+    assert_eq!(app.take_details_request().as_deref(), Some("ubuntu-hash"));
+
+    app.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(app.take_details_request().as_deref(), Some("ubuntu-hash"));
     assert_eq!(
         app.take_details_request(),
@@ -281,6 +284,63 @@ fn number_keys_select_a_tab() {
         app.state.details.as_ref().map(|state| state.active_tab),
         Some(DetailTab::Peers)
     );
+}
+
+#[test]
+fn escape_and_backspace_leave_details_from_any_tab() {
+    let mut app = app_in_details();
+    app.state.details.as_mut().expect("details").active_tab = DetailTab::Files;
+
+    app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(app.state.details.is_none(), "Esc must close details");
+
+    let mut app2 = app_in_details();
+    app2.state.details.as_mut().expect("details").active_tab = DetailTab::Trackers;
+
+    app2.handle_key(KeyCode::Backspace, KeyModifiers::NONE);
+    assert!(app2.state.details.is_none(), "Backspace must close details");
+}
+
+#[test]
+fn peer_and_tracker_tabs_can_be_navigated() {
+    use rt_grpc::{PeerInfo, TrackerInfo};
+    use rt_tui_client::state::{PeerListState, TrackerListState};
+
+    let mut app = app_in_details();
+    let details = app.state.details.as_mut().expect("details");
+    details.active_tab = DetailTab::Peers;
+    details.peers = PeerListState::from_proto(&[
+        PeerInfo {
+            address: "1.1.1.1:6881".to_string(),
+            ..PeerInfo::default()
+        },
+        PeerInfo {
+            address: "2.2.2.2:6881".to_string(),
+            ..PeerInfo::default()
+        },
+    ]);
+
+    app.handle_key(KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(app.state.details.as_ref().unwrap().peers.focus_index, 1);
+
+    app.handle_key(KeyCode::Up, KeyModifiers::NONE);
+    assert_eq!(app.state.details.as_ref().unwrap().peers.focus_index, 0);
+
+    let details = app.state.details.as_mut().expect("details");
+    details.active_tab = DetailTab::Trackers;
+    details.trackers = TrackerListState::from_proto(&[
+        TrackerInfo {
+            url: "http://t1.org".to_string(),
+            ..TrackerInfo::default()
+        },
+        TrackerInfo {
+            url: "http://t2.org".to_string(),
+            ..TrackerInfo::default()
+        },
+    ]);
+
+    app.handle_key(KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(app.state.details.as_ref().unwrap().trackers.focus_index, 1);
 }
 
 #[test]

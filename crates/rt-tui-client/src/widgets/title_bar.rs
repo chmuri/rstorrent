@@ -27,19 +27,22 @@ impl<'a> TitleBarWidget<'a> {
 
     /// One line, trimmed from the left as the terminal narrows.
     fn line(&self, width: u16) -> Line<'static> {
-        let view = format!("[{}]", self.state.active_view.as_str());
+        let view = match &self.state.filter {
+            Some(filter) if !filter.trim().is_empty() => {
+                format!("[{}:{}]", self.state.active_view.as_str(), filter.trim())
+            }
+            _ => format!("[{}]", self.state.active_view.as_str()),
+        };
 
+        let count = self.state.visible_torrents().len();
         if width >= VERSION_MIN_WIDTH {
             Line::from(format!(
                 "rstorrent v{} — {view} {}",
                 env!("CARGO_PKG_VERSION"),
-                torrent_count(self.state.torrents.len())
+                torrent_count(count)
             ))
         } else if width >= COUNT_MIN_WIDTH {
-            Line::from(format!(
-                "{view} {}",
-                torrent_count(self.state.torrents.len())
-            ))
+            Line::from(format!("{view} {}", torrent_count(count)))
         } else {
             Line::from(view)
         }
