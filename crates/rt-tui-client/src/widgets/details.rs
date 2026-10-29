@@ -7,6 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::state::{DetailTab, DetailsInfo, DetailsState};
+use crate::widgets::file_list::FileListWidget;
 
 /// Details pane for one torrent.
 pub struct DetailsWidget<'a> {
@@ -30,7 +31,9 @@ impl Widget for DetailsWidget<'_> {
 
         match self.tab {
             DetailTab::Info => render_info(&self.state.info, body_area, buf),
-            DetailTab::Files => render_count("Files", self.state.file_count, body_area, buf),
+            DetailTab::Files => {
+                FileListWidget::new(&self.state.files).render(body_area, buf);
+            }
             DetailTab::Peers => render_count("Peers", self.state.peer_count, body_area, buf),
             DetailTab::Trackers => {
                 render_count("Trackers", self.state.tracker_count, body_area, buf);

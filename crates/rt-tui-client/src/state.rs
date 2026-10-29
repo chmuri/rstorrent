@@ -4,7 +4,7 @@
 //! wrapped in `Arc`/`Mutex`. Proto messages are mapped into display-ready values
 //! here so widgets never format or divide by zero themselves.
 
-use rt_grpc::{SessionStatsResponse, TorrentDetails, TorrentSummary};
+use rt_grpc::{FileInfo, SessionStatsResponse, TorrentDetails, TorrentSummary};
 
 use crate::bridge::{BridgeError, GrpcBridge};
 
@@ -211,6 +211,220 @@ impl ActiveView {
     }
 }
 
+/// One row of the Files tab.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileEntry {
+    /// Index reported by the daemon.
+    pub index: u32,
+    /// Path relative to the shared directory prefix (or the full path).
+    pub path: String,
+    /// Size in bytes.
+    pub size_bytes: i64,
+    /// `2.0 KB`
+    pub size_display: String,
+    /// Completion in percent, clamped to `0.0..=100.0`.
+    pub completed_percent: f64,
+    /// Daemon priority: `0` off, `1` normal, `2` high.
+    pub priority: u32,
+    /// Synthetic directory row: rendered, but never focusable.
+    pub is_directory: bool,
+}
+
+impl FileEntry {
+    /// `Off` / `Normal` / `High`.
+    pub fn priority_label(&self) -> &'static str {
+        match self.priority {
+            0 => "Off",
+            1 => "Normal",
+            _ => "High",
+        }
+    }
+}
+
+/// Files tab: rows plus the focused row.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FileListState {
+    /// Directory rows (if any) followed by file rows.
+    pub entries: Vec<FileEntry>,
+    /// Focused row; always a file row when at least one exists.
+    pub focus_index: usize,
+}
+
+impl FileListState {
+    /// Builds the rows, adding one synthetic directory row when every file
+    /// shares a directory prefix.
+    pub fn from_proto(files: &[FileInfo]) -> Self {
+        let prefix = shared_directory(files);
+        let shared = prefix.filter(|_| files.len() > 1);
+        let mut entries = Vec::with_capacity(files.len() + 1);
+
+        if let Some(prefix) = shared.as_deref() {
+            let total = files.iter().map(|file| file.size_bytes).sum();
+
+            entries.push(FileEntry {
+                index: 0,
+                path: format!("{prefix}/"),
+                size_bytes: total,
+                size_display: format_size(total),
+                completed_percent: 0.0,
+                priority: 0,
+                is_directory: true,
+            });
+        }
+
+        for file in files {
+            let path = match shared.as_deref() {
+                Some(prefix) => strip_directory(&file.path, prefix).to_string(),
+                None => file.path.clone(),
+            };
+
+            entries.push(FileEntry {
+                index: file.index,
+                path,
+                size_bytes: file.size_bytes,
+                size_display: format_size(file.size_bytes),
+                completed_percent: percent(file.completed_bytes, file.size_bytes),
+                priority: file.priority,
+                is_directory: false,
+            });
+        }
+
+        let focus_index = entries
+            .iter()
+            .position(|entry| !entry.is_directory)
+            .unwrap_or(0);
+
+        Self {
+            entries,
+            focus_index,
+        }
+    }
+
+    /// Next priority value in the `off -> normal -> high -> off` cycle.
+    pub fn next_priority(priority: u32) -> u32 {
+        match priority {
+            0 => 1,
+            1 => 2,
+            _ => 0,
+        }
+    }
+
+    /// The focused file, unless focus sits on a directory row.
+    pub fn focused(&self) -> Option<&FileEntry> {
+        self.entries
+            .get(self.focus_index)
+            .filter(|entry| !entry.is_directory)
+    }
+
+    /// Mutable access to the focused file.
+    pub fn focused_mut(&mut self) -> Option<&mut FileEntry> {
+        let index = self.focus_index;
+        self.entries
+            .get_mut(index)
+            .filter(|entry| !entry.is_directory)
+    }
+
+    /// Moves the focus to the next file row.
+    pub fn focus_down(&mut self) {
+        if let Some(next) = self.next_file_after(self.focus_index) {
+            self.focus_index = next;
+        }
+    }
+
+    /// Moves the focus to the previous file row.
+    pub fn focus_up(&mut self) {
+        if let Some(previous) = self
+            .entries
+            .iter()
+            .take(self.focus_index)
+            .rposition(|entry| !entry.is_directory)
+        {
+            self.focus_index = previous;
+        }
+    }
+
+    /// Moves the focus `page` file rows down.
+    pub fn focus_page_down(&mut self, page: usize) {
+        for _ in 0..page {
+            match self.next_file_after(self.focus_index) {
+                Some(next) => self.focus_index = next,
+                None => return,
+            }
+        }
+    }
+
+    /// Moves the focus `page` file rows up.
+    pub fn focus_page_up(&mut self, page: usize) {
+        for _ in 0..page {
+            match self
+                .entries
+                .iter()
+                .take(self.focus_index)
+                .rposition(|entry| !entry.is_directory)
+            {
+                Some(previous) => self.focus_index = previous,
+                None => return,
+            }
+        }
+    }
+
+    /// Index of the next file row after `from`.
+    fn next_file_after(&self, from: usize) -> Option<usize> {
+        self.entries
+            .iter()
+            .enumerate()
+            .skip(from + 1)
+            .find(|(_, entry)| !entry.is_directory)
+            .map(|(index, _)| index)
+    }
+}
+
+/// Longest directory prefix shared by every file, if any.
+fn shared_directory(files: &[FileInfo]) -> Option<String> {
+    let mut directories = files.iter().map(|file| {
+        let mut components = file.path.split('/').collect::<Vec<_>>();
+        components.pop(); // drop the file name
+        components
+    });
+
+    let mut common = directories.next()?;
+    if common.is_empty() {
+        return None;
+    }
+
+    for directory in directories {
+        let shared = common
+            .iter()
+            .zip(directory.iter())
+            .take_while(|(left, right)| left == right)
+            .count();
+        common.truncate(shared);
+
+        if common.is_empty() {
+            return None;
+        }
+    }
+
+    Some(common.join("/"))
+}
+
+/// Drops `prefix` (and the following separator) from `path`.
+fn strip_directory<'a>(path: &'a str, prefix: &str) -> &'a str {
+    match path.strip_prefix(prefix) {
+        Some(rest) => rest.strip_prefix('/').unwrap_or(rest),
+        None => path,
+    }
+}
+
+/// Completion percentage with a zero-size guard.
+fn percent(completed: i64, total: i64) -> f64 {
+    if total > 0 {
+        (completed as f64 / total as f64 * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+}
+
 /// Tabs of the torrent details view.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DetailTab {
@@ -305,14 +519,14 @@ pub struct DetailsInfo {
 }
 
 /// Details pane: the active tab plus the data behind it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct DetailsState {
     /// Selected tab.
     pub active_tab: DetailTab,
     /// Info tab content.
     pub info: DetailsInfo,
-    /// Number of files reported by the daemon.
-    pub file_count: usize,
+    /// Files tab content.
+    pub files: FileListState,
     /// Number of connected peers.
     pub peer_count: usize,
     /// Number of trackers.
@@ -345,7 +559,7 @@ impl DetailsState {
                 connection_seed: details.connection_seed.clone(),
                 throttle_name: details.throttle_name.clone(),
             },
-            file_count: details.files.len(),
+            files: FileListState::from_proto(&details.files),
             peer_count: details.peers.len(),
             tracker_count: details.trackers.len(),
         }

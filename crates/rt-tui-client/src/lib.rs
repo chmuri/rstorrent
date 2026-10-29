@@ -22,8 +22,10 @@ pub use endpoint::{Endpoint, EndpointError, ProbeError, PROBE_TIMEOUT};
 pub use events::{AppEvent, EventPushOutcome, EventQueue, EventQueueConfig, ResizePolicy};
 pub use run::{run, StartupError, EXIT_DAEMON_UNREACHABLE, EXIT_INVALID_ENDPOINT};
 pub use state::{
-    ActiveView, AppState, ConnectionStatus, DetailTab, DetailsInfo, DetailsState, FocusIndex,
-    SessionStats, TorrentViewModel,
+    ActiveView, AppState, ConnectionStatus, DetailTab, DetailsInfo, DetailsState, FileEntry,
+    FileListState, FocusIndex, SessionStats, TorrentViewModel,
 };
 pub use terminal::{install_panic_hook, ClientTerminal, TerminalSession};
-pub use widgets::{DetailsWidget, DownloadListWidget, StatusBarWidget, TitleBarWidget};
+pub use widgets::{
+    DetailsWidget, DownloadListWidget, FileListWidget, StatusBarWidget, TitleBarWidget,
+};
