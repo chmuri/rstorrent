@@ -200,17 +200,15 @@ fn missing_summary_fields_fall_back_to_dashes() {
 }
 
 #[test]
-fn non_info_tabs_report_entry_counts() {
+fn files_tab_renders_the_file_list_and_peers_its_count() {
     let mut details = make_torrent_details("h", "t");
     details.files = vec![details.files[0].clone(); 3];
 
     let state = DetailsState::from_proto(&details);
 
     let files = render_details(&state, DetailTab::Files, AREA);
-    assert!(
-        files.contains("Files: 3 entries"),
-        "file count missing: {files}"
-    );
+    assert!(files.contains("test.torrent"), "file rows missing: {files}");
+    assert!(files.contains("Priority"), "file header missing: {files}");
 
     let peers = render_details(&state, DetailTab::Peers, AREA);
     assert!(

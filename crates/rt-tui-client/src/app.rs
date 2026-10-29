@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::Frame;
+use rt_grpc::{object_value, CommandResponse, ObjectValue};
 
 use crate::bridge::{BridgeError, GrpcBridge};
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
-use crate::state::{AppState, DetailTab, DetailsState};
+use crate::state::{AppState, DetailTab, DetailsState, FileListState};
 use crate::terminal::ClientTerminal;
 use crate::widgets::download_list::visible_rows;
 use crate::widgets::{DetailsWidget, DownloadListWidget, StatusBarWidget, TitleBarWidget};
@@ -19,6 +20,20 @@ pub const DEFAULT_TICK: Duration = Duration::from_millis(500);
 
 /// Longest the loop blocks waiting for input, so refreshes stay on schedule.
 const MAX_INPUT_WAIT: Duration = Duration::from_millis(50);
+
+/// rTorrent command used to change a file's priority.
+pub const PRIORITY_COMMAND: &str = "f.priority.set";
+
+/// Priority change waiting to be sent to the daemon.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PriorityCommand {
+    /// Index of the file inside the torrent.
+    pub file_index: u32,
+    /// New priority: `0` off, `1` normal, `2` high.
+    pub priority: u32,
+    /// Torrent the file belongs to.
+    pub hash: String,
+}
 
 /// Owns the state, the daemon bridge, the refresh interval and the terminal loop.
 pub struct App {
@@ -32,6 +47,7 @@ pub struct App {
     tick: Duration,
     last_refresh: Option<Instant>,
     details_request: Option<String>,
+    priority_command: Option<PriorityCommand>,
 }
 
 impl App {
@@ -45,6 +61,7 @@ impl App {
             tick,
             last_refresh: None,
             details_request: None,
+            priority_command: None,
         }
     }
 
@@ -58,6 +75,7 @@ impl App {
             tick: DEFAULT_TICK,
             last_refresh: None,
             details_request: None,
+            priority_command: None,
         }
     }
 
@@ -144,6 +162,31 @@ impl App {
                     details.select_tab(number as u8 - b'0');
                 }
             }
+            (KeyCode::Down, _) if active_tab == DetailTab::Files => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.focus_down();
+                }
+            }
+            (KeyCode::Up, _) if active_tab == DetailTab::Files => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.focus_up();
+                }
+            }
+            (KeyCode::PageDown, _) if active_tab == DetailTab::Files => {
+                let page = self.page_size();
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.focus_page_down(page);
+                }
+            }
+            (KeyCode::PageUp, _) if active_tab == DetailTab::Files => {
+                let page = self.page_size();
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.focus_page_up(page);
+                }
+            }
+            (KeyCode::Char(' '), _) | (KeyCode::Char('*'), _) if active_tab == DetailTab::Files => {
+                self.cycle_file_priority();
+            }
             _ => {}
         }
     }
@@ -198,6 +241,51 @@ impl App {
         Some(result)
     }
 
+    /// Cycles the focused file's priority and queues the matching command.
+    fn cycle_file_priority(&mut self) {
+        let Some(details) = self.state.details.as_mut() else {
+            return;
+        };
+        let hash = details.info.hash.clone();
+        let Some(file) = details.files.focused_mut() else {
+            return;
+        };
+
+        file.priority = FileListState::next_priority(file.priority);
+        self.priority_command = Some(PriorityCommand {
+            file_index: file.index,
+            priority: file.priority,
+            hash,
+        });
+    }
+
+    /// Takes the priority change waiting to be sent to the daemon.
+    pub fn take_priority_command(&mut self) -> Option<PriorityCommand> {
+        self.priority_command.take()
+    }
+
+    /// Sends a priority change through `CommandService`.
+    pub async fn send_priority(
+        &mut self,
+        command: &PriorityCommand,
+    ) -> Option<Result<CommandResponse, BridgeError>> {
+        let bridge = self.bridge.as_mut()?;
+        let args = vec![
+            ObjectValue {
+                kind: Some(object_value::Kind::IntValue(i64::from(command.file_index))),
+            },
+            ObjectValue {
+                kind: Some(object_value::Kind::IntValue(i64::from(command.priority))),
+            },
+        ];
+
+        Some(
+            bridge
+                .execute(PRIORITY_COMMAND, args, Some(&command.hash))
+                .await,
+        )
+    }
+
     /// Renders one frame: title bar, body (list or details), status bar.
     pub fn draw(&self, frame: &mut Frame) {
         let [title_area, body_area, status_area] = Layout::vertical([
@@ -240,6 +328,16 @@ impl App {
             if let Some(hash) = self.take_details_request() {
                 if let Some(Err(error)) = self.open_details(&hash).await {
                     tracing::warn!(%error, "failed to open details for {hash}");
+                }
+            }
+
+            if let Some(command) = self.take_priority_command() {
+                match self.send_priority(&command).await {
+                    Some(Ok(response)) if !response.success => {
+                        tracing::warn!(message = %response.error_message, "priority change rejected");
+                    }
+                    Some(Err(error)) => tracing::warn!(%error, "priority change failed"),
+                    _ => {}
                 }
             }
 

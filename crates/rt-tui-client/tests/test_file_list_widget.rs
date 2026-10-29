@@ -225,7 +225,11 @@ fn space_cycles_the_focused_files_priority_and_requests_a_command() {
             hash: "abc123def".to_string(),
         }
     );
-    assert_eq!(app.take_priority_command(), None, "request is consumed once");
+    assert_eq!(
+        app.take_priority_command(),
+        None,
+        "request is consumed once"
+    );
 }
 
 #[test]
