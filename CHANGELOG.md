@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-29
+
+Standalone gRPC TUI client (`rstorrent-tui`), implemented end to end from
+`docs/tui-implementation.plan.md` (TASK-01 … TASK-16).
+
+### Added
+
+- **`rt-tui-client` crate** — new workspace member producing the `rstorrent-tui`
+  binary: clap CLI (`--endpoint`, `--theme`, `--refresh-ms`), typed endpoint
+  parsing for `host:port`, `tcp://` and `unix://` with a bounded reachability
+  probe.
+- **gRPC bridge** (`GrpcBridge`) over TorrentService/SystemService/CommandService
+  with a per-call timeout (default 5 s) and a four-variant `BridgeError`.
+- **View model** (`AppState`) with display-ready torrents, session statistics,
+  files, peers, trackers, details tabs, context menu, prompt, log and theme.
+- **ratatui widgets**: download list (adaptive columns, progress bar, focus),
+  title and status bars, details pane with Info/Files/Peers/Trackers/Chunks tabs,
+  input prompt, context menu popup and log view.
+- **Interaction**: vi-style navigation, torrent shortcuts (`^S`, `^D`, `^K`,
+  `^R`, `+`/`-`, `I`), file priority commands via `f.priority.set`, command
+  prompt (`command=1,2`), load prompt, and throttle keys for the qwerty, azerty,
+  qwertz and dvorak layouts.
+- **Real-time updates**: background `StreamEvents`/`StreamStats` subscribers over
+  a bounded channel with incremental `apply_event`/`apply_stats`.
+- **Connection health**: reconnection state machine with 1 s → 30 s backoff,
+  10 s health checks, reconnection countdown and a stale-data marker.
+- **Configuration**: `~/.config/rstorrent-tui/config.toml` (XDG-aware) with
+  endpoint, refresh interval, throttle layout and theme colours.
+
+### Notes
+
+- 234 tests cover the client crate; `cargo llvm-cov -p rt-tui-client` reports
+  86.97 % line coverage.
+
 ## [0.16.1] - 2026-10-26
 
 Hotfix and runtime engine wiring release: fixes BDP throughput/RTT collapse, Rayon hashing synchronization, per-piece disk sync stalls, Bitfield word desynchronization, and finishes runtime integration of BlockPool, batching, speed classification, and endgame evaluation.
