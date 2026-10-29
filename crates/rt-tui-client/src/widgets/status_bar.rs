@@ -36,6 +36,13 @@ impl<'a> StatusBarWidget<'a> {
         let stats = &self.state.session_stats;
         let mut spans: Vec<Span<'static>> = Vec::new();
 
+        if let Some(notice) = &self.state.notice {
+            if !spans.is_empty() {
+                spans.push(Span::raw("  "));
+            }
+            spans.push(Span::styled(notice.clone(), Style::new().fg(Color::Red)));
+        }
+
         if width >= RATES_MIN_WIDTH {
             push_segment(
                 &mut spans,

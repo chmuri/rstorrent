@@ -24,6 +24,17 @@ pub fn previous_priority(priority: u32) -> u32 {
     (priority + MAX_PRIORITY) % (MAX_PRIORITY + 1)
 }
 
+/// Keys that act on the client rather than on one torrent.
+pub fn global_action(code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
+    match (code, modifiers) {
+        (KeyCode::Backspace, _) => Some(TuiAction::OpenPrompt(PromptKind::Load)),
+        (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::OpenPrompt(PromptKind::Command))
+        }
+        _ => None,
+    }
+}
+
 /// Maps a key press onto a torrent action.
 ///
 /// `ignored` is the client's local view of `d.ignore_commands`, because the
@@ -53,7 +64,7 @@ pub fn torrent_action(
         }
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => Some(TuiAction::Batch(vec![
             TuiAction::Execute {
-                command: IGNORE_COMMANDS,
+                command: IGNORE_COMMANDS.to_string(),
                 args: vec![1],
                 hash: Some(hash.clone()),
             },
@@ -68,7 +79,7 @@ pub fn torrent_action(
         ])),
         (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(TuiAction::Batch(vec![
             TuiAction::Execute {
-                command: COMPLETE_SET,
+                command: COMPLETE_SET.to_string(),
                 args: vec![0],
                 hash: Some(hash.clone()),
             },
@@ -86,14 +97,10 @@ pub fn torrent_action(
             priority: previous_priority(torrent.priority),
         }),
         (KeyCode::Char('I'), _) => Some(TuiAction::Execute {
-            command: IGNORE_COMMANDS,
+            command: IGNORE_COMMANDS.to_string(),
             args: vec![if ignored { 0 } else { 1 }],
             hash: Some(hash),
         }),
-        (KeyCode::Backspace, _) => Some(TuiAction::OpenPrompt(PromptKind::Load)),
-        (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
-            Some(TuiAction::OpenPrompt(PromptKind::Command))
-        }
         _ => None,
     }
 }

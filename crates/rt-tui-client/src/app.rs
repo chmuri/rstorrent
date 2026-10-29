@@ -12,17 +12,27 @@ use rt_grpc::{object_value, CommandResponse, ObjectValue};
 use crate::actions::{PromptKind, TuiAction};
 use crate::bridge::{BridgeError, GrpcBridge};
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
-use crate::key_handler::{self, torrent_action};
-use crate::state::{AppState, DetailTab, DetailsState, FileListState};
+use crate::key_handler::{self, global_action, torrent_action};
+use crate::state::{
+    AppState, DetailTab, DetailsState, FileListState, MenuEntry, MenuResult, MenuState,
+};
 use crate::terminal::ClientTerminal;
+use crate::throttle::{ThrottleAction, ThrottleKeyMap};
 use crate::widgets::download_list::visible_rows;
-use crate::widgets::{DetailsWidget, DownloadListWidget, StatusBarWidget, TitleBarWidget};
+use crate::widgets::input::{InputResult, InputState, PromptMode};
+use crate::widgets::InputWidget;
+use crate::widgets::{
+    DetailsWidget, DownloadListWidget, MenuWidget, StatusBarWidget, TitleBarWidget,
+};
 
 /// Tick used when the caller does not configure one.
 pub const DEFAULT_TICK: Duration = Duration::from_millis(500);
 
 /// Longest the loop blocks waiting for input, so refreshes stay on schedule.
 const MAX_INPUT_WAIT: Duration = Duration::from_millis(50);
+
+/// Number of prompt lines remembered across prompt openings.
+const PROMPT_HISTORY_LIMIT: usize = 100;
 
 /// rTorrent command used to change a file's priority.
 pub const PRIORITY_COMMAND: &str = "f.priority.set";
@@ -52,7 +62,10 @@ pub struct App {
     details_request: Option<String>,
     priority_command: Option<PriorityCommand>,
     ignored: HashSet<String>,
-    prompt_request: Option<PromptKind>,
+    /// Open input prompt, if any.
+    pub prompt: Option<InputState>,
+    prompt_history: Vec<String>,
+    throttle: ThrottleKeyMap,
 }
 
 impl App {
@@ -68,7 +81,9 @@ impl App {
             details_request: None,
             priority_command: None,
             ignored: HashSet::new(),
-            prompt_request: None,
+            prompt: None,
+            prompt_history: Vec::new(),
+            throttle: ThrottleKeyMap::new("qwerty"),
         }
     }
 
@@ -84,13 +99,21 @@ impl App {
             details_request: None,
             priority_command: None,
             ignored: HashSet::new(),
-            prompt_request: None,
+            prompt: None,
+            prompt_history: Vec::new(),
+            throttle: ThrottleKeyMap::new("qwerty"),
         }
     }
 
     /// Overrides the refresh interval.
     pub fn with_tick(mut self, tick: Duration) -> Self {
         self.tick = tick;
+        self
+    }
+
+    /// Uses the throttle key layout (`qwerty`, `azerty`, `qwertz`, `dvorak`).
+    pub fn with_layout(mut self, layout: &str) -> Self {
+        self.throttle = ThrottleKeyMap::new(layout);
         self
     }
 
@@ -121,12 +144,158 @@ impl App {
             return None;
         }
 
+        if self.prompt.is_some() {
+            return self.handle_prompt_key(code, modifiers);
+        }
+
+        if self.state.menu.is_some() {
+            return self.handle_menu_key(code, modifiers);
+        }
+
         if self.state.details.is_some() {
             self.handle_details_key(code, modifiers);
             return None;
         }
 
         self.handle_list_key(code, modifiers)
+    }
+
+    /// Keys active while a prompt is open.
+    fn handle_prompt_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
+        let result = self
+            .prompt
+            .as_mut()
+            .map(|prompt| (prompt.mode(), prompt.handle_key(code, modifiers)));
+
+        match result {
+            None | Some((_, InputResult::Pending)) => None,
+            Some((_, InputResult::Cancelled)) => {
+                self.prompt = None;
+                None
+            }
+            Some((mode, InputResult::Submitted(text))) => {
+                self.remember_prompt(&text);
+                self.prompt = None;
+                self.submit_prompt(mode, &text)
+            }
+        }
+    }
+
+    /// Opens a prompt seeded with the command history.
+    fn open_prompt(&mut self, mode: PromptMode) {
+        let mut prompt = InputState::new(mode);
+        for entry in &self.prompt_history {
+            prompt.add_history(entry);
+        }
+        self.prompt = Some(prompt);
+    }
+
+    /// Remembers a submitted prompt line, bounded to the newest 100.
+    fn remember_prompt(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+
+        self.prompt_history.push(text.to_string());
+        if self.prompt_history.len() > PROMPT_HISTORY_LIMIT {
+            self.prompt_history.remove(0);
+        }
+    }
+
+    /// Turns submitted prompt text into an action.
+    fn submit_prompt(&mut self, mode: PromptMode, text: &str) -> Option<TuiAction> {
+        match mode {
+            PromptMode::Command => self.parse_command(text),
+            PromptMode::LoadStart => Some(TuiAction::Load {
+                path: text.to_string(),
+                start: true,
+            }),
+            PromptMode::LoadNormal => Some(TuiAction::Load {
+                path: text.to_string(),
+                start: false,
+            }),
+            PromptMode::Filter => {
+                self.state.filter = Some(text.to_string());
+                None
+            }
+        }
+    }
+
+    /// Parses `command` or `command=1,2` into an executable action.
+    fn parse_command(&mut self, text: &str) -> Option<TuiAction> {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+
+        let (command, raw_args) = match text.split_once('=') {
+            Some((command, args)) => (command.trim(), args),
+            None => (text, ""),
+        };
+
+        if command.is_empty() {
+            self.state.notice = Some(format!("invalid command `{text}`"));
+            return None;
+        }
+
+        let mut args = Vec::new();
+        for token in raw_args
+            .split(',')
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+        {
+            match token.parse::<i64>() {
+                Ok(value) => args.push(value),
+                Err(_) => {
+                    self.state.notice = Some(format!("invalid argument `{token}`"));
+                    return None;
+                }
+            }
+        }
+
+        Some(TuiAction::Execute {
+            command: command.to_string(),
+            args,
+            hash: None,
+        })
+    }
+
+    /// Keys active while the context menu is open.
+    fn handle_menu_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
+        let result = self
+            .state
+            .menu
+            .as_mut()
+            .map(|menu| menu.handle_key(code, modifiers));
+
+        match result {
+            None | Some(MenuResult::Pending) => None,
+            Some(MenuResult::Closed) => {
+                self.state.menu = None;
+                None
+            }
+            Some(MenuResult::Activated(action)) => {
+                self.state.menu = None;
+                Some(action)
+            }
+        }
+    }
+
+    /// Opens the context menu for the focused torrent.
+    fn open_menu(&mut self) {
+        let entries = match self.state.selected() {
+            Some(torrent) => menu_entries(torrent),
+            None => return,
+        };
+
+        self.state.menu = Some(MenuState::new(entries));
+    }
+
+    /// Replaces the prompt text (used by tests and TASK-16 scripting).
+    pub fn set_prompt_text(&mut self, text: &str) {
+        if let Some(prompt) = self.prompt.as_mut() {
+            prompt.set_text(text);
+        }
     }
 
     /// Keys active while the torrent list is shown.
@@ -162,23 +331,62 @@ impl App {
                 self.details_request = self.state.selected().map(|torrent| torrent.hash.clone());
                 return None;
             }
+            (KeyCode::Char('m'), KeyModifiers::NONE) => {
+                self.open_menu();
+                return None;
+            }
             _ => {}
         }
 
-        let torrent = self.state.selected()?;
-        let ignored = self.ignored.contains(&torrent.hash);
-        let action = torrent_action(code, modifiers, torrent, ignored)?;
+        if let Some(action) = global_action(code, modifiers) {
+            return Some(action);
+        }
 
-        // Reflect `d.ignore_commands` locally as soon as the user asks for it.
-        for (hash, value) in ignore_updates(&action) {
-            if value {
-                self.ignored.insert(hash);
-            } else {
-                self.ignored.remove(&hash);
+        if let Some(torrent) = self.state.selected() {
+            let ignored = self.ignored.contains(&torrent.hash);
+
+            if let Some(action) = torrent_action(code, modifiers, torrent, ignored) {
+                // Reflect `d.ignore_commands` locally as soon as the user asks for it.
+                for (hash, value) in ignore_updates(&action) {
+                    if value {
+                        self.ignored.insert(hash);
+                    } else {
+                        self.ignored.remove(&hash);
+                    }
+                }
+
+                return Some(action);
             }
         }
 
-        Some(action)
+        match code {
+            KeyCode::Char(key) if !modifiers.contains(KeyModifiers::CONTROL) => self
+                .throttle
+                .lookup(key)
+                .and_then(|action| self.throttle_action(action)),
+            _ => None,
+        }
+    }
+
+    /// Builds the throttle command for one key press.
+    fn throttle_action(&mut self, action: ThrottleAction) -> Option<TuiAction> {
+        let current = match action {
+            ThrottleAction::UploadUp(_) | ThrottleAction::UploadDown(_) => {
+                self.state.session_stats.throttle_up_limit
+            }
+            ThrottleAction::DownloadUp(_) | ThrottleAction::DownloadDown(_) => {
+                self.state.session_stats.throttle_down_limit
+            }
+        };
+
+        let limit = u64::try_from(current).unwrap_or(0);
+        let next = ThrottleKeyMap::adjust(limit, action);
+
+        Some(TuiAction::Execute {
+            command: action.command().to_string(),
+            args: vec![i64::try_from(next).unwrap_or(i64::MAX)],
+            hash: None,
+        })
     }
 
     /// Keys active while the details pane is shown.
@@ -341,8 +549,11 @@ impl App {
     pub async fn execute_action(&mut self, action: TuiAction) -> Option<Result<(), BridgeError>> {
         for step in flatten(action) {
             match self.execute_step(step).await {
-                Some(Ok(())) => {}
-                Some(Err(error)) => return Some(Err(error)),
+                Some(Ok(())) => self.state.notice = None,
+                Some(Err(error)) => {
+                    self.state.notice = Some(error.to_string());
+                    return Some(Err(error));
+                }
                 None => return None,
             }
         }
@@ -353,7 +564,7 @@ impl App {
     /// Executes a single (non-batch) action.
     async fn execute_step(&mut self, action: TuiAction) -> Option<Result<(), BridgeError>> {
         match action {
-            TuiAction::Batch(_) => Some(Ok(())),
+            TuiAction::Noop | TuiAction::Batch(_) => Some(Ok(())),
             TuiAction::ControlTorrent { hash, action } => {
                 let bridge = self.bridge.as_mut()?;
                 Some(bridge.control_torrent(&hash, action).await)
@@ -374,28 +585,36 @@ impl App {
                 let bridge = self.bridge.as_mut()?;
                 Some(
                     bridge
-                        .execute_ints(command, &args, hash.as_deref())
+                        .execute_ints(&command, &args, hash.as_deref())
+                        .await
+                        .map(|_response| ()),
+                )
+            }
+            TuiAction::Load { path, start } => {
+                let bridge = self.bridge.as_mut()?;
+                let command = if start { "load.start" } else { "load.normal" };
+
+                Some(
+                    bridge
+                        .execute_strings(command, &[path], None)
                         .await
                         .map(|_response| ()),
                 )
             }
             TuiAction::OpenPrompt(kind) => {
-                self.prompt_request = Some(kind);
+                self.open_prompt(prompt_mode(kind));
                 Some(Ok(()))
             }
         }
     }
 
-    /// Takes the prompt the user asked to open.
-    pub fn take_prompt_request(&mut self) -> Option<PromptKind> {
-        self.prompt_request.take()
-    }
-
-    /// Renders one frame: title bar, body (list or details), status bar.
+    /// Renders one frame: title bar, body, optional prompt line and status bar.
     pub fn draw(&self, frame: &mut Frame) {
-        let [title_area, body_area, status_area] = Layout::vertical([
+        let prompt_rows = if self.prompt.is_some() { 1 } else { 0 };
+        let [title_area, body_area, prompt_area, status_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
+            Constraint::Length(prompt_rows),
             Constraint::Length(1),
         ])
         .areas(frame.area());
@@ -407,6 +626,14 @@ impl App {
                 frame.render_widget(DetailsWidget::new(details, details.active_tab), body_area)
             }
             None => frame.render_widget(DownloadListWidget::new(&self.state), body_area),
+        }
+
+        if let Some(menu) = self.state.menu.as_ref() {
+            frame.render_widget(MenuWidget::new(menu), body_area);
+        }
+
+        if let Some(prompt) = self.prompt.as_ref() {
+            frame.render_widget(InputWidget::new(prompt), prompt_area);
         }
 
         frame.render_widget(StatusBarWidget::new(&self.state), status_area);
@@ -522,4 +749,79 @@ fn ignore_updates(action: &TuiAction) -> Vec<(String, bool)> {
         TuiAction::Batch(steps) => steps.iter().flat_map(ignore_updates).collect(),
         _ => Vec::new(),
     }
+}
+
+/// Maps a prompt request onto the input mode.
+fn prompt_mode(kind: PromptKind) -> PromptMode {
+    match kind {
+        PromptKind::Command => PromptMode::Command,
+        PromptKind::Load => PromptMode::LoadStart,
+    }
+}
+
+/// Menu entries available for `torrent`.
+fn menu_entries(torrent: &crate::state::TorrentViewModel) -> Vec<MenuEntry> {
+    let hash = torrent.hash.clone();
+    let active = torrent.is_active;
+    let priority = torrent.priority;
+
+    vec![
+        MenuEntry::new(
+            "Start",
+            TuiAction::ControlTorrent {
+                hash: hash.clone(),
+                action: crate::actions::TorrentAction::Start,
+            },
+            !active,
+        ),
+        MenuEntry::new(
+            "Stop",
+            TuiAction::ControlTorrent {
+                hash: hash.clone(),
+                action: crate::actions::TorrentAction::Stop,
+            },
+            active,
+        ),
+        MenuEntry::new(
+            "Close",
+            TuiAction::ControlTorrent {
+                hash: hash.clone(),
+                action: crate::actions::TorrentAction::Close,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            "Check Hash",
+            TuiAction::ControlTorrent {
+                hash: hash.clone(),
+                action: crate::actions::TorrentAction::CheckHash,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            "Priority Low",
+            TuiAction::SetPriority {
+                hash: hash.clone(),
+                priority: 1,
+            },
+            priority != 1,
+        ),
+        MenuEntry::new(
+            "Priority Normal",
+            TuiAction::SetPriority {
+                hash: hash.clone(),
+                priority: 2,
+            },
+            priority != 2,
+        ),
+        MenuEntry::new(
+            "Priority High",
+            TuiAction::SetPriority {
+                hash: hash.clone(),
+                priority: 3,
+            },
+            priority != 3,
+        ),
+        MenuEntry::new("Remove", TuiAction::RemoveTorrent { hash }, true),
+    ]
 }
