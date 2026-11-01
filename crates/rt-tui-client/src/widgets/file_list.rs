@@ -49,10 +49,17 @@ impl Widget for FileListWidget<'_> {
         let rows = range
             .map(|index| {
                 let entry = &self.state.entries[index];
-                let row = Row::new(cells_for(entry));
+                let is_selected = !entry.is_directory && self.state.is_selected(entry.index);
+                let row = Row::new(cells_for(entry, is_selected));
 
                 if index == self.state.focus_index && !entry.is_directory {
-                    row.style(Style::new().reversed())
+                    if is_selected {
+                        row.style(Style::new().reversed().fg(Color::Yellow))
+                    } else {
+                        row.style(Style::new().reversed())
+                    }
+                } else if is_selected {
+                    row.style(Style::new().fg(Color::Yellow))
                 } else {
                     row
                 }
@@ -72,7 +79,7 @@ impl Widget for FileListWidget<'_> {
 }
 
 /// Cells of one file row; directory rows only carry a path and a total size.
-fn cells_for(entry: &FileEntry) -> Vec<Cell<'_>> {
+fn cells_for(entry: &FileEntry, is_selected: bool) -> Vec<Cell<'_>> {
     if entry.is_directory {
         return vec![
             Cell::from(""),
@@ -83,9 +90,15 @@ fn cells_for(entry: &FileEntry) -> Vec<Cell<'_>> {
         ];
     }
 
+    let path_str = if is_selected {
+        format!("* {}", entry.path)
+    } else {
+        entry.path.clone()
+    };
+
     vec![
         Cell::from(entry.index.to_string()),
-        Cell::from(entry.path.as_str()),
+        Cell::from(path_str),
         Cell::from(entry.size_display.as_str()),
         Cell::from(format!("{:>3.0}%", entry.completed_percent)),
         Cell::from(Span::styled(

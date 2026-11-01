@@ -36,6 +36,28 @@ pub struct DhtHandle {
     pub router: Arc<Mutex<DhtRouter>>,
 }
 
+impl DhtHandle {
+    /// Contacts an externally supplied peer (BT `PORT` message) while the routing table is active.
+    pub fn add_peer_node(&self, sa: &SocketAddress, port: u16) {
+        let mut node_sa = sa.clone();
+        if node_sa.set_port(port).is_err() {
+            return;
+        }
+        if !self.server.is_active() {
+            return;
+        }
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let server = Arc::clone(&self.server);
+        let router = Arc::clone(&self.router);
+        handle.spawn(async move {
+            let own_id = router.lock().await.own_id;
+            query_find_node(server, router, vec![node_sa], own_id, false).await;
+        });
+    }
+}
+
 /// `dht.mode` values.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DhtMode {

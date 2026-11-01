@@ -65,6 +65,7 @@ pub struct App {
     last_refresh: Option<Instant>,
     details_request: Option<String>,
     priority_command: Option<PriorityCommand>,
+    priority_commands: Vec<PriorityCommand>,
     ignored: HashSet<String>,
     /// Open input prompt, if any.
     pub prompt: Option<InputState>,
@@ -88,6 +89,7 @@ impl App {
             last_refresh: None,
             details_request: None,
             priority_command: None,
+            priority_commands: Vec::new(),
             ignored: HashSet::new(),
             prompt: None,
             prompt_history: Vec::new(),
@@ -110,6 +112,7 @@ impl App {
             last_refresh: None,
             details_request: None,
             priority_command: None,
+            priority_commands: Vec::new(),
             ignored: HashSet::new(),
             prompt: None,
             prompt_history: Vec::new(),
@@ -404,11 +407,17 @@ impl App {
         }
     }
 
-    /// Opens the context menu for the focused torrent.
+    /// Opens the context menu for the focused torrent, or bulk menu if multiple selected.
     fn open_menu(&mut self) {
-        let entries = match self.state.selected() {
-            Some(torrent) => menu_entries(torrent),
-            None => return,
+        let entries = if self.state.selection_count() > 0 {
+            let hashes = self.state.target_hashes();
+            let count = hashes.len();
+            bulk_menu_entries(hashes, count)
+        } else {
+            match self.state.selected() {
+                Some(torrent) => menu_entries(torrent),
+                None => return,
+            }
         };
 
         self.state.menu = Some(MenuState::new(entries));
@@ -488,9 +497,25 @@ impl App {
                 self.state.show_log = true;
                 return None;
             }
+            (KeyCode::Char(' '), KeyModifiers::NONE) => {
+                self.state.toggle_select_focused();
+                return None;
+            }
+            (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+                self.state.select_all();
+                return None;
+            }
+            (KeyCode::Char('*'), KeyModifiers::NONE) => {
+                self.state.invert_selection();
+                return None;
+            }
             (KeyCode::Esc, _) if self.state.filter.is_some() => {
                 self.state.filter = None;
                 self.state.clamp_focus();
+                return None;
+            }
+            (KeyCode::Esc, _) if self.state.selection_count() > 0 => {
+                self.state.deselect_all();
                 return None;
             }
             _ => {}
@@ -498,6 +523,26 @@ impl App {
 
         if let Some(action) = global_action(code, modifiers) {
             return Some(action);
+        }
+
+        if self.state.selection_count() > 0 {
+            let hashes = self.state.target_hashes();
+            let current_priority = self.state.selected().map_or(2, |t| t.priority);
+            let any_active = self
+                .state
+                .torrents
+                .iter()
+                .any(|t| self.state.selected_hashes.contains(&t.hash) && t.is_active);
+
+            if let Some(action) = key_handler::bulk_torrent_action(
+                code,
+                modifiers,
+                hashes,
+                current_priority,
+                any_active,
+            ) {
+                return Some(action);
+            }
         }
 
         if let Some(torrent) = self.state.selected() {
@@ -558,6 +603,36 @@ impl App {
         };
 
         match (code, modifiers) {
+            (KeyCode::Char('x'), _) | (KeyCode::Char('v'), _) | (KeyCode::Insert, _)
+                if active_tab == DetailTab::Files =>
+            {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.toggle_select_focused();
+                }
+            }
+            (KeyCode::Char('a'), KeyModifiers::CONTROL) if active_tab == DetailTab::Files => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.select_all();
+                }
+            }
+            (KeyCode::Char('i'), _) | (KeyCode::Char('I'), _) if active_tab == DetailTab::Files => {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.invert_selection();
+                }
+            }
+            (KeyCode::Esc, _)
+                if active_tab == DetailTab::Files
+                    && self
+                        .state
+                        .details
+                        .as_ref()
+                        .map_or(0, |d| d.files.selection_count())
+                        > 0 =>
+            {
+                if let Some(details) = self.state.details.as_mut() {
+                    details.files.deselect_all();
+                }
+            }
             (KeyCode::Esc, _) | (KeyCode::Backspace, _) => {
                 self.state.details = None;
             }
@@ -711,27 +786,54 @@ impl App {
         self.state.notice = Some(message);
     }
 
-    /// Cycles the focused file's priority and queues the matching command.
+    /// Cycles the focused or selected file(s) priority and queues the matching command(s).
     fn cycle_file_priority(&mut self) {
         let Some(details) = self.state.details.as_mut() else {
             return;
         };
         let hash = details.info.hash.clone();
-        let Some(file) = details.files.focused_mut() else {
-            return;
-        };
 
-        file.priority = FileListState::next_priority(file.priority);
-        self.priority_command = Some(PriorityCommand {
-            file_index: file.index,
-            priority: file.priority,
-            hash,
-        });
+        if details.files.selection_count() > 0 {
+            let target_indices = details.files.selected_indices.clone();
+            let base_prio = details.files.focused().map_or(1, |f| f.priority);
+            let next_prio = FileListState::next_priority(base_prio);
+
+            for entry in &mut details.files.entries {
+                if !entry.is_directory && target_indices.contains(&entry.index) {
+                    entry.priority = next_prio;
+                    self.priority_commands.push(PriorityCommand {
+                        file_index: entry.index,
+                        priority: next_prio,
+                        hash: hash.clone(),
+                    });
+                }
+            }
+            if self.priority_command.is_none() && !self.priority_commands.is_empty() {
+                self.priority_command = Some(self.priority_commands.remove(0));
+            }
+        } else {
+            let Some(file) = details.files.focused_mut() else {
+                return;
+            };
+
+            file.priority = FileListState::next_priority(file.priority);
+            self.priority_command = Some(PriorityCommand {
+                file_index: file.index,
+                priority: file.priority,
+                hash,
+            });
+        }
     }
 
     /// Takes the priority change waiting to be sent to the daemon.
     pub fn take_priority_command(&mut self) -> Option<PriorityCommand> {
-        self.priority_command.take()
+        if let Some(cmd) = self.priority_command.take() {
+            return Some(cmd);
+        }
+        if !self.priority_commands.is_empty() {
+            return Some(self.priority_commands.remove(0));
+        }
+        None
     }
 
     /// Sends a priority change through `CommandService`.
@@ -787,6 +889,36 @@ impl App {
             TuiAction::SetPriority { hash, priority } => {
                 let bridge = self.bridge.as_mut()?;
                 Some(bridge.set_torrent_priority(&hash, priority).await)
+            }
+            TuiAction::BulkControlTorrents { hashes, action } => {
+                let bridge = self.bridge.as_mut()?;
+                Some(
+                    bridge
+                        .bulk_control_torrents(&hashes, action)
+                        .await
+                        .map(|_| ()),
+                )
+            }
+            TuiAction::BulkRemoveTorrents { hashes } => {
+                let bridge = self.bridge.as_mut()?;
+                for hash in &hashes {
+                    self.state.selected_hashes.remove(hash);
+                }
+                Some(
+                    bridge
+                        .bulk_remove_torrents(&hashes, false)
+                        .await
+                        .map(|_| ()),
+                )
+            }
+            TuiAction::BulkSetPriority { hashes, priority } => {
+                let bridge = self.bridge.as_mut()?;
+                Some(
+                    bridge
+                        .bulk_set_torrent_priority(&hashes, priority)
+                        .await
+                        .map(|_| ()),
+                )
             }
             TuiAction::Execute {
                 command,
@@ -882,7 +1014,7 @@ impl App {
                 }
             }
 
-            if let Some(command) = self.take_priority_command() {
+            while let Some(command) = self.take_priority_command() {
                 match self.send_priority(&command).await {
                     Some(Ok(response)) if !response.success => {
                         tracing::warn!(message = %response.error_message, "priority change rejected");
@@ -1045,5 +1177,72 @@ fn menu_entries(torrent: &crate::state::TorrentViewModel) -> Vec<MenuEntry> {
             priority != 3,
         ),
         MenuEntry::new("Remove", TuiAction::RemoveTorrent { hash }, true),
+    ]
+}
+
+/// Menu entries available when multiple torrents are selected.
+fn bulk_menu_entries(hashes: Vec<String>, count: usize) -> Vec<MenuEntry> {
+    vec![
+        MenuEntry::new(
+            format!("Start ({count} torrents)"),
+            TuiAction::BulkControlTorrents {
+                hashes: hashes.clone(),
+                action: crate::actions::TorrentAction::Start,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Stop ({count} torrents)"),
+            TuiAction::BulkControlTorrents {
+                hashes: hashes.clone(),
+                action: crate::actions::TorrentAction::Stop,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Close ({count} torrents)"),
+            TuiAction::BulkControlTorrents {
+                hashes: hashes.clone(),
+                action: crate::actions::TorrentAction::Close,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Check Hash ({count} torrents)"),
+            TuiAction::BulkControlTorrents {
+                hashes: hashes.clone(),
+                action: crate::actions::TorrentAction::CheckHash,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Priority Low ({count} torrents)"),
+            TuiAction::BulkSetPriority {
+                hashes: hashes.clone(),
+                priority: 1,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Priority Normal ({count} torrents)"),
+            TuiAction::BulkSetPriority {
+                hashes: hashes.clone(),
+                priority: 2,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Priority High ({count} torrents)"),
+            TuiAction::BulkSetPriority {
+                hashes: hashes.clone(),
+                priority: 3,
+            },
+            true,
+        ),
+        MenuEntry::new(
+            format!("Remove ({count} torrents)"),
+            TuiAction::BulkRemoveTorrents { hashes },
+            true,
+        ),
     ]
 }

@@ -52,6 +52,25 @@ pub enum TuiAction {
         /// New priority.
         priority: u32,
     },
+    /// Bulk start/stop/close/check multiple torrents.
+    BulkControlTorrents {
+        /// Info-hashes of the target torrents.
+        hashes: Vec<String>,
+        /// What to do with them.
+        action: TorrentAction,
+    },
+    /// Bulk remove torrents from the session.
+    BulkRemoveTorrents {
+        /// Info-hashes of the target torrents.
+        hashes: Vec<String>,
+    },
+    /// Bulk change priority on multiple torrents.
+    BulkSetPriority {
+        /// Info-hashes of the target torrents.
+        hashes: Vec<String>,
+        /// New priority.
+        priority: u32,
+    },
     /// Run an rTorrent command, optionally scoped to one torrent.
     Execute {
         /// rTorrent command name, e.g. `d.ignore_commands.set`.
