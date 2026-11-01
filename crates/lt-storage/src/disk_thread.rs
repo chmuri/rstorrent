@@ -31,6 +31,7 @@ use crate::file_manager::{FileManager, FileManagerStats, FileManagerStatsHandle}
 use crate::hash_queue::HashQueue;
 use crate::memory_manager::memory_manager;
 use crate::mmap_safe::Prot;
+use crate::piece_cache::{PieceCache, DEFAULT_PIECE_CACHE_CAPACITY_BYTES};
 use crate::socket_file::OpenFlags;
 use crate::writer::TargetFileInfo;
 
@@ -43,16 +44,25 @@ pub const DEFAULT_MAX_OPEN_FILES: usize = 64;
 /// Idle timeout after which the worker closes cached file handles.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Default number of disk workers. One preserves pre-pool behaviour; larger
-/// values must be opted into with `storage.disk_threads`.
-static DEFAULT_THREADS: AtomicUsize = AtomicUsize::new(1);
+/// Default number of disk workers. Scaled automatically to available CPU parallelism
+/// (clamped between 2 and 16) unless explicitly set with `storage.disk_threads`.
+static DEFAULT_THREADS: AtomicUsize = AtomicUsize::new(0);
 /// Default per-worker open-file budget, shared by `storage.max_open_files`
 /// and `network.max_open_files`.
 static DEFAULT_OPEN_FILES: AtomicUsize = AtomicUsize::new(DEFAULT_MAX_OPEN_FILES);
 
 /// Configured worker count for a pool created from defaults.
 pub fn default_disk_threads() -> usize {
-    DEFAULT_THREADS.load(Ordering::Acquire).clamp(1, 64)
+    let configured = DEFAULT_THREADS.load(Ordering::Acquire);
+    if configured == 0 {
+        let detected = std::thread::available_parallelism()
+            .map(|n| (n.get() / 2).clamp(2, 16))
+            .unwrap_or(4);
+        DEFAULT_THREADS.store(detected, Ordering::Release);
+        detected
+    } else {
+        configured.clamp(1, 64)
+    }
 }
 
 /// Sets the worker count used by the next [`DiskPoolConfig::default`].
@@ -1264,6 +1274,7 @@ struct DiskWorker {
     last_used: HashMap<PathBuf, Instant>,
     last_close_idle_check: Instant,
     hash_queue: HashQueue,
+    piece_cache: PieceCache,
     stats: Arc<StatsInner>,
 }
 
@@ -1275,6 +1286,7 @@ impl DiskWorker {
             last_used: HashMap::new(),
             last_close_idle_check: Instant::now(),
             hash_queue: HashQueue::new(),
+            piece_cache: PieceCache::new(DEFAULT_PIECE_CACHE_CAPACITY_BYTES),
             stats,
         }
     }
@@ -1291,15 +1303,36 @@ impl DiskWorker {
                 length,
                 reply,
             } => {
-                let result = self.read_range(ReadRange {
-                    root: &root,
-                    files: files.as_slice(),
-                    piece_length,
-                    piece_index,
-                    block_offset,
-                    length,
-                    hashing: false,
-                });
+                let cached_data = self
+                    .piece_cache
+                    .get(&root, piece_index, block_offset, length)
+                    .map(|slice| slice.to_vec());
+
+                let result = match cached_data {
+                    Some(data) => Ok(data),
+                    None => {
+                        let res = self.read_range(ReadRange {
+                            root: &root,
+                            files: files.as_slice(),
+                            piece_length,
+                            piece_index,
+                            block_offset,
+                            length,
+                            hashing: false,
+                        });
+                        if let Ok(ref data) = res {
+                            self.piece_cache.put(
+                                root.clone(),
+                                piece_index,
+                                block_offset,
+                                length,
+                                data.clone(),
+                            );
+                        }
+                        res
+                    }
+                };
+
                 if result.is_ok() {
                     self.stats.reads_completed.fetch_add(1, Ordering::AcqRel);
                 }
@@ -1562,6 +1595,15 @@ impl DiskWorker {
             );
             self.manager.end_io(file);
             result?;
+            #[cfg(target_os = "linux")]
+            unsafe {
+                libc::posix_fadvise(
+                    fd,
+                    segment.file_offset as libc::off_t,
+                    (segment.data_end - segment.data_start) as libc::off_t,
+                    libc::POSIX_FADV_DONTNEED,
+                );
+            }
             self.last_used.insert(path, Instant::now());
         }
 

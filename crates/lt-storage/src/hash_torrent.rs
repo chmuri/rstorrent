@@ -13,15 +13,16 @@
 //! torrent out for the duration of the pass (the engine does this while
 //! verification owns the data).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use lt_common::bitfield::Bitfield;
 use lt_crypto::sha1::sha1_hash;
+use rayon::prelude::*;
 
 use crate::disk_thread::DiskThread;
 use crate::error::StorageError;
@@ -252,58 +253,73 @@ impl HashTorrent {
         }
 
         let mut bitfield = initial.clone();
+        let cache = ConcurrentReadCache::new(self.read_cache_entries);
+
+        let results: Vec<(u32, Option<bool>)> = pieces
+            .par_iter()
+            .map(|&index| {
+                if self.is_cancelled() {
+                    return (index, None);
+                }
+                let piece_size = self.piece_size(index);
+                let expected = self.piece_hashes.get(index as usize).copied();
+
+                let matches = match expected {
+                    None => false,
+                    Some(expected_hash) => {
+                        match self.hash_piece_concurrent(&cache, index, piece_size) {
+                            Ok(data) => sha1_hash(&data) == expected_hash,
+                            Err(_) => false,
+                        }
+                    }
+                };
+                (index, Some(matches))
+            })
+            .collect();
+
         let mut checked = 0u32;
         let mut failed = 0u32;
         let mut failed_pieces = Vec::new();
-        let mut cache = ReadCache::new(self.read_cache_entries);
-
         let mut position = 0usize;
-        while position < pieces.len() {
-            let index = pieces[position];
+        let mut cancelled = false;
 
-            if self.is_cancelled() {
-                // Only the pieces actually examined above may claim to be
-                // complete. Everything still queued for this pass is cleared
-                // and reported so the caller can reschedule it.
-                let unchecked_pieces = pieces[position..].to_vec();
-                for &unchecked in &unchecked_pieces {
-                    bitfield.unset(unchecked as usize);
+        for (pos, &(index, res)) in results.iter().enumerate() {
+            match res {
+                Some(matches) => {
+                    checked += 1;
+                    if matches {
+                        bitfield.set(index as usize);
+                    } else {
+                        bitfield.unset(index as usize);
+                        failed += 1;
+                        failed_pieces.push(index);
+                    }
+                    self.checked.store(checked, Ordering::SeqCst);
+                    self.failed.store(failed, Ordering::SeqCst);
+                    progress(checked, total);
                 }
+                None => {
+                    cancelled = true;
+                    position = pos;
+                    break;
+                }
+            }
+        }
 
-                return Ok(HashResult {
-                    bitfield,
-                    checked,
-                    failed,
-                    failed_pieces,
-                    unchecked_pieces,
-                    cancelled: true,
-                });
+        if cancelled {
+            let unchecked_pieces = pieces[position..].to_vec();
+            for &unchecked in &unchecked_pieces {
+                bitfield.unset(unchecked as usize);
             }
 
-            let piece_size = self.piece_size(index);
-            let expected = self.piece_hashes.get(index as usize).copied();
-
-            let matches = match expected {
-                None => false,
-                Some(expected_hash) => match self.hash_piece(&mut cache, index, piece_size) {
-                    Ok(data) => sha1_hash(&data) == expected_hash,
-                    Err(_) => false,
-                },
-            };
-
-            if matches {
-                bitfield.set(index as usize);
-            } else {
-                bitfield.unset(index as usize);
-                failed += 1;
-                failed_pieces.push(index);
-            }
-
-            checked += 1;
-            self.checked.store(checked, Ordering::SeqCst);
-            self.failed.store(failed, Ordering::SeqCst);
-            progress(checked, total);
-            position += 1;
+            return Ok(HashResult {
+                bitfield,
+                checked,
+                failed,
+                failed_pieces,
+                unchecked_pieces,
+                cancelled: true,
+            });
         }
 
         Ok(HashResult {
@@ -316,9 +332,9 @@ impl HashTorrent {
         })
     }
 
-    fn hash_piece(
+    fn hash_piece_concurrent(
         &self,
-        cache: &mut ReadCache,
+        cache: &ConcurrentReadCache,
         index: u32,
         piece_size: u32,
     ) -> Result<Vec<u8>, StorageError> {
@@ -348,38 +364,38 @@ impl HashTorrent {
     }
 }
 
-/// Small FIFO cache of read-only file handles used during hashing.
-struct ReadCache {
-    max_open: usize,
-    files: HashMap<PathBuf, File>,
-    order: VecDeque<PathBuf>,
+/// Thread-safe file handle cache used during parallel hashing passes.
+struct ConcurrentReadCache {
+    files: RwLock<HashMap<PathBuf, Arc<File>>>,
 }
 
-impl ReadCache {
-    fn new(max_open: usize) -> Self {
+impl ConcurrentReadCache {
+    fn new(_max_open: usize) -> Self {
         Self {
-            max_open: max_open.max(1),
-            files: HashMap::new(),
-            order: VecDeque::new(),
+            files: RwLock::new(HashMap::new()),
         }
     }
 
-    fn get(&mut self, path: &Path) -> Result<&File, StorageError> {
-        if !self.files.contains_key(path) {
-            while self.files.len() >= self.max_open {
-                if let Some(oldest) = self.order.pop_front() {
-                    self.files.remove(&oldest);
-                } else {
-                    break;
-                }
+    fn get(&self, path: &Path) -> Result<Arc<File>, StorageError> {
+        {
+            let map = self
+                .files
+                .read()
+                .map_err(|_| StorageError::Io(std::io::Error::other("read cache lock poisoned")))?;
+            if let Some(file) = map.get(path) {
+                return Ok(Arc::clone(file));
             }
-
-            let file = OpenOptions::new().read(true).open(path)?;
-            self.files.insert(path.to_path_buf(), file);
-            self.order.push_back(path.to_path_buf());
         }
-
-        Ok(self.files.get(path).expect("file inserted above"))
+        let mut map = self
+            .files
+            .write()
+            .map_err(|_| StorageError::Io(std::io::Error::other("read cache lock poisoned")))?;
+        if let Some(file) = map.get(path) {
+            return Ok(Arc::clone(file));
+        }
+        let file = Arc::new(OpenOptions::new().read(true).open(path)?);
+        map.insert(path.to_path_buf(), Arc::clone(&file));
+        Ok(file)
     }
 }
 

@@ -251,6 +251,7 @@ pub struct Download {
     hash_failed_pieces: Vec<u32>,
     pending_hash_pieces: Vec<u32>,
     chunks_hashed: Arc<AtomicU32>,
+    web_seeds: Vec<String>,
 }
 
 struct PendingDiskWrite {
@@ -387,6 +388,7 @@ impl Download {
             hash_failed_pieces: Vec::new(),
             pending_hash_pieces: Vec::new(),
             chunks_hashed: Arc::new(AtomicU32::new(0)),
+            web_seeds: Vec::new(),
         }
     }
 
@@ -401,6 +403,21 @@ impl Download {
     /// issuing file I/O on the caller's thread.
     pub fn set_disk_thread(&mut self, thread: Option<Arc<DiskThread>>) {
         self.disk_thread = thread;
+    }
+
+    /// List of configured WebSeed (BEP 19 / BEP 17) mirror URLs.
+    pub fn web_seeds(&self) -> &[String] {
+        &self.web_seeds
+    }
+
+    /// Replaces the list of WebSeed mirror URLs.
+    pub fn set_web_seeds(&mut self, urls: Vec<String>) {
+        self.web_seeds = urls;
+    }
+
+    /// Adds a WebSeed mirror URL.
+    pub fn add_web_seed(&mut self, url: impl Into<String>) {
+        self.web_seeds.push(url.into());
     }
 
     /// Number of pieces verified but not yet durably written by the worker.
@@ -3043,93 +3060,8 @@ impl RecheckContext {
             })
             .collect();
 
-        if let Some(thread) = self.disk_thread.clone() {
-            let mut seen = HashSet::new();
-            let indices: Vec<u32> = self
-                .ordered
-                .iter()
-                .copied()
-                .filter(|index| (*index as usize) < self.metadata.num_pieces)
-                .filter(|index| seen.insert(*index))
-                .collect();
-
-            let mut bitfield = self.initial.clone();
-            let mut checked: u32 = 0;
-            let mut failed: u32 = 0;
-            let mut failed_pieces: Vec<u32> = Vec::new();
-            let mut unchecked_pieces: Vec<u32> = Vec::new();
-            let mut cancelled = false;
-            self.chunks_hashed.store(0, Ordering::Relaxed);
-
-            for (position, &piece_index) in indices.iter().enumerate() {
-                if self.cancel.load(Ordering::SeqCst) {
-                    cancelled = true;
-                    unchecked_pieces = indices[position..].to_vec();
-                    for &unchecked in &unchecked_pieces {
-                        bitfield.unset(unchecked as usize);
-                    }
-                    break;
-                }
-
-                let piece_size = {
-                    let index = piece_index as usize;
-                    if index >= self.metadata.num_pieces {
-                        0
-                    } else if index == self.metadata.num_pieces.saturating_sub(1) {
-                        let remainder =
-                            (self.metadata.total_size % (self.metadata.piece_length as u64)) as u32;
-                        if remainder == 0 {
-                            self.metadata.piece_length
-                        } else {
-                            remainder
-                        }
-                    } else {
-                        self.metadata.piece_length
-                    }
-                };
-
-                match thread.hash_blocking(
-                    self.save_directory.clone(),
-                    Arc::clone(&self.target_files),
-                    self.metadata.piece_length,
-                    piece_index,
-                    piece_size,
-                    self.disk_generation,
-                ) {
-                    Ok(result) if result.generation == self.disk_generation => {
-                        checked += 1;
-                        self.chunks_hashed.store(checked, Ordering::Relaxed);
-                        let matches = hashes
-                            .get(piece_index as usize)
-                            .map(|expected| *expected == result.hash)
-                            .unwrap_or(false);
-
-                        if matches {
-                            bitfield.set(piece_index as usize);
-                        } else {
-                            bitfield.unset(piece_index as usize);
-                            failed += 1;
-                            failed_pieces.push(piece_index);
-                        }
-                    }
-                    Ok(_) | Err(_) => {
-                        checked += 1;
-                        self.chunks_hashed.store(checked, Ordering::Relaxed);
-                        bitfield.unset(piece_index as usize);
-                        failed += 1;
-                        failed_pieces.push(piece_index);
-                    }
-                }
-            }
-
-            return Ok(HashResult {
-                bitfield,
-                checked,
-                failed,
-                failed_pieces,
-                unchecked_pieces,
-                cancelled,
-            });
+        if let Some(thread) = &self.disk_thread {
+            let _ = thread.sync_all();
         }
 
         let mut hasher = HashTorrent::new(

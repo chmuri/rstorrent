@@ -2109,12 +2109,11 @@ async fn run_peer_session(
                             }
                             let mut buf = bytes::BytesMut::with_capacity(messages.len() * 32);
                             PeerMessage::encode_batch(&messages, &mut buf);
-                            let mut frame = buf.to_vec();
                             if let Some(cipher) = write_cipher.as_mut() {
-                                cipher.crypt(&mut frame);
+                                cipher.crypt(&mut buf);
                             }
 
-                            if writer.write_all(&frame).await.is_err() {
+                            if writer.write_all(&buf).await.is_err() {
                                 break;
                             }
                         }
@@ -2552,19 +2551,16 @@ async fn run_peer_session(
                             // A late block from a cancelled/choked request is
                             // still useful. Do not discard it just because it
                             // is no longer tracked.
-                            let already_complete = {
-                                let dl = download.lock().unwrap();
-                                dl.has_piece(index)
-                                    || block_already_received(&dl, index, begin)
-                            };
                             let mut download_finished = false;
-                            if !already_complete {
+                            {
                                 let mut dl = download.lock().unwrap();
-                                let completed = dl
-                                    .receive_block(index, begin, &data)
-                                    .unwrap_or(false);
-                                let _ = dl.poll_disk_completions();
-                                download_finished = completed && dl.is_done();
+                                if !dl.has_piece(index) && !block_already_received(&dl, index, begin) {
+                                    let completed = dl
+                                        .receive_block(index, begin, &data)
+                                        .unwrap_or(false);
+                                    let _ = dl.poll_disk_completions();
+                                    download_finished = completed && dl.is_done();
+                                }
                             }
 
                             if download_finished {

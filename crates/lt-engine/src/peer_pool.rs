@@ -34,19 +34,21 @@ pub enum PeerSource {
     Dht,
     Pex,
     Inbound,
+    Lsd,
 }
 
 impl PeerSource {
-    pub const ALL: [PeerSource; 4] = [
+    pub const ALL: [PeerSource; 5] = [
         PeerSource::Tracker,
         PeerSource::Dht,
         PeerSource::Pex,
         PeerSource::Inbound,
+        PeerSource::Lsd,
     ];
 
     /// Sources that must be ignored for private torrents.
     pub fn is_external(self) -> bool {
-        matches!(self, PeerSource::Dht | PeerSource::Pex)
+        matches!(self, PeerSource::Dht | PeerSource::Pex | PeerSource::Lsd)
     }
 
     pub fn as_str(self) -> &'static str {
@@ -55,6 +57,7 @@ impl PeerSource {
             PeerSource::Dht => "dht",
             PeerSource::Pex => "pex",
             PeerSource::Inbound => "inbound",
+            PeerSource::Lsd => "lsd",
         }
     }
 }
@@ -166,6 +169,7 @@ pub struct PeerPoolStats {
     pub dht: usize,
     pub pex: usize,
     pub inbound: usize,
+    pub lsd: usize,
 }
 
 impl PeerPoolStats {
@@ -175,6 +179,7 @@ impl PeerPoolStats {
             PeerSource::Dht => self.dht,
             PeerSource::Pex => self.pex,
             PeerSource::Inbound => self.inbound,
+            PeerSource::Lsd => self.lsd,
         }
     }
 }
@@ -288,6 +293,7 @@ impl PeerPool {
         self.entries.retain(|_, entry| {
             entry.sources.remove(&PeerSource::Dht);
             entry.sources.remove(&PeerSource::Pex);
+            entry.sources.remove(&PeerSource::Lsd);
             !entry.sources.is_empty()
         });
         before - self.entries.len()
@@ -552,6 +558,9 @@ impl PeerPool {
             }
             if entry.sources.contains(&PeerSource::Inbound) {
                 stats.inbound += 1;
+            }
+            if entry.sources.contains(&PeerSource::Lsd) {
+                stats.lsd += 1;
             }
         }
 
