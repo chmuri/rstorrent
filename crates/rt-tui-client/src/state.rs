@@ -4,6 +4,7 @@
 //! wrapped in `Arc`/`Mutex`. Proto messages are mapped into display-ready values
 //! here so widgets never format or divide by zero themselves.
 
+use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -168,6 +169,14 @@ pub struct SessionStats {
     pub throttle_down_display: String,
     /// ` 100.0 KB`, or `∞` when unlimited.
     pub throttle_up_display: String,
+    /// DHT active status.
+    pub dht_active: bool,
+    /// Number of DHT nodes.
+    pub dht_nodes: u32,
+    /// Number of DHT torrents.
+    pub dht_torrents: u32,
+    /// DHT listen port.
+    pub dht_port: u32,
 }
 
 impl Default for SessionStats {
@@ -193,6 +202,10 @@ impl SessionStats {
             throttle_up_limit: response.throttle_up_limit,
             throttle_down_display: throttle_display(response.throttle_down_limit),
             throttle_up_display: throttle_display(response.throttle_up_limit),
+            dht_active: response.dht_active,
+            dht_nodes: response.dht_nodes,
+            dht_torrents: response.dht_torrents,
+            dht_port: response.dht_port,
         }
     }
 }
@@ -278,6 +291,8 @@ pub struct FileListState {
     pub entries: Vec<FileEntry>,
     /// Focused row; always a file row when at least one exists.
     pub focus_index: usize,
+    /// Indices of selected files.
+    pub selected_indices: BTreeSet<u32>,
 }
 
 impl FileListState {
@@ -327,6 +342,67 @@ impl FileListState {
         Self {
             entries,
             focus_index,
+            selected_indices: BTreeSet::new(),
+        }
+    }
+
+    /// Whether file at `index` is selected.
+    pub fn is_selected(&self, index: u32) -> bool {
+        self.selected_indices.contains(&index)
+    }
+
+    /// Number of selected files.
+    pub fn selection_count(&self) -> usize {
+        self.selected_indices.len()
+    }
+
+    /// Toggles selection on the focused file.
+    pub fn toggle_select_focused(&mut self) {
+        if let Some(file) = self.focused() {
+            let index = file.index;
+            if self.selected_indices.contains(&index) {
+                self.selected_indices.remove(&index);
+            } else {
+                self.selected_indices.insert(index);
+            }
+        }
+    }
+
+    /// Selects all non-directory files.
+    pub fn select_all(&mut self) {
+        for entry in &self.entries {
+            if !entry.is_directory {
+                self.selected_indices.insert(entry.index);
+            }
+        }
+    }
+
+    /// Deselects all files.
+    pub fn deselect_all(&mut self) {
+        self.selected_indices.clear();
+    }
+
+    /// Inverts selection across all non-directory files.
+    pub fn invert_selection(&mut self) {
+        for entry in &self.entries {
+            if !entry.is_directory {
+                if self.selected_indices.contains(&entry.index) {
+                    self.selected_indices.remove(&entry.index);
+                } else {
+                    self.selected_indices.insert(entry.index);
+                }
+            }
+        }
+    }
+
+    /// Returns target file indices: selected indices if any, else focused file index.
+    pub fn target_file_indices(&self) -> Vec<u32> {
+        if !self.selected_indices.is_empty() {
+            self.selected_indices.iter().copied().collect()
+        } else if let Some(file) = self.focused() {
+            vec![file.index]
+        } else {
+            Vec::new()
         }
     }
 
@@ -1031,6 +1107,8 @@ impl ConnectionStatus {
 pub struct AppState {
     /// Torrents in the current view, in daemon order.
     pub torrents: Vec<TorrentViewModel>,
+    /// Hashes of currently selected torrents.
+    pub selected_hashes: BTreeSet<String>,
     /// Session-wide statistics.
     pub session: SessionStats,
     /// Reachability of the daemon.
@@ -1074,6 +1152,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             torrents: Vec::new(),
+            selected_hashes: BTreeSet::new(),
             session: SessionStats::default(),
             connection: ConnectionStatus::Disconnected {
                 reason: "not connected yet".to_string(),
@@ -1121,6 +1200,7 @@ impl AppState {
             .position(|torrent| torrent.hash == event.hash);
 
         if event.event_name.contains("erased") || event.event_name.contains("removed") {
+            self.selected_hashes.remove(&event.hash);
             if let Some(index) = position {
                 self.torrents.remove(index);
                 self.clamp_focus();
@@ -1158,6 +1238,8 @@ impl AppState {
         let stats = bridge.session_stats().await?;
 
         self.torrents = torrents.iter().map(TorrentViewModel::from_proto).collect();
+        self.selected_hashes
+            .retain(|hash| self.torrents.iter().any(|t| &t.hash == hash));
         self.session = SessionStats::from_proto(&stats);
         self.clamp_focus();
 
@@ -1225,5 +1307,71 @@ impl AppState {
         self.focus_index = self
             .focus_index
             .min(self.visible_torrents().len().saturating_sub(1));
+    }
+
+    /// Whether torrent with `hash` is selected.
+    pub fn is_selected(&self, hash: &str) -> bool {
+        self.selected_hashes.contains(hash)
+    }
+
+    /// Number of selected torrents.
+    pub fn selection_count(&self) -> usize {
+        self.selected_hashes.len()
+    }
+
+    /// Toggles selection on the focused torrent.
+    pub fn toggle_select_focused(&mut self) {
+        if let Some(torrent) = self.selected() {
+            let hash = torrent.hash.clone();
+            if self.selected_hashes.contains(&hash) {
+                self.selected_hashes.remove(&hash);
+            } else {
+                self.selected_hashes.insert(hash);
+            }
+        }
+    }
+
+    /// Selects all visible torrents.
+    pub fn select_all(&mut self) {
+        let hashes: Vec<String> = self
+            .visible_torrents()
+            .iter()
+            .map(|t| t.hash.clone())
+            .collect();
+        for hash in hashes {
+            self.selected_hashes.insert(hash);
+        }
+    }
+
+    /// Deselects all torrents.
+    pub fn deselect_all(&mut self) {
+        self.selected_hashes.clear();
+    }
+
+    /// Inverts selection across visible torrents.
+    pub fn invert_selection(&mut self) {
+        let hashes: Vec<String> = self
+            .visible_torrents()
+            .iter()
+            .map(|t| t.hash.clone())
+            .collect();
+        for hash in hashes {
+            if self.selected_hashes.contains(&hash) {
+                self.selected_hashes.remove(&hash);
+            } else {
+                self.selected_hashes.insert(hash);
+            }
+        }
+    }
+
+    /// Target hashes for actions: selected torrents if any, else focused torrent.
+    pub fn target_hashes(&self) -> Vec<String> {
+        if !self.selected_hashes.is_empty() {
+            self.selected_hashes.iter().cloned().collect()
+        } else if let Some(torrent) = self.selected() {
+            vec![torrent.hash.clone()]
+        } else {
+            Vec::new()
+        }
     }
 }

@@ -12,7 +12,9 @@ use rt_grpc::command_service_server::{CommandService, CommandServiceServer};
 use rt_grpc::system_service_server::{SystemService, SystemServiceServer};
 use rt_grpc::torrent_service_server::{TorrentService, TorrentServiceServer};
 use rt_grpc::{
-    AddTorrentRequest, AddTorrentResponse, CommandRequest, CommandResponse, ControlTorrentRequest,
+    AddTorrentRequest, AddTorrentResponse, BulkControlTorrentsRequest, BulkControlTorrentsResponse,
+    BulkRemoveTorrentsRequest, BulkRemoveTorrentsResponse, BulkSetPriorityResponse,
+    BulkSetTorrentPriorityRequest, CommandRequest, CommandResponse, ControlTorrentRequest,
     ControlTorrentResponse, Empty, GetTorrentRequest, ListCommandsResponse, ListTorrentsRequest,
     ListTorrentsResponse, MulticallRequest, MulticallResponse, RemoveTorrentRequest,
     RemoveTorrentResponse, SessionStatsResponse, SetPriorityResponse, SetTorrentPriorityRequest,
@@ -122,6 +124,48 @@ impl TorrentService for MockDaemon {
         Ok(Response::new(SetPriorityResponse {
             success: true,
             error_message: String::new(),
+        }))
+    }
+
+    async fn bulk_control_torrents(
+        &self,
+        request: Request<BulkControlTorrentsRequest>,
+    ) -> Result<Response<BulkControlTorrentsResponse>, Status> {
+        self.prepare().await?;
+        let inner = request.into_inner();
+        let success_count = inner.hashes.len() as u32;
+        Ok(Response::new(BulkControlTorrentsResponse {
+            success_count,
+            failure_count: 0,
+            results: Vec::new(),
+        }))
+    }
+
+    async fn bulk_remove_torrents(
+        &self,
+        request: Request<BulkRemoveTorrentsRequest>,
+    ) -> Result<Response<BulkRemoveTorrentsResponse>, Status> {
+        self.prepare().await?;
+        let inner = request.into_inner();
+        let success_count = inner.hashes.len() as u32;
+        Ok(Response::new(BulkRemoveTorrentsResponse {
+            success_count,
+            failure_count: 0,
+            results: Vec::new(),
+        }))
+    }
+
+    async fn bulk_set_torrent_priority(
+        &self,
+        request: Request<BulkSetTorrentPriorityRequest>,
+    ) -> Result<Response<BulkSetPriorityResponse>, Status> {
+        self.prepare().await?;
+        let inner = request.into_inner();
+        let success_count = inner.hashes.len() as u32;
+        Ok(Response::new(BulkSetPriorityResponse {
+            success_count,
+            failure_count: 0,
+            results: Vec::new(),
         }))
     }
 

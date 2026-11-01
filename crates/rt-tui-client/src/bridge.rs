@@ -12,9 +12,10 @@ use rt_grpc::command_service_client::CommandServiceClient;
 use rt_grpc::system_service_client::SystemServiceClient;
 use rt_grpc::torrent_service_client::TorrentServiceClient;
 use rt_grpc::{
-    object_value, CommandRequest, CommandResponse, ControlTorrentRequest, Empty, GetTorrentRequest,
-    ListTorrentsRequest, ObjectValue, RemoveTorrentRequest, SessionStatsResponse,
-    SetTorrentPriorityRequest, StreamEventsRequest, StreamStatsRequest,
+    object_value, BulkControlTorrentsRequest, BulkRemoveTorrentsRequest,
+    BulkSetTorrentPriorityRequest, CommandRequest, CommandResponse, ControlTorrentRequest, Empty,
+    GetTorrentRequest, ListTorrentsRequest, ObjectValue, RemoveTorrentRequest,
+    SessionStatsResponse, SetTorrentPriorityRequest, StreamEventsRequest, StreamStatsRequest,
     TorrentAction as ProtoAction, TorrentDetails, TorrentEvent, TorrentSummary, VersionResponse,
 };
 
@@ -130,6 +131,57 @@ impl GrpcBridge {
             await_response(self.timeout, self.torrents.set_torrent_priority(request)).await?;
 
         ensure_success(response.success, "set priority")
+    }
+
+    /// Starts, stops, closes or re-checks multiple torrents.
+    pub async fn bulk_control_torrents(
+        &mut self,
+        hashes: &[String],
+        action: TorrentAction,
+    ) -> Result<u32, BridgeError> {
+        let request = BulkControlTorrentsRequest {
+            hashes: hashes.to_vec(),
+            action: proto_action(action) as i32,
+        };
+        let response =
+            await_response(self.timeout, self.torrents.bulk_control_torrents(request)).await?;
+
+        Ok(response.success_count)
+    }
+
+    /// Removes multiple torrents from the session.
+    pub async fn bulk_remove_torrents(
+        &mut self,
+        hashes: &[String],
+        delete_data: bool,
+    ) -> Result<u32, BridgeError> {
+        let request = BulkRemoveTorrentsRequest {
+            hashes: hashes.to_vec(),
+            delete_data,
+        };
+        let response =
+            await_response(self.timeout, self.torrents.bulk_remove_torrents(request)).await?;
+
+        Ok(response.success_count)
+    }
+
+    /// Sets priority for multiple torrents.
+    pub async fn bulk_set_torrent_priority(
+        &mut self,
+        hashes: &[String],
+        priority: u32,
+    ) -> Result<u32, BridgeError> {
+        let request = BulkSetTorrentPriorityRequest {
+            hashes: hashes.to_vec(),
+            priority,
+        };
+        let response = await_response(
+            self.timeout,
+            self.torrents.bulk_set_torrent_priority(request),
+        )
+        .await?;
+
+        Ok(response.success_count)
     }
 
     /// Runs a command with integer arguments.

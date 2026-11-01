@@ -166,6 +166,10 @@ fn session_maps_from_proto() {
         listen_port: 6881,
         throttle_down_limit: 0,
         throttle_up_limit: 1_000_000,
+        dht_active: true,
+        dht_nodes: 42,
+        dht_torrents: 10,
+        dht_port: 6881,
     };
 
     let stats = SessionStats::from_proto(&response);
@@ -178,6 +182,10 @@ fn session_maps_from_proto() {
     assert_eq!(stats.active_torrents, 3);
     assert_eq!(stats.total_torrents, 7);
     assert_eq!(stats.listen_port, 6881);
+    assert!(stats.dht_active);
+    assert_eq!(stats.dht_nodes, 42);
+    assert_eq!(stats.dht_torrents, 10);
+    assert_eq!(stats.dht_port, 6881);
     assert_eq!(stats.throttle_down_limit, 0);
     assert_eq!(stats.throttle_up_limit, 1_000_000);
     assert_eq!(stats.throttle_down_display, "∞");

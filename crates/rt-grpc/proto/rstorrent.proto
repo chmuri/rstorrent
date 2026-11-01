@@ -177,6 +177,39 @@ message SetPriorityResponse {
   string error_message = 2;
 }
 
+message BulkControlTorrentsRequest {
+  repeated string hashes = 1;
+  TorrentAction action = 2;
+}
+
+message BulkControlTorrentsResponse {
+  repeated ControlTorrentResponse results = 1;
+  uint32 success_count = 2;
+  uint32 failure_count = 3;
+}
+
+message BulkRemoveTorrentsRequest {
+  repeated string hashes = 1;
+  bool delete_data = 2;
+}
+
+message BulkRemoveTorrentsResponse {
+  repeated RemoveTorrentResponse results = 1;
+  uint32 success_count = 2;
+  uint32 failure_count = 3;
+}
+
+message BulkSetTorrentPriorityRequest {
+  repeated string hashes = 1;
+  uint32 priority = 2;
+}
+
+message BulkSetPriorityResponse {
+  repeated SetPriorityResponse results = 1;
+  uint32 success_count = 2;
+  uint32 failure_count = 3;
+}
+
 message StreamEventsRequest {
   // Optional filter for specific events (e.g. "event.download.finished")
   repeated string event_filter = 1;
@@ -210,6 +243,10 @@ message SessionStatsResponse {
   uint32 listen_port = 7;
   int64 throttle_up_limit = 8;
   int64 throttle_down_limit = 9;
+  bool dht_active = 10;
+  uint32 dht_nodes = 11;
+  uint32 dht_torrents = 12;
+  uint32 dht_port = 13;
 }
 
 message StreamStatsRequest {
@@ -266,6 +303,9 @@ service TorrentService {
   rpc ControlTorrent(ControlTorrentRequest) returns (ControlTorrentResponse);
   rpc RemoveTorrent(RemoveTorrentRequest) returns (RemoveTorrentResponse);
   rpc SetTorrentPriority(SetTorrentPriorityRequest) returns (SetPriorityResponse);
+  rpc BulkControlTorrents(BulkControlTorrentsRequest) returns (BulkControlTorrentsResponse);
+  rpc BulkRemoveTorrents(BulkRemoveTorrentsRequest) returns (BulkRemoveTorrentsResponse);
+  rpc BulkSetTorrentPriority(BulkSetTorrentPriorityRequest) returns (BulkSetPriorityResponse);
   rpc StreamEvents(StreamEventsRequest) returns (stream TorrentEvent);
 }
 

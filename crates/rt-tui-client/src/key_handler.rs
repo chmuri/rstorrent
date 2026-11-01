@@ -109,3 +109,50 @@ pub fn torrent_action(
         _ => None,
     }
 }
+
+/// Maps a key press onto a bulk action for multiple torrents.
+pub fn bulk_torrent_action(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    hashes: Vec<String>,
+    current_priority: u32,
+    any_active: bool,
+) -> Option<TuiAction> {
+    if hashes.is_empty() {
+        return None;
+    }
+
+    match (code, modifiers) {
+        (KeyCode::Char('s'), KeyModifiers::CONTROL) => Some(TuiAction::BulkControlTorrents {
+            hashes,
+            action: TorrentAction::Start,
+        }),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            if any_active {
+                Some(TuiAction::BulkControlTorrents {
+                    hashes,
+                    action: TorrentAction::Stop,
+                })
+            } else {
+                Some(TuiAction::BulkRemoveTorrents { hashes })
+            }
+        }
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) => Some(TuiAction::BulkControlTorrents {
+            hashes,
+            action: TorrentAction::Close,
+        }),
+        (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(TuiAction::BulkControlTorrents {
+            hashes,
+            action: TorrentAction::CheckHash,
+        }),
+        (KeyCode::Char('+'), _) => Some(TuiAction::BulkSetPriority {
+            hashes,
+            priority: next_priority(current_priority),
+        }),
+        (KeyCode::Char('-'), _) => Some(TuiAction::BulkSetPriority {
+            hashes,
+            priority: previous_priority(current_priority),
+        }),
+        _ => None,
+    }
+}

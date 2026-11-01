@@ -116,7 +116,38 @@ async fn test_grpc_command_and_system_service() {
 
     assert_eq!(torrents_resp.torrents.len(), 0);
 
-    // 5. Test SystemService::Shutdown
+    // 5. Test TorrentService bulk operations
+    let bulk_ctrl_resp = torrent_client
+        .bulk_control_torrents(rt_grpc::BulkControlTorrentsRequest {
+            hashes: vec!["abc".to_string(), "def".to_string()],
+            action: rt_grpc::TorrentAction::Start as i32,
+        })
+        .await
+        .expect("BulkControlTorrents failed")
+        .into_inner();
+    assert_eq!(bulk_ctrl_resp.failure_count, 2);
+
+    let bulk_prio_resp = torrent_client
+        .bulk_set_torrent_priority(rt_grpc::BulkSetTorrentPriorityRequest {
+            hashes: vec!["abc".to_string()],
+            priority: 3,
+        })
+        .await
+        .expect("BulkSetTorrentPriority failed")
+        .into_inner();
+    assert_eq!(bulk_prio_resp.failure_count, 1);
+
+    let bulk_rem_resp = torrent_client
+        .bulk_remove_torrents(rt_grpc::BulkRemoveTorrentsRequest {
+            hashes: vec!["abc".to_string()],
+            delete_data: false,
+        })
+        .await
+        .expect("BulkRemoveTorrents failed")
+        .into_inner();
+    assert_eq!(bulk_rem_resp.failure_count, 1);
+
+    // 6. Test SystemService::Shutdown
     let shutdown_resp = system_client
         .shutdown(rt_grpc::ShutdownRequest { force: false })
         .await

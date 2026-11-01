@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-01
+
+### Added
+
+- **Bulk operations across TUI and gRPC**:
+  - Multi-selection in TUI torrent list (`Space` toggles item, `Ctrl+A` selects all, `*` inverts selection, `Esc` clears selection).
+  - Bulk shortcuts with visual indicator (`*` prefix and highlighted rows): `^S` (start), `^D` (stop / remove), `^K` (close), `^R` (re-check), `+`/`-` (bulk priority change).
+  - Context menu bulk entries when multiple torrents are selected ("Start (N torrents)", "Stop (N torrents)", etc.).
+  - Bulk file selection and priority cycling in details view Files tab (`x`/`v`/`Insert` to toggle, `Ctrl+A` to select all, `Space`/`*` to cycle priority across all selected files, `Esc` to clear selection).
+  - New gRPC RPCs in `TorrentService`: `BulkControlTorrents`, `BulkRemoveTorrents`, and `BulkSetTorrentPriority`.
+  - Added `[N selected]` indicator in the TUI status bar.
+- **DHT integration and readiness**:
+  - BEP 5 `PORT` message handling wired between peer network traffic and DHT routing table (`dht.add_peer_node`), enabling automated peer node discovery.
+  - Magnet URI support in `rt-grpc` via `load_magnet`.
+  - DHT status reporting (`dht_active`, `dht_nodes`, `dht_torrents`, `dht_port`) in `SessionStatsResponse` and TUI status bar.
+
 ## [0.17.2] - 2026-10-29
 
 ### Added

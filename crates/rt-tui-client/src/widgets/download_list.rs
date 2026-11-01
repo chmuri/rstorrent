@@ -161,14 +161,21 @@ impl Widget for DownloadListWidget<'_> {
         let rows = range
             .map(|index| {
                 let torrent = visible[index];
+                let is_selected = self.state.is_selected(&torrent.hash);
                 let cells = columns
                     .iter()
-                    .map(|column| cell_for(*column, torrent))
+                    .map(|column| cell_for(*column, torrent, is_selected))
                     .collect::<Vec<_>>();
                 let row = Row::new(cells);
 
                 if index == self.state.focus_index {
-                    row.style(Style::new().reversed())
+                    if is_selected {
+                        row.style(Style::new().reversed().fg(Color::Yellow))
+                    } else {
+                        row.style(Style::new().reversed())
+                    }
+                } else if is_selected {
+                    row.style(Style::new().fg(Color::Yellow))
                 } else {
                     row
                 }
@@ -180,9 +187,15 @@ impl Widget for DownloadListWidget<'_> {
 }
 
 /// Builds one cell of the torrent table.
-fn cell_for(column: Column, torrent: &TorrentViewModel) -> Cell<'_> {
+fn cell_for(column: Column, torrent: &TorrentViewModel, is_selected: bool) -> Cell<'_> {
     match column {
-        Column::Name => Cell::from(torrent.name.as_str()),
+        Column::Name => {
+            if is_selected {
+                Cell::from(format!("* {}", torrent.name))
+            } else {
+                Cell::from(torrent.name.as_str())
+            }
+        }
         Column::Size => Cell::from(torrent.size_display.as_str()),
         Column::Done => Cell::from(format!("{:>3.0}%", torrent.progress_percent)),
         Column::Bar => Cell::from(progress_bar(torrent.progress_percent)),

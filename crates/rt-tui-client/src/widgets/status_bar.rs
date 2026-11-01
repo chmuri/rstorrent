@@ -69,6 +69,15 @@ impl<'a> StatusBarWidget<'a> {
         if width >= PORT_MIN_WIDTH {
             push_segment(&mut spans, format!(":{}", stats.listen_port));
         }
+        if width >= 90 && stats.dht_active {
+            push_segment(&mut spans, format!("dht: {} nodes", stats.dht_nodes));
+        }
+        if self.state.selection_count() > 0 {
+            push_segment(
+                &mut spans,
+                format!("[{} selected]", self.state.selection_count()),
+            );
+        }
 
         if !spans.is_empty() {
             spans.push(Span::raw("  "));

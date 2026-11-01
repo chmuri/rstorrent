@@ -96,17 +96,7 @@ impl TorrentService for TorrentServiceImpl {
                     error_message: format!("Loading directly from HTTP URL '{}' is not supported; pass torrent_file bytes instead", url),
                 }));
             }
-            Some(add_torrent_request::Source::MagnetUri(uri)) => {
-                return Ok(Response::new(AddTorrentResponse {
-                    hash: String::new(),
-                    name: String::new(),
-                    success: false,
-                    error_message: format!(
-                        "Direct magnet link '{}' parsing without metadata requires dht/pex lookup",
-                        uri
-                    ),
-                }));
-            }
+            Some(add_torrent_request::Source::MagnetUri(uri)) => factory.load_magnet(&uri),
             None => {
                 return Err(Status::invalid_argument("Missing torrent source"));
             }
@@ -306,6 +296,132 @@ impl TorrentService for TorrentServiceImpl {
                 error_message: "Torrent not found".to_string(),
             }))
         }
+    }
+
+    async fn bulk_control_torrents(
+        &self,
+        request: Request<BulkControlTorrentsRequest>,
+    ) -> Result<Response<BulkControlTorrentsResponse>, Status> {
+        let req = request.into_inner();
+        let action = req.action;
+        let mut results = Vec::with_capacity(req.hashes.len());
+        let mut success_count = 0u32;
+        let mut failure_count = 0u32;
+
+        for hash in req.hashes {
+            let ctrl_req = ControlTorrentRequest {
+                hash: hash.clone(),
+                action,
+            };
+            match self.control_torrent(Request::new(ctrl_req)).await {
+                Ok(resp) => {
+                    let r = resp.into_inner();
+                    if r.success {
+                        success_count += 1;
+                    } else {
+                        failure_count += 1;
+                    }
+                    results.push(r);
+                }
+                Err(err) => {
+                    failure_count += 1;
+                    results.push(ControlTorrentResponse {
+                        success: false,
+                        hash,
+                        current_state: TorrentState::Unspecified.into(),
+                        error_message: err.message().to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(Response::new(BulkControlTorrentsResponse {
+            results,
+            success_count,
+            failure_count,
+        }))
+    }
+
+    async fn bulk_remove_torrents(
+        &self,
+        request: Request<BulkRemoveTorrentsRequest>,
+    ) -> Result<Response<BulkRemoveTorrentsResponse>, Status> {
+        let req = request.into_inner();
+        let delete_data = req.delete_data;
+        let mut results = Vec::with_capacity(req.hashes.len());
+        let mut success_count = 0u32;
+        let mut failure_count = 0u32;
+
+        for hash in req.hashes {
+            let rm_req = RemoveTorrentRequest {
+                hash: hash.clone(),
+                delete_data,
+            };
+            match self.remove_torrent(Request::new(rm_req)).await {
+                Ok(resp) => {
+                    let r = resp.into_inner();
+                    if r.success {
+                        success_count += 1;
+                    } else {
+                        failure_count += 1;
+                    }
+                    results.push(r);
+                }
+                Err(err) => {
+                    failure_count += 1;
+                    results.push(RemoveTorrentResponse {
+                        success: false,
+                        hash,
+                        error_message: err.message().to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(Response::new(BulkRemoveTorrentsResponse {
+            results,
+            success_count,
+            failure_count,
+        }))
+    }
+
+    async fn bulk_set_torrent_priority(
+        &self,
+        request: Request<BulkSetTorrentPriorityRequest>,
+    ) -> Result<Response<BulkSetPriorityResponse>, Status> {
+        let req = request.into_inner();
+        let priority = req.priority;
+        let mut results = Vec::with_capacity(req.hashes.len());
+        let mut success_count = 0u32;
+        let mut failure_count = 0u32;
+
+        for hash in req.hashes {
+            let set_req = SetTorrentPriorityRequest { hash, priority };
+            match self.set_torrent_priority(Request::new(set_req)).await {
+                Ok(resp) => {
+                    let r = resp.into_inner();
+                    if r.success {
+                        success_count += 1;
+                    } else {
+                        failure_count += 1;
+                    }
+                    results.push(r);
+                }
+                Err(err) => {
+                    failure_count += 1;
+                    results.push(SetPriorityResponse {
+                        success: false,
+                        error_message: err.message().to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(Response::new(BulkSetPriorityResponse {
+            results,
+            success_count,
+            failure_count,
+        }))
     }
 
     type StreamEventsStream =

@@ -37,6 +37,20 @@ impl SystemServiceImpl {
             }
         }
 
+        let (dht_active, dht_nodes, dht_torrents, dht_port) =
+            match rt_core::network_runtime::dht_controller() {
+                Some(controller) => {
+                    let stats = controller.get_statistics();
+                    (
+                        controller.is_active(),
+                        stats.num_nodes as u32,
+                        stats.num_trackers as u32,
+                        controller.port() as u32,
+                    )
+                }
+                None => (false, 0, 0, 0),
+            };
+
         SessionStatsResponse {
             up_rate_bytes_per_sec: up_rate,
             down_rate_bytes_per_sec: down_rate,
@@ -47,6 +61,10 @@ impl SystemServiceImpl {
             listen_port: 0,
             throttle_up_limit: 0,
             throttle_down_limit: 0,
+            dht_active,
+            dht_nodes,
+            dht_torrents,
+            dht_port,
         }
     }
 }

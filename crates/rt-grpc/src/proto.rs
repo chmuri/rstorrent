@@ -241,6 +241,54 @@ pub struct SetPriorityResponse {
     pub error_message: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BulkControlTorrentsRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub hashes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(enumeration = "TorrentAction", tag = "2")]
+    pub action: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BulkControlTorrentsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub results: ::prost::alloc::vec::Vec<ControlTorrentResponse>,
+    #[prost(uint32, tag = "2")]
+    pub success_count: u32,
+    #[prost(uint32, tag = "3")]
+    pub failure_count: u32,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BulkRemoveTorrentsRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub hashes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(bool, tag = "2")]
+    pub delete_data: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BulkRemoveTorrentsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub results: ::prost::alloc::vec::Vec<RemoveTorrentResponse>,
+    #[prost(uint32, tag = "2")]
+    pub success_count: u32,
+    #[prost(uint32, tag = "3")]
+    pub failure_count: u32,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BulkSetTorrentPriorityRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub hashes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint32, tag = "2")]
+    pub priority: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BulkSetPriorityResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub results: ::prost::alloc::vec::Vec<SetPriorityResponse>,
+    #[prost(uint32, tag = "2")]
+    pub success_count: u32,
+    #[prost(uint32, tag = "3")]
+    pub failure_count: u32,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StreamEventsRequest {
     /// Optional filter for specific events (e.g. "event.download.finished")
     #[prost(string, repeated, tag = "1")]
@@ -288,6 +336,14 @@ pub struct SessionStatsResponse {
     pub throttle_up_limit: i64,
     #[prost(int64, tag = "9")]
     pub throttle_down_limit: i64,
+    #[prost(bool, tag = "10")]
+    pub dht_active: bool,
+    #[prost(uint32, tag = "11")]
+    pub dht_nodes: u32,
+    #[prost(uint32, tag = "12")]
+    pub dht_torrents: u32,
+    #[prost(uint32, tag = "13")]
+    pub dht_port: u32,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StreamStatsRequest {
@@ -662,6 +718,87 @@ pub mod torrent_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn bulk_control_torrents(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BulkControlTorrentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BulkControlTorrentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rtorrent.v1.TorrentService/BulkControlTorrents",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("rtorrent.v1.TorrentService", "BulkControlTorrents"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn bulk_remove_torrents(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BulkRemoveTorrentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BulkRemoveTorrentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rtorrent.v1.TorrentService/BulkRemoveTorrents",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("rtorrent.v1.TorrentService", "BulkRemoveTorrents"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn bulk_set_torrent_priority(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BulkSetTorrentPriorityRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BulkSetPriorityResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rtorrent.v1.TorrentService/BulkSetTorrentPriority",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "rtorrent.v1.TorrentService",
+                        "BulkSetTorrentPriority",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn stream_events(
             &mut self,
             request: impl tonic::IntoRequest<super::StreamEventsRequest>,
@@ -738,6 +875,27 @@ pub mod torrent_service_server {
             request: tonic::Request<super::SetTorrentPriorityRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SetPriorityResponse>,
+            tonic::Status,
+        >;
+        async fn bulk_control_torrents(
+            &self,
+            request: tonic::Request<super::BulkControlTorrentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BulkControlTorrentsResponse>,
+            tonic::Status,
+        >;
+        async fn bulk_remove_torrents(
+            &self,
+            request: tonic::Request<super::BulkRemoveTorrentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BulkRemoveTorrentsResponse>,
+            tonic::Status,
+        >;
+        async fn bulk_set_torrent_priority(
+            &self,
+            request: tonic::Request<super::BulkSetTorrentPriorityRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BulkSetPriorityResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the StreamEvents method.
@@ -1087,6 +1245,150 @@ pub mod torrent_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SetTorrentPrioritySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rtorrent.v1.TorrentService/BulkControlTorrents" => {
+                    #[allow(non_camel_case_types)]
+                    struct BulkControlTorrentsSvc<T: TorrentService>(pub Arc<T>);
+                    impl<
+                        T: TorrentService,
+                    > tonic::server::UnaryService<super::BulkControlTorrentsRequest>
+                    for BulkControlTorrentsSvc<T> {
+                        type Response = super::BulkControlTorrentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BulkControlTorrentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as TorrentService>::bulk_control_torrents(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BulkControlTorrentsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rtorrent.v1.TorrentService/BulkRemoveTorrents" => {
+                    #[allow(non_camel_case_types)]
+                    struct BulkRemoveTorrentsSvc<T: TorrentService>(pub Arc<T>);
+                    impl<
+                        T: TorrentService,
+                    > tonic::server::UnaryService<super::BulkRemoveTorrentsRequest>
+                    for BulkRemoveTorrentsSvc<T> {
+                        type Response = super::BulkRemoveTorrentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BulkRemoveTorrentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as TorrentService>::bulk_remove_torrents(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BulkRemoveTorrentsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rtorrent.v1.TorrentService/BulkSetTorrentPriority" => {
+                    #[allow(non_camel_case_types)]
+                    struct BulkSetTorrentPrioritySvc<T: TorrentService>(pub Arc<T>);
+                    impl<
+                        T: TorrentService,
+                    > tonic::server::UnaryService<super::BulkSetTorrentPriorityRequest>
+                    for BulkSetTorrentPrioritySvc<T> {
+                        type Response = super::BulkSetPriorityResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BulkSetTorrentPriorityRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as TorrentService>::bulk_set_torrent_priority(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BulkSetTorrentPrioritySvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

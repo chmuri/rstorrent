@@ -911,6 +911,7 @@ impl DownloadNetworkCoordinator {
                         let dl_ref = Arc::clone(&download);
                         let pool_ref = Arc::clone(&pool);
                         let peer_shutdown = shutdown_rx.clone();
+                        let dht_ref = dht.clone();
                         // Snapshot the live policy when the dial is scheduled;
                         // existing sessions keep the policy they started with.
                         let peer_encryption = *encryption_policy.lock().unwrap();
@@ -926,6 +927,7 @@ impl DownloadNetworkCoordinator {
                                     connect_timeout,
                                     policy: peer_encryption,
                                     pool: Some(pool_ref),
+                                    dht: dht_ref,
                                 },
                             )
                             .await;
@@ -1270,6 +1272,7 @@ struct PeerWorkerContext {
     connect_timeout: Duration,
     policy: EncryptionPolicy,
     pool: Option<PeerPoolHandle>,
+    dht: Option<DhtHandle>,
 }
 
 /// Runs an outbound peer connection: dials, exchanges handshakes, then runs
@@ -1283,6 +1286,7 @@ async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
         connect_timeout,
         policy,
         pool,
+        dht,
     } = ctx;
     debug!(peer = %peer_addr, "Connecting to peer...");
 
@@ -1319,6 +1323,7 @@ async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
         obfuscated,
     } = session;
     let remote_fast = peer_handshake.has_fast();
+    let remote_dht = peer_handshake.has_dht();
     let (reader, writer) = stream.into_split();
 
     run_peer_session(
@@ -1334,7 +1339,9 @@ async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
         encrypted,
         obfuscated,
         remote_fast,
+        remote_dht,
         pool,
+        dht,
         None,
     )
     .await;
@@ -1425,6 +1432,7 @@ async fn run_inbound_peer_with_pool_timeout(
     let (reader, mut writer) = stream.into_split();
 
     let remote_fast = handshake.has_fast();
+    let remote_dht = handshake.has_dht();
     let response = HandshakeMessage::new(handshake.info_hash, our_peer_id);
     if let Err(e) = writer.write_all(&response.encode()).await {
         debug!(peer = %peer_addr, error = %e, "Failed to send handshake response");
@@ -1449,7 +1457,9 @@ async fn run_inbound_peer_with_pool_timeout(
         false,
         false,
         remote_fast,
+        remote_dht,
         pool,
+        None,
         request_timeout,
     )
     .await;
@@ -1481,6 +1491,7 @@ pub async fn run_inbound_mse_peer_with_pool(
 
     let peer_id = session.peer_id;
     let remote_fast = session.peer_handshake.has_fast();
+    let remote_dht = session.peer_handshake.has_dht();
     let encrypted = session.encrypted_stream;
     let obfuscated = session.is_obfuscated();
     let (cipher_enc, cipher_dec) = session.take_ciphers();
@@ -1513,7 +1524,9 @@ pub async fn run_inbound_mse_peer_with_pool(
         encrypted,
         obfuscated,
         remote_fast,
+        remote_dht,
         pool,
+        None,
         None,
     )
     .await;
@@ -1926,7 +1939,9 @@ async fn run_peer_session(
     encrypted: bool,
     obfuscated: bool,
     remote_fast: bool,
+    remote_dht: bool,
     pool: Option<PeerPoolHandle>,
+    dht: Option<DhtHandle>,
     request_timeout: Option<Duration>,
 ) {
     let mut cipher_dec = cipher_dec;
@@ -2006,6 +2021,15 @@ async fn run_peer_session(
             ),
         })
         .await;
+
+    if let Some(dht) = &dht {
+        if dht.server.is_active() && remote_dht {
+            let port = dht.server.port();
+            if port > 0 {
+                let _ = tx.send(PeerMessage::Port(port)).await;
+            }
+        }
+    }
 
     // 4b. Advertise the pieces we can upload. In initial-seeding mode the
     // bitfield stays empty; each peer is offered one piece with a HAVE
@@ -2639,6 +2663,13 @@ async fn run_peer_session(
                             debug!(peer = %peer_addr, index, "Peer allowed fast piece");
                             if index < num_pieces as u32 {
                                 record_allowed_fast(&info_hash, &peer_id, index);
+                            }
+                        }
+                        PeerMessage::Port(port) => {
+                            debug!(peer = %peer_addr, port, "Received DHT port from peer");
+                            if let Some(dht) = &dht {
+                                let sa = SocketAddress::from(peer_addr);
+                                dht.add_peer_node(&sa, port);
                             }
                         }
                         PeerMessage::Extended { id: 0, payload } => {
