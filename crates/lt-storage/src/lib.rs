@@ -23,6 +23,7 @@ pub mod memory_chunk;
 pub mod memory_manager;
 pub mod mmap_safe;
 pub mod piece;
+pub mod piece_cache;
 pub mod resume;
 pub mod socket_file;
 pub mod writer;
@@ -61,6 +62,7 @@ pub use mmap_safe::{
     allocate_file, system_page_size, Advice, MapFlags, MappedMemory, Prot, SyncFlags,
 };
 pub use piece::Piece;
+pub use piece_cache::{PieceCache, PieceCacheStats, DEFAULT_PIECE_CACHE_CAPACITY_BYTES};
 pub use resume::{ResumeData, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED};
 pub use socket_file::{FallocateFlags, OpenFlags, SocketFile, INVALID_FD};
 pub use writer::{sync_files, write_piece_to_disk, TargetFileInfo};

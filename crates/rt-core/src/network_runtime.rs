@@ -435,6 +435,14 @@ fn spawn_peer_listeners(
             ));
         }
 
+        tasks.spawn(lsd_loop(
+            port,
+            Arc::clone(&downloads),
+            shutdown.clone(),
+            Arc::clone(&peer_pools),
+        ));
+        tasks.spawn(port_mapping_loop(port, shutdown.clone()));
+
         while tasks.join_next().await.is_some() {}
         mark_listener_closed();
         debug!("Peer accept loops stopped");
@@ -935,6 +943,119 @@ async fn accept_loop(
     while connections.join_next().await.is_some() {}
 
     debug!("Peer accept loop stopped");
+}
+
+fn rand_u32() -> u32 {
+    let mut bytes = [0u8; 4];
+    if getrandom::fill(&mut bytes).is_ok() {
+        u32::from_be_bytes(bytes)
+    } else {
+        0
+    }
+}
+
+async fn lsd_loop(
+    listen_port: u16,
+    download_list: Arc<RwLock<DownloadList>>,
+    mut shutdown_rx: watch::Receiver<bool>,
+    peer_pools: Arc<Mutex<HashMap<HashString, PeerPoolHandle>>>,
+) {
+    let socket = match lt_net::create_lsd_socket() {
+        Ok(s) => s,
+        Err(err) => {
+            debug!(error = %err, "Could not initialize LSD multicast socket");
+            return;
+        }
+    };
+
+    let cookie = format!("{:08x}", rand_u32());
+    let mut announce_interval = tokio::time::interval(Duration::from_secs(300));
+    let mut buf = [0u8; 2048];
+    let multicast_target =
+        std::net::SocketAddr::from((lt_net::LSD_MULTICAST_IPV4, lt_net::LSD_PORT));
+
+    loop {
+        if *shutdown_rx.borrow() {
+            break;
+        }
+
+        tokio::select! {
+            _ = shutdown_rx.changed() => break,
+            _ = announce_interval.tick() => {
+                let active_hashes: Vec<HashString> = {
+                    let dl = download_list.read().unwrap();
+                    dl.all()
+                        .iter()
+                        .filter_map(|d| {
+                            let item = d.read().unwrap();
+                            if item.is_active() && !item.metadata().is_private {
+                                Some(*item.info_hash())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
+
+                if !active_hashes.is_empty() {
+                    let packet = lt_net::format_lsd_packet(listen_port, &active_hashes, Some(&cookie));
+                    let _ = socket.send_to(&packet, multicast_target).await;
+                }
+            }
+            recv_res = socket.recv_from(&mut buf) => {
+                if let Ok((len, sender)) = recv_res {
+                    if let Some(packet) = lt_net::parse_lsd_packet(&buf[..len]) {
+                        if packet.cookie.as_deref() == Some(&cookie) {
+                            continue;
+                        }
+                        let peer_addr = std::net::SocketAddr::new(sender.ip(), packet.port);
+                        let pools = peer_pools.lock().unwrap();
+                        for hash in packet.info_hashes {
+                            if let Some(pool_handle) = pools.get(&hash) {
+                                let mut pool = pool_handle.lock().unwrap();
+                                pool.add_peer(peer_addr, lt_engine::PeerSource::Lsd, false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    debug!("LSD multicast loop stopped");
+}
+
+async fn port_mapping_loop(listen_port: u16, mut shutdown_rx: watch::Receiver<bool>) {
+    let candidate_gateways = [
+        std::net::Ipv4Addr::new(192, 168, 1, 1),
+        std::net::Ipv4Addr::new(192, 168, 0, 1),
+        std::net::Ipv4Addr::new(10, 0, 0, 1),
+    ];
+
+    let mut mapped = false;
+    for &gw in &candidate_gateways {
+        if *shutdown_rx.borrow() {
+            return;
+        }
+        if let Ok(ext) = lt_net::try_map_nat_pmp(
+            gw,
+            listen_port,
+            listen_port,
+            lt_net::PortMappingProtocol::Tcp,
+            3600,
+        )
+        .await
+        {
+            debug!(gateway = %gw, internal = listen_port, external = ext, "NAT-PMP port mapped successfully");
+            mapped = true;
+            break;
+        }
+    }
+
+    if !mapped {
+        debug!("Automatic port mapping: NAT-PMP gateway not detected on common addresses");
+    }
+
+    let _ = shutdown_rx.changed().await;
 }
 
 /// Configuration for [`NetworkRuntime::spawn_with_listener_config`].

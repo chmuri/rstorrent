@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.18.0] - 2026-11-01
+## [0.19.0] - 2026-11-01
+
+### Added
+
+- **Multi-core hash checking & Rayon acceleration**:
+  - Replaced single-threaded sequential piece verification in `lt-storage` and `lt-engine` with Rayon parallel iteration (`par_iter()`), utilizing all CPU cores and saturating NVMe SSD read bandwidth.
+  - Implemented `ConcurrentReadCache` using thread-safe stateless `pread(2)` file handle sharing without locks across worker threads.
+  - Scaled default `DiskPool` worker threads to automatically adapt to `available_parallelism() / 2` (minimum 2, default up to 16 threads).
+- **In-memory LRU read cache (`PieceCache`) & I/O optimization**:
+  - Implemented `PieceCache` in `lt-storage`: in-memory LRU cache serving upload and recheck requests directly from RAM without disk I/O.
+  - Added Linux `posix_fadvise(POSIX_FADV_DONTNEED)` cache eviction advice on completed piece writes to prevent OS page cache pollution.
+  - Optimized network framing in `lt-engine`: eliminated heap vector clone (`buf.to_vec()`) on every outgoing message batch, performing direct in-place encryption on `BytesMut`.
+  - Consolidated `Download` mutex acquisitions in `network.rs` when receiving piece blocks, eliminating lock contention across peers.
+- **Protocol enhancements (LSD, UPnP / NAT-PMP, WebSeeds)**:
+  - Local Peer Discovery (LSD - BEP 14) over UDP multicast `239.192.152.143:6771` with automatic LAN peer discovery and periodic announcements.
+  - Added `PeerSource::Lsd` and strict private torrent enforcement (disabling LSD for private torrents).
+  - Automatic Port Forwarding via NAT-PMP and UPnP IGD in `lt-net` and `rt-core`.
+  - WebSeeds (BEP 19 GetRight & BEP 17 httpseeds) metadata parsing in `DownloadFactory` and URL storage in `Download`.
 
 ### Added
 

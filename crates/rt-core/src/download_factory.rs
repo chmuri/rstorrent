@@ -119,6 +119,29 @@ impl DownloadFactory {
 
         let mut download = Download::from_metadata(metadata);
         download.set_bencode(object.clone());
+
+        if let Ok(urls) = object.get_key_list("url-list") {
+            for u in urls {
+                if let Ok(b) = u.as_string() {
+                    if let Ok(s) = std::str::from_utf8(b) {
+                        download.add_web_seed(s.trim());
+                    }
+                }
+            }
+        } else if let Ok(b) = object.get_key_string("url-list") {
+            if let Ok(s) = std::str::from_utf8(b) {
+                download.add_web_seed(s.trim());
+            }
+        }
+        if let Ok(urls) = object.get_key_list("httpseeds") {
+            for u in urls {
+                if let Ok(b) = u.as_string() {
+                    if let Ok(s) = std::str::from_utf8(b) {
+                        download.add_web_seed(s.trim());
+                    }
+                }
+            }
+        }
         Ok(download)
     }
 

@@ -344,6 +344,16 @@ impl Download {
         self.download.lock().unwrap().set_accepting_seeders(value);
     }
 
+    /// List of configured WebSeed (BEP 19 / BEP 17) URLs.
+    pub fn web_seeds(&self) -> Vec<String> {
+        self.download.lock().unwrap().web_seeds().to_vec()
+    }
+
+    /// Adds a WebSeed mirror URL.
+    pub fn add_web_seed(&mut self, url: impl Into<String>) {
+        self.download.lock().unwrap().add_web_seed(url);
+    }
+
     pub fn is_hash_checked(&self) -> bool {
         if !self.is_open || !self.hash_checked || self.is_hash_checking() {
             return false;
