@@ -377,119 +377,151 @@ impl Control {
         {
             let session_manager = Arc::clone(&self.session_manager);
             let view_manager = Arc::clone(&self.view_manager);
-            self.download_list
-                .write()
-                .unwrap()
-                .add_event_listener(Arc::new(move |event, download| {
-                    match event {
-                        "event.download.erased" => {
-                            let hash = download
-                                .read()
-                                .map(|guard| guard.info_hash_hex())
-                                .unwrap_or_default();
-                            if hash.is_empty() {
-                                return;
-                            }
-                            // The download list removes the entry; views keep
-                            // their own Arc and must drop it as well, otherwise
-                            // `d.multicall2` keeps listing a dead download.
-                            if let Some(parsed) = lt_common::HashString::from_hex(&hash) {
-                                view_manager
-                                    .write()
-                                    .unwrap()
-                                    .erase_download_from_all(&parsed, None);
-                            }
-                            match session_manager.lock().unwrap().erase_entry(&hash) {
-                                Ok(_) => {}
-                                Err(err) => tracing::warn!(
-                                    error = %err,
-                                    info_hash = %hash,
-                                    "Could not remove erased download from session"
-                                ),
-                            }
+            let session_manager_batch = Arc::clone(&self.session_manager);
+            let view_manager_batch = Arc::clone(&self.view_manager);
+
+            let mut dl_guard = self.download_list.write().unwrap();
+            dl_guard.add_batch_event_listener(Arc::new(move |event, downloads| {
+                if event == "event.download.erased_batch" {
+                    let mut hash_set = std::collections::HashSet::with_capacity(downloads.len());
+                    let mut hex_hashes = Vec::with_capacity(downloads.len());
+                    for dl in downloads {
+                        if let Ok(guard) = dl.read() {
+                            hash_set.insert(*guard.info_hash());
+                            hex_hashes.push(guard.info_hash_hex());
                         }
-                        "event.download.finished" => {
-                            let session = session_manager.lock().unwrap();
-                            if !session.on_completion() || !session.is_active() {
-                                return;
-                            }
-                            let guard = download.read().unwrap();
-                            match CoreManager::build_commit_entry(&guard) {
-                                Ok(entry) => {
-                                    if let Err(err) = session.commit(&[entry]) {
-                                        tracing::warn!(
-                                            error = %err,
-                                            "Could not save completed download to session"
-                                        );
-                                    }
-                                }
-                                Err(err) => tracing::warn!(
-                                    error = %err,
-                                    "Could not serialize completed download"
-                                ),
-                            }
-                        }
-                        "event.download.metadata" => {
-                            // Magnet metadata just arrived: write the missing
-                            // `<info-hash>.torrent` immediately instead of
-                            // waiting for the periodic session save.
-                            let session = session_manager.lock().unwrap();
-                            if !session.is_active() {
-                                return;
-                            }
-                            let guard = download.read().unwrap();
-                            match CoreManager::build_commit_entry(&guard) {
-                                Ok(entry) => {
-                                    if let Err(err) = session.commit(&[entry]) {
-                                        tracing::warn!(
-                                            error = %err,
-                                            "Could not persist fetched magnet metadata to session"
-                                        );
-                                    } else {
-                                        tracing::info!(
-                                            info_hash = %guard.info_hash_hex(),
-                                            "Persisted fetched magnet metadata to session"
-                                        );
-                                    }
-                                }
-                                Err(err) => tracing::warn!(
-                                    error = %err,
-                                    "Could not serialize fetched magnet metadata"
-                                ),
-                            }
-                        }
-                        "event.download.paused" | "event.download.hash_done" => {
-                            // Persist immediately when a transfer stops or a
-                            // verification pass completes instead of waiting
-                            // for the periodic checkpoint.
-                            let session = session_manager.lock().unwrap();
-                            if !session.is_active() {
-                                return;
-                            }
-                            let guard = download.read().unwrap();
-                            if guard.is_hash_checking() || guard.is_erasing() {
-                                return;
-                            }
-                            match CoreManager::build_commit_entry(&guard) {
-                                Ok(entry) => {
-                                    if let Err(err) = session.save_resume(&entry) {
-                                        tracing::warn!(
-                                            error = %err,
-                                            event = %event,
-                                            "Could not checkpoint download state"
-                                        );
-                                    }
-                                }
-                                Err(err) => tracing::warn!(
-                                    error = %err,
-                                    event = %event,
-                                    "Could not serialize download for checkpoint"
-                                ),
-                            }
-                        }
-                        _ => {}
                     }
-                }));
+                    if !hash_set.is_empty() {
+                        view_manager_batch
+                            .write()
+                            .unwrap()
+                            .erase_batch_from_all(&hash_set, None);
+                    }
+                    if !hex_hashes.is_empty() {
+                        let sm = Arc::clone(&session_manager_batch);
+                        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                            handle.spawn_blocking(move || {
+                                if let Ok(session) = sm.lock() {
+                                    let _ = session.erase_entries_batch(&hex_hashes);
+                                }
+                            });
+                        } else if let Ok(session) = sm.lock() {
+                            let _ = session.erase_entries_batch(&hex_hashes);
+                        }
+                    }
+                }
+            }));
+
+            dl_guard.add_event_listener(Arc::new(move |event, download| {
+                match event {
+                    "event.download.erased" => {
+                        let hash = download
+                            .read()
+                            .map(|guard| guard.info_hash_hex())
+                            .unwrap_or_default();
+                        if hash.is_empty() {
+                            return;
+                        }
+                        // The download list removes the entry; views keep
+                        // their own Arc and must drop it as well, otherwise
+                        // `d.multicall2` keeps listing a dead download.
+                        if let Some(parsed) = lt_common::HashString::from_hex(&hash) {
+                            view_manager
+                                .write()
+                                .unwrap()
+                                .erase_download_from_all(&parsed, None);
+                        }
+                        match session_manager.lock().unwrap().erase_entry(&hash) {
+                            Ok(_) => {}
+                            Err(err) => tracing::warn!(
+                                error = %err,
+                                info_hash = %hash,
+                                "Could not remove erased download from session"
+                            ),
+                        }
+                    }
+                    "event.download.finished" => {
+                        let session = session_manager.lock().unwrap();
+                        if !session.on_completion() || !session.is_active() {
+                            return;
+                        }
+                        let guard = download.read().unwrap();
+                        match CoreManager::build_commit_entry(&guard) {
+                            Ok(entry) => {
+                                if let Err(err) = session.commit(&[entry]) {
+                                    tracing::warn!(
+                                        error = %err,
+                                        "Could not save completed download to session"
+                                    );
+                                }
+                            }
+                            Err(err) => tracing::warn!(
+                                error = %err,
+                                "Could not serialize completed download"
+                            ),
+                        }
+                    }
+                    "event.download.metadata" => {
+                        // Magnet metadata just arrived: write the missing
+                        // `<info-hash>.torrent` immediately instead of
+                        // waiting for the periodic session save.
+                        let session = session_manager.lock().unwrap();
+                        if !session.is_active() {
+                            return;
+                        }
+                        let guard = download.read().unwrap();
+                        match CoreManager::build_commit_entry(&guard) {
+                            Ok(entry) => {
+                                if let Err(err) = session.commit(&[entry]) {
+                                    tracing::warn!(
+                                        error = %err,
+                                        "Could not persist fetched magnet metadata to session"
+                                    );
+                                } else {
+                                    tracing::info!(
+                                        info_hash = %guard.info_hash_hex(),
+                                        "Persisted fetched magnet metadata to session"
+                                    );
+                                }
+                            }
+                            Err(err) => tracing::warn!(
+                                error = %err,
+                                "Could not serialize fetched magnet metadata"
+                            ),
+                        }
+                    }
+                    "event.download.paused" | "event.download.hash_done" => {
+                        // Persist immediately when a transfer stops or a
+                        // verification pass completes instead of waiting
+                        // for the periodic checkpoint.
+                        let session = session_manager.lock().unwrap();
+                        if !session.is_active() {
+                            return;
+                        }
+                        let guard = download.read().unwrap();
+                        if guard.is_hash_checking() || guard.is_erasing() {
+                            return;
+                        }
+                        match CoreManager::build_commit_entry(&guard) {
+                            Ok(entry) => {
+                                if let Err(err) = session.save_resume(&entry) {
+                                    tracing::warn!(
+                                        error = %err,
+                                        event = %event,
+                                        "Could not checkpoint download state"
+                                    );
+                                }
+                            }
+                            Err(err) => tracing::warn!(
+                                error = %err,
+                                event = %event,
+                                "Could not serialize download for checkpoint"
+                            ),
+                        }
+                    }
+                    _ => {}
+                }
+            }));
         }
 
         // 7. Start session manager if session directory is configured, or use XDG default

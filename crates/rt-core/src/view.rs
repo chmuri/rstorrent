@@ -195,6 +195,67 @@ impl View {
         self.emit_changed();
     }
 
+    /// Erases multiple downloads in a single O(N) pass, rebuilding the view's
+    /// visible/filtered partition and index efficiently.
+    pub fn erase_batch(
+        &mut self,
+        hashes: &std::collections::HashSet<HashString>,
+        map: Option<&CommandMap>,
+    ) {
+        if hashes.is_empty() || self.downloads.is_empty() {
+            return;
+        }
+        let any_present = hashes.iter().any(|h| self.index.contains_key(h));
+        if !any_present {
+            return;
+        }
+
+        let old_size_visible = self.size_visible;
+        let mut new_visible = Vec::with_capacity(old_size_visible);
+        let mut new_invisible =
+            Vec::with_capacity(self.downloads.len().saturating_sub(old_size_visible));
+        let mut removed_visible = Vec::new();
+
+        for (i, dl) in self.downloads.drain(..).enumerate() {
+            let hash = *dl.read().unwrap().info_hash();
+            if hashes.contains(&hash) {
+                if i < old_size_visible {
+                    removed_visible.push(dl);
+                }
+            } else if i < old_size_visible {
+                new_visible.push(dl);
+            } else {
+                new_invisible.push(dl);
+            }
+        }
+
+        self.size_visible = new_visible.len();
+        self.downloads = new_visible;
+        self.downloads.extend(new_invisible);
+
+        self.index.clear();
+        for (pos, dl) in self.downloads.iter().enumerate() {
+            let hash = *dl.read().unwrap().info_hash();
+            self.index.insert(hash, pos);
+        }
+
+        if self.size_visible == 0 {
+            self.focus = 0;
+        } else if self.focus >= self.size_visible {
+            self.focus = self.size_visible.saturating_sub(1);
+        }
+
+        if let Some(m) = map {
+            if !self.event_removed.is_empty() {
+                for dl in &removed_visible {
+                    self.call_event(&self.event_removed, dl, m);
+                }
+            }
+        }
+
+        self.emit_changed();
+    }
+
     pub fn set_visible(&mut self, hash: &HashString, map: Option<&CommandMap>) {
         let Some(&actual_idx) = self.index.get(hash) else {
             return;

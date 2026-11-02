@@ -22,6 +22,7 @@ getrandom.workspace = true
 nix.workspace = true
 libc.workspace = true
 base64.workspace = true
+rayon.workspace = true
 
 [dev-dependencies]
 lt-crypto.workspace = true

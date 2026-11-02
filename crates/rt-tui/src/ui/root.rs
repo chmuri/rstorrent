@@ -792,6 +792,46 @@ impl RootUI {
         all_ok
     }
 
+    /// Erases target downloads in batch using O(N) multi-threaded removal.
+    pub fn erase_target_downloads(&mut self) -> bool {
+        let targets = self.target_downloads();
+        if targets.is_empty() {
+            self.push_log("No download selected");
+            return false;
+        }
+        let count = targets.len();
+        let hashes: HashSet<HashString> = targets
+            .iter()
+            .filter_map(|dl| dl.read().ok().map(|g| *g.info_hash()))
+            .collect();
+
+        for h in &hashes {
+            self.selected_hashes.remove(h);
+        }
+        self.sync_selected_hashes_to_window();
+        self.mark_view_dirty();
+
+        if let Some(dl_list) = self.download_list.clone() {
+            dl_list.write().unwrap().erase_batch(&hashes);
+        } else {
+            for &hash in &hashes {
+                self.execute_download_commands_for_hash(hash, "d.erase=");
+            }
+        }
+
+        if let Some(view_manager) = self.view_manager.clone() {
+            view_manager
+                .write()
+                .unwrap()
+                .erase_batch_from_all(&hashes, None);
+        }
+
+        self.push_log(format!("Erased {} download(s)", count));
+        self.update_statusbar();
+        self.mark_view_dirty();
+        true
+    }
+
     /// Stops active target downloads or deletes stopped target downloads (^D).
     pub fn stop_or_delete_target_downloads(&mut self) -> bool {
         let targets = self.target_downloads();
@@ -801,6 +841,9 @@ impl RootUI {
         }
         let any_active = targets.iter().any(|dl| dl.read().unwrap().is_active());
         if any_active {
+            if let Some(dl_list) = &self.download_list {
+                dl_list.read().unwrap().stop_batch(&targets);
+            }
             let mut all_ok = true;
             for dl in targets {
                 let hash = *dl.read().unwrap().info_hash();
@@ -812,25 +855,7 @@ impl RootUI {
             }
             all_ok
         } else {
-            let mut all_ok = true;
-            for dl in targets {
-                let hash = *dl.read().unwrap().info_hash();
-                self.selected_hashes.remove(&hash);
-                if self.execute_download_commands_for_hash(hash, "d.erase=") {
-                    if let Some(view_manager) = self.view_manager.clone() {
-                        view_manager
-                            .write()
-                            .unwrap()
-                            .erase_download_from_all(&hash, None);
-                    }
-                } else {
-                    all_ok = false;
-                }
-            }
-            self.sync_selected_hashes_to_window();
-            self.update_statusbar();
-            self.mark_view_dirty();
-            all_ok
+            self.erase_target_downloads()
         }
     }
 
@@ -1728,6 +1753,24 @@ impl RootUI {
 
         // A popup menu owns keyboard input while it is open.
         if self.window_menu.is_some() {
+            let is_activation = key == 10 || key == 13 || key == 0x105 || key == b'l' as i32;
+            let is_erase_command = if is_activation {
+                let element = self.window_menu.as_ref().unwrap().lock().unwrap();
+                element
+                    .menu()
+                    .selected_entry()
+                    .and_then(|e| e.command.as_deref())
+                    == Some("d.erase=")
+            } else {
+                false
+            };
+
+            if is_erase_command {
+                self.close_menu();
+                self.erase_target_downloads();
+                return None;
+            }
+
             let Some(command_map) = self.command_map.clone() else {
                 self.push_log("Menu unavailable: command map is not configured");
                 self.close_menu();
