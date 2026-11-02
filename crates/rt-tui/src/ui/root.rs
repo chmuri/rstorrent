@@ -4,7 +4,9 @@ use crate::input::{
     KEY_DOWN, KEY_UP, MAX_INPUT_HISTORY_SIZE,
 };
 use crate::windows::chunks_seen::ChunksSeenWindow;
-use crate::windows::menu::{download_context_menu, Menu, MenuElement, MenuEntry, MenuOutcome};
+use crate::windows::menu::{
+    bulk_download_context_menu, download_context_menu, Menu, MenuElement, MenuEntry, MenuOutcome,
+};
 use crate::windows::peer_list::{PeerActionOutcome, PeerListWindow};
 use crate::windows::tracker_list::{TrackerAction, TrackerActionOutcome, TrackerListWindow};
 use crate::windows::transfer_list::TransferListWindow;
@@ -16,7 +18,7 @@ use lt_common::{HashString, Object};
 use ratatui::style::{Color, Modifier, Style};
 use rt_core::{Download, DownloadList, View, ViewManager};
 use rt_rpc::{parse_command_multiple, CommandMap, Target};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +83,7 @@ pub struct RootUI {
     pub force_shutdown_requested: bool,
     last_shutdown_request: Option<std::time::Instant>,
     pub log_messages: Vec<String>,
+    pub selected_hashes: HashSet<HashString>,
 
     pub color_map: Arc<RwLock<ColorMap>>,
     pub color_definitions: HashMap<String, String>,
@@ -167,6 +170,7 @@ impl RootUI {
             force_shutdown_requested: false,
             last_shutdown_request: None,
             log_messages: Vec::new(),
+            selected_hashes: HashSet::new(),
             color_map: Arc::new(RwLock::new(ColorMap::new())),
             color_definitions: HashMap::new(),
             input_history: InputHistory::new(),
@@ -539,6 +543,7 @@ impl RootUI {
             .lock()
             .unwrap()
             .set_view_name(view_name);
+        self.sync_selected_hashes_to_window();
         self.window_title
             .lock()
             .unwrap()
@@ -628,6 +633,264 @@ impl RootUI {
     pub fn selected_download_hash(&self) -> Option<HashString> {
         self.selected_download()
             .map(|download| *download.read().unwrap().info_hash())
+    }
+
+    /// Syncs current selected hashes to `window_download_list`.
+    pub fn sync_selected_hashes_to_window(&self) {
+        let mut win = self.window_download_list.lock().unwrap();
+        win.set_selected_hashes(self.selected_hashes.clone());
+    }
+
+    /// Whether the download with `hash` is selected.
+    pub fn is_selected(&self, hash: &HashString) -> bool {
+        self.selected_hashes.contains(hash)
+    }
+
+    /// Number of selected downloads.
+    pub fn selection_count(&self) -> usize {
+        self.selected_hashes.len()
+    }
+
+    /// Toggles selection of the currently focused download.
+    pub fn toggle_select_focused(&mut self) {
+        if let Some(dl) = self.selected_download() {
+            let hash = *dl.read().unwrap().info_hash();
+            if self.selected_hashes.contains(&hash) {
+                self.selected_hashes.remove(&hash);
+            } else {
+                self.selected_hashes.insert(hash);
+            }
+            self.sync_selected_hashes_to_window();
+            self.update_statusbar();
+            self.mark_ui_dirty();
+        }
+    }
+
+    /// Selects all visible downloads in the current view.
+    pub fn select_all(&mut self) {
+        for dl in self.visible_downloads() {
+            let hash = *dl.read().unwrap().info_hash();
+            self.selected_hashes.insert(hash);
+        }
+        self.sync_selected_hashes_to_window();
+        self.update_statusbar();
+        self.mark_ui_dirty();
+    }
+
+    /// Clears selection across all downloads.
+    pub fn deselect_all(&mut self) {
+        self.selected_hashes.clear();
+        self.sync_selected_hashes_to_window();
+        self.update_statusbar();
+        self.mark_ui_dirty();
+    }
+
+    /// Inverts selection across visible downloads in the current view.
+    pub fn invert_selection(&mut self) {
+        for dl in self.visible_downloads() {
+            let hash = *dl.read().unwrap().info_hash();
+            if self.selected_hashes.contains(&hash) {
+                self.selected_hashes.remove(&hash);
+            } else {
+                self.selected_hashes.insert(hash);
+            }
+        }
+        self.sync_selected_hashes_to_window();
+        self.update_statusbar();
+        self.mark_ui_dirty();
+    }
+
+    /// Returns the downloads visible in the active view.
+    pub fn visible_downloads(&self) -> Vec<Arc<RwLock<Download>>> {
+        let win = self.window_download_list.lock().unwrap();
+        if let Some(view_arc) = &win.view {
+            return view_arc.read().unwrap().visible_downloads().to_vec();
+        }
+        if let Some(vm_arc) = &win.view_manager {
+            let vm = vm_arc.read().unwrap();
+            if let Some(view) = vm.find(&win.view_name) {
+                return view.visible_downloads().to_vec();
+            }
+        }
+        self.download_list
+            .as_ref()
+            .map(|list| list.read().unwrap().all())
+            .unwrap_or_default()
+    }
+
+    /// Target downloads for operations: all selected downloads if any, otherwise the focused download.
+    pub fn target_downloads(&self) -> Vec<Arc<RwLock<Download>>> {
+        if !self.selected_hashes.is_empty() {
+            let visible = self.visible_downloads();
+            let filtered: Vec<_> = visible
+                .into_iter()
+                .filter(|dl| {
+                    self.selected_hashes
+                        .contains(dl.read().unwrap().info_hash())
+                })
+                .collect();
+            if !filtered.is_empty() {
+                return filtered;
+            }
+            if let Some(dl_list) = &self.download_list {
+                return dl_list
+                    .read()
+                    .unwrap()
+                    .all()
+                    .into_iter()
+                    .filter(|dl| {
+                        self.selected_hashes
+                            .contains(dl.read().unwrap().info_hash())
+                    })
+                    .collect();
+            }
+            Vec::new()
+        } else if let Some(dl) = self.selected_download() {
+            vec![dl]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Target download hashes for operations.
+    pub fn target_download_hashes(&self) -> Vec<HashString> {
+        self.target_downloads()
+            .iter()
+            .map(|dl| *dl.read().unwrap().info_hash())
+            .collect()
+    }
+
+    /// Runs commands against a specific download hash.
+    pub fn execute_download_commands_for_hash(&mut self, hash: HashString, commands: &str) -> bool {
+        let Some(command_map) = self.command_map.clone() else {
+            self.push_log("Command map is not configured");
+            return false;
+        };
+        let map = command_map.read().unwrap();
+        match parse_command_multiple(commands, &Target::Download(hash), &map, true) {
+            Ok(_) => true,
+            Err(error) => {
+                self.push_log(format!("Command failed: {commands}: {error}"));
+                false
+            }
+        }
+    }
+
+    /// Starts all target downloads (^S).
+    pub fn start_target_downloads(&mut self) -> bool {
+        let targets = self.target_download_hashes();
+        if targets.is_empty() {
+            self.push_log("No download selected");
+            return false;
+        }
+        let mut all_ok = true;
+        for hash in targets {
+            if !self.execute_download_commands_for_hash(hash, "d.start=") {
+                all_ok = false;
+            }
+        }
+        all_ok
+    }
+
+    /// Stops active target downloads or deletes stopped target downloads (^D).
+    pub fn stop_or_delete_target_downloads(&mut self) -> bool {
+        let targets = self.target_downloads();
+        if targets.is_empty() {
+            self.push_log("No download selected");
+            return false;
+        }
+        let any_active = targets.iter().any(|dl| dl.read().unwrap().is_active());
+        if any_active {
+            let mut all_ok = true;
+            for dl in targets {
+                let hash = *dl.read().unwrap().info_hash();
+                if dl.read().unwrap().is_active()
+                    && !self.execute_download_commands_for_hash(hash, "d.stop=")
+                {
+                    all_ok = false;
+                }
+            }
+            all_ok
+        } else {
+            let mut all_ok = true;
+            for dl in targets {
+                let hash = *dl.read().unwrap().info_hash();
+                self.selected_hashes.remove(&hash);
+                if self.execute_download_commands_for_hash(hash, "d.erase=") {
+                    if let Some(view_manager) = self.view_manager.clone() {
+                        view_manager
+                            .write()
+                            .unwrap()
+                            .erase_download_from_all(&hash, None);
+                    }
+                } else {
+                    all_ok = false;
+                }
+            }
+            self.sync_selected_hashes_to_window();
+            self.update_statusbar();
+            self.mark_view_dirty();
+            all_ok
+        }
+    }
+
+    /// Closes target downloads and ignores commands (^K).
+    pub fn close_target_downloads(&mut self) -> bool {
+        let targets = self.target_download_hashes();
+        if targets.is_empty() {
+            self.push_log("No download selected");
+            return false;
+        }
+        let mut all_ok = true;
+        for hash in targets {
+            if !self.execute_download_commands_for_hash(
+                hash,
+                "d.ignore_commands.set=1;d.stop=;d.close=",
+            ) {
+                all_ok = false;
+            }
+        }
+        all_ok
+    }
+
+    /// Re-checks target downloads (^R).
+    pub fn check_hash_target_downloads(&mut self) -> bool {
+        let targets = self.target_download_hashes();
+        if targets.is_empty() {
+            self.push_log("No download selected");
+            return false;
+        }
+        let mut all_ok = true;
+        for hash in targets {
+            if !self.execute_download_commands_for_hash(hash, "d.complete.set=0;d.check_hash=") {
+                all_ok = false;
+            }
+        }
+        all_ok
+    }
+
+    /// Adjusts priority on target downloads (+ / -).
+    pub fn adjust_target_priority(&mut self, delta: i32) -> bool {
+        let targets = self.target_downloads();
+        if targets.is_empty() {
+            self.push_log("No download selected");
+            return false;
+        }
+        let mut all_ok = true;
+        for dl in targets {
+            let (hash, next) = {
+                let guard = dl.read().unwrap();
+                let hash = *guard.info_hash();
+                let prio = guard.priority() as i64;
+                let next = (prio + delta as i64).rem_euclid(4);
+                (hash, next)
+            };
+            if !self.execute_download_commands_for_hash(hash, &format!("d.priority.set={next}")) {
+                all_ok = false;
+            }
+        }
+        self.mark_ui_dirty();
+        all_ok
     }
 
     /// Runs one or more `;`-separated commands against the focused download.
@@ -724,6 +987,9 @@ impl RootUI {
         };
         let erased = self.execute_download_commands("d.erase=");
         if erased {
+            self.selected_hashes.remove(&hash);
+            self.sync_selected_hashes_to_window();
+            self.update_statusbar();
             if let Some(view_manager) = self.view_manager.clone() {
                 view_manager
                     .write()
@@ -1234,8 +1500,15 @@ impl RootUI {
     }
 
     pub fn update_statusbar(&mut self) {
+        let selected_count = self.selection_count();
+        let selected_prefix = if selected_count > 0 {
+            format!("[{} selected] ", selected_count)
+        } else {
+            String::new()
+        };
         let throttle_str = format!(
-            "[Throttle {} / {} KB] [Rate {:5.1} / {:5.1} KB] [Port: {}]",
+            "{}[Throttle {} / {} KB] [Rate {:5.1} / {:5.1} KB] [Port: {}]",
+            selected_prefix,
             if self.throttle_up == 0 {
                 "off".to_string()
             } else {
@@ -1529,18 +1802,27 @@ impl RootUI {
         } else if k == 0x18 {
             // ^X: execute command
             self.enable_input("execute", InputPromptMode::Command);
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 32 {
+            // Space: toggle selection of the focused download.
+            self.toggle_select_focused();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == 0x01 {
+            // ^A: select all downloads in the current view.
+            self.select_all();
+        } else if self.active_screen == ActiveScreen::DownloadList && k == (b'*' as i32) {
+            // *: invert selection across visible downloads in the current view.
+            self.invert_selection();
         } else if self.active_screen == ActiveScreen::DownloadList && k == 0x13 {
-            // ^S: start the focused download.
-            self.execute_download_commands("d.start=");
+            // ^S: start the focused download, or all selected downloads.
+            self.start_target_downloads();
         } else if self.active_screen == ActiveScreen::DownloadList && k == 0x04 {
-            // ^D: stop an active download, erase a stopped one.
-            self.delete_selected_download();
+            // ^D: stop an active download, erase a stopped one (or targets).
+            self.stop_or_delete_target_downloads();
         } else if self.active_screen == ActiveScreen::DownloadList && k == 0x0B {
-            // ^K: stop and close the download, ignoring further commands.
-            self.execute_download_commands("d.ignore_commands.set=1;d.stop=;d.close=");
+            // ^K: stop and close download(s), ignoring further commands.
+            self.close_target_downloads();
         } else if self.active_screen == ActiveScreen::DownloadList && k == 0x12 {
-            // ^R: force a complete re-hash.
-            self.execute_download_commands("d.complete.set=0;d.check_hash=");
+            // ^R: force a complete re-hash on target(s).
+            self.check_hash_target_downloads();
         } else if self.active_screen == ActiveScreen::DownloadList && k == 0x05 {
             // ^E: queue the creation/resizing of every file.
             self.execute_download_commands(
@@ -1562,14 +1844,14 @@ impl RootUI {
             // U: delete the file the download is tied to.
             self.execute_download_commands("d.delete_tied=");
         } else if self.active_screen == ActiveScreen::DownloadList && k == (b'+' as i32) {
-            self.adjust_selected_priority(1);
+            self.adjust_target_priority(1);
         } else if self.active_screen == ActiveScreen::DownloadList && k == (b'-' as i32) {
-            self.adjust_selected_priority(-1);
+            self.adjust_target_priority(-1);
         } else if self.active_screen == ActiveScreen::DownloadList
             && keymap.matches(NavigationKey::DeleteItem, k)
         {
             // RT_KEY_DELETE_ITEM / vi 'x'.
-            self.delete_selected_download();
+            self.stop_or_delete_target_downloads();
         } else if let Some((up, delta)) = self.throttle_layout_enum().action(
             k,
             self.throttle_step_small,
@@ -1604,8 +1886,10 @@ impl RootUI {
                 self.set_active_screen(ActiveScreen::DownloadList);
             }
         } else if k == 0x1B {
-            // Esc: return to DownloadList
-            if self.active_screen != ActiveScreen::DownloadList {
+            // Esc: clear selection if in DownloadList with items selected; otherwise return to DownloadList
+            if self.active_screen == ActiveScreen::DownloadList && self.selection_count() > 0 {
+                self.deselect_all();
+            } else if self.active_screen != ActiveScreen::DownloadList {
                 self.set_active_screen(ActiveScreen::DownloadList);
             }
         } else if keymap.matches(NavigationKey::Left, k) {
@@ -1752,9 +2036,11 @@ impl RootUI {
         } else if self.active_screen == ActiveScreen::TransferList && k == (b'r' as i32) {
             self.window_transfer_list.lock().unwrap().refresh();
         } else if k == (b'm' as i32) {
-            if let Some(download) = self.selected_download() {
-                let hash = *download.read().unwrap().info_hash();
-                self.open_menu(download_context_menu(&hash));
+            let hashes = self.target_download_hashes();
+            if hashes.len() > 1 {
+                self.open_menu(bulk_download_context_menu(&hashes));
+            } else if let Some(hash) = hashes.first() {
+                self.open_menu(download_context_menu(hash));
             }
         } else if k == (b'u' as i32) {
             // 'u' opens the transfer list (chunks use 'i', as in rTorrent).

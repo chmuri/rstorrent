@@ -1,5 +1,8 @@
 use crate::display::{Canvas, Window, EXTENT_FULL, FLAG_ACTIVE};
+use lt_common::HashString;
+use ratatui::style::{Color, Style};
 use rt_core::{View, ViewManager};
+use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 
 /// Percentage of payload bytes covered by verified pieces.
@@ -62,6 +65,7 @@ pub struct WindowDownloadList {
     pub view_manager: Option<Arc<RwLock<ViewManager>>>,
     pub view_name: String,
     pub layout: String,
+    pub selected_hashes: HashSet<HashString>,
     dirty: bool,
     /// Index of the first rendered download. Adjusted on every render so the
     /// focused row stays on screen.
@@ -84,10 +88,16 @@ impl WindowDownloadList {
             view_manager: None,
             view_name: "main".to_string(),
             layout: "full".to_string(),
+            selected_hashes: HashSet::new(),
             dirty: true,
             scroll: 0,
             page: 1,
         }
+    }
+
+    pub fn set_selected_hashes(&mut self, hashes: HashSet<HashString>) {
+        self.selected_hashes = hashes;
+        self.dirty = true;
     }
 
     pub fn set_view(&mut self, view: Option<Arc<RwLock<View>>>) {
@@ -181,8 +191,28 @@ impl WindowDownloadList {
                     break;
                 }
                 let is_focused = idx == focus_idx;
-                let mark = if is_focused { '*' } else { ' ' };
                 let dl_guard = dl.read().unwrap();
+                let is_selected = self.selected_hashes.contains(dl_guard.info_hash());
+                let mark = if is_selected {
+                    '*'
+                } else if is_focused {
+                    if self.selected_hashes.is_empty() {
+                        '*'
+                    } else {
+                        '>'
+                    }
+                } else {
+                    ' '
+                };
+                let row_style = if is_selected && is_focused {
+                    Style::default().reversed().fg(Color::Yellow)
+                } else if is_focused {
+                    Style::default().reversed()
+                } else if is_selected {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
                 let name = dl_guard.name();
                 let size_mb = dl_guard.metadata().total_size as f64 / (1024.0 * 1024.0);
                 let down_mb = dl_guard.downloaded_bytes() as f64 / (1024.0 * 1024.0);
@@ -200,9 +230,19 @@ impl WindowDownloadList {
                     dl_guard.chunks_hashed(),
                     dl_guard.metadata().num_pieces,
                 );
-                let line = format!("{} {:<64}| {:<10} | {:7.1} MB | {:7.1} MB | {:3}% | {:6.1} KB | {:6.1} KB | {:7.1} MB | --d --:-- |  0.00 |",
-                    mark, name, status_str, down_mb, size_mb, percent, rate_up_kb, rate_down_kb, up_mb);
-                canvas.print_at(0, y, &line);
+                let line = format!(
+                    "{} {:<64}| {:<10} | {:7.1} MB | {:7.1} MB | {:3}% | {:6.1} KB | {:6.1} KB | {:7.1} MB | --d --:-- |  0.00 |",
+                    mark,
+                    name,
+                    status_str,
+                    down_mb,
+                    size_mb,
+                    percent,
+                    rate_up_kb,
+                    rate_down_kb,
+                    up_mb
+                );
+                canvas.print_at_styled(0, y, &line, row_style);
                 y += 1;
             }
         } else {
@@ -213,8 +253,28 @@ impl WindowDownloadList {
                     break;
                 }
                 let is_focused = idx == focus_idx;
-                let mark = if is_focused { '*' } else { ' ' };
                 let dl_guard = dl.read().unwrap();
+                let is_selected = self.selected_hashes.contains(dl_guard.info_hash());
+                let mark = if is_selected {
+                    '*'
+                } else if is_focused {
+                    if self.selected_hashes.is_empty() {
+                        '*'
+                    } else {
+                        '>'
+                    }
+                } else {
+                    ' '
+                };
+                let row_style = if is_selected && is_focused {
+                    Style::default().reversed().fg(Color::Yellow)
+                } else if is_focused {
+                    Style::default().reversed()
+                } else if is_selected {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
                 let name = dl_guard.name();
                 let total_size_mb = dl_guard.metadata().total_size as f64 / (1024.0 * 1024.0);
                 let done_mb = dl_guard.completed_bytes() as f64 / (1024.0 * 1024.0);
@@ -225,7 +285,7 @@ impl WindowDownloadList {
                 let rate_up_kb = (dl_guard.download().rate_up() as f64) / 1024.0;
 
                 // Line 1: Title
-                canvas.print_at(0, y, &format!("{} {}", mark, name));
+                canvas.print_at_styled(0, y, &format!("{} {}", mark, name), row_style);
                 y += 1;
 
                 // Line 2: verified progress, rates and uploaded total.
@@ -238,7 +298,7 @@ impl WindowDownloadList {
                 } else {
                     0.0
                 };
-                canvas.print_at(
+                canvas.print_at_styled(
                     0,
                     y,
                     &format!(
@@ -246,6 +306,7 @@ impl WindowDownloadList {
                         mark, size_str, rate_down_kb, rate_up_kb, up_mb,
                         dl_guard.downloaded_bytes() as f64 / (1024.0 * 1024.0), ratio
                     ),
+                    row_style,
                 );
                 y += 1;
 
@@ -272,7 +333,7 @@ impl WindowDownloadList {
                 } else {
                     "[CONNECTING]  Peers: 0".to_string()
                 };
-                canvas.print_at(0, y, &format!("{} {}", mark, status_str));
+                canvas.print_at_styled(0, y, &format!("{} {}", mark, status_str), row_style);
                 y += 1;
             }
         }

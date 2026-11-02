@@ -226,6 +226,7 @@ impl MenuOutcome {
 pub struct Menu {
     levels: Vec<MenuLevel>,
     target: Target,
+    pub extra_targets: Vec<Target>,
     page_size: usize,
     last_error: Option<String>,
     messages: Vec<String>,
@@ -252,10 +253,17 @@ impl Menu {
         Self {
             levels: vec![level],
             target: Target::None,
+            extra_targets: Vec::new(),
             page_size: 10,
             last_error: None,
             messages: Vec::new(),
         }
+    }
+
+    /// Capture extra targets used when dispatching bulk commands.
+    pub fn with_extra_targets(mut self, targets: Vec<Target>) -> Self {
+        self.extra_targets = targets;
+        self
     }
 
     /// Capture the target used for every command dispatched by this menu.
@@ -479,6 +487,9 @@ impl Menu {
         let target = self.target.clone();
         match run_command(command_map, &command, &target) {
             Ok(()) => {
+                for extra in &self.extra_targets {
+                    let _ = run_command(command_map, &command, extra);
+                }
                 self.last_error = None;
                 self.record(format!("Executed: {command}"));
                 MenuOutcome::Executed(command)
@@ -782,6 +793,45 @@ pub fn download_context_menu(hash: &HashString) -> Menu {
         ],
     )
     .with_target(Target::Download(*hash))
+}
+
+/// Build the context menu for multiple selected downloads.
+pub fn bulk_download_context_menu(hashes: &[HashString]) -> Menu {
+    if hashes.is_empty() {
+        return Menu::from_entries("Bulk", Vec::new());
+    }
+    let count = hashes.len();
+    let first = Target::Download(hashes[0]);
+    let extra: Vec<Target> = hashes[1..].iter().map(|h| Target::Download(*h)).collect();
+    Menu::from_entries(
+        format!("Download ({count} selected)"),
+        vec![
+            MenuEntry::command(format!("Start ({count} torrents)"), "d.start="),
+            MenuEntry::command(format!("Stop ({count} torrents)"), "d.stop="),
+            MenuEntry::command(
+                format!("Close ({count} torrents)"),
+                "d.ignore_commands.set=1;d.stop=;d.close=",
+            ),
+            MenuEntry::command(
+                format!("Check Hash ({count} torrents)"),
+                "d.complete.set=0;d.check_hash=",
+            ),
+            MenuEntry::submenu(
+                format!("Priority ({count} torrents)"),
+                MenuLevel::with_entries(
+                    "Priority",
+                    vec![
+                        MenuEntry::command("Off", "d.priority.set=0"),
+                        MenuEntry::command("Normal", "d.priority.set=1"),
+                        MenuEntry::command("High", "d.priority.set=2"),
+                    ],
+                ),
+            ),
+            MenuEntry::command(format!("Erase ({count} torrents)"), "d.erase="),
+        ],
+    )
+    .with_target(first)
+    .with_extra_targets(extra)
 }
 
 /// Download context menu with the state-dependent entries disabled.

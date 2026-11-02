@@ -28,7 +28,7 @@ pub fn previous_priority(priority: u32) -> u32 {
 pub fn global_action(code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
     match (code, modifiers) {
         (KeyCode::Backspace, _) => Some(TuiAction::OpenPrompt(PromptKind::Load)),
-        (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
+        (KeyCode::Char('x') | KeyCode::Char('X'), KeyModifiers::CONTROL) => {
             Some(TuiAction::OpenPrompt(PromptKind::Command))
         }
         (KeyCode::Char('/'), KeyModifiers::NONE)
@@ -53,11 +53,13 @@ pub fn torrent_action(
     let hash = torrent.hash.clone();
 
     match (code, modifiers) {
-        (KeyCode::Char('s'), KeyModifiers::CONTROL) => Some(TuiAction::ControlTorrent {
-            hash,
-            action: TorrentAction::Start,
-        }),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+        (KeyCode::Char('s') | KeyCode::Char('S'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::ControlTorrent {
+                hash,
+                action: TorrentAction::Start,
+            })
+        }
+        (KeyCode::Char('d') | KeyCode::Char('D'), KeyModifiers::CONTROL) => {
             if torrent.is_active {
                 Some(TuiAction::ControlTorrent {
                     hash,
@@ -67,32 +69,36 @@ pub fn torrent_action(
                 Some(TuiAction::RemoveTorrent { hash })
             }
         }
-        (KeyCode::Char('k'), KeyModifiers::CONTROL) => Some(TuiAction::Batch(vec![
-            TuiAction::Execute {
-                command: IGNORE_COMMANDS.to_string(),
-                args: vec![1],
-                hash: Some(hash.clone()),
-            },
-            TuiAction::ControlTorrent {
-                hash: hash.clone(),
-                action: TorrentAction::Stop,
-            },
-            TuiAction::ControlTorrent {
-                hash,
-                action: TorrentAction::Close,
-            },
-        ])),
-        (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(TuiAction::Batch(vec![
-            TuiAction::Execute {
-                command: COMPLETE_SET.to_string(),
-                args: vec![0],
-                hash: Some(hash.clone()),
-            },
-            TuiAction::ControlTorrent {
-                hash,
-                action: TorrentAction::CheckHash,
-            },
-        ])),
+        (KeyCode::Char('k') | KeyCode::Char('K'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::Batch(vec![
+                TuiAction::Execute {
+                    command: IGNORE_COMMANDS.to_string(),
+                    args: vec![1],
+                    hash: Some(hash.clone()),
+                },
+                TuiAction::ControlTorrent {
+                    hash: hash.clone(),
+                    action: TorrentAction::Stop,
+                },
+                TuiAction::ControlTorrent {
+                    hash,
+                    action: TorrentAction::Close,
+                },
+            ]))
+        }
+        (KeyCode::Char('r') | KeyCode::Char('R'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::Batch(vec![
+                TuiAction::Execute {
+                    command: COMPLETE_SET.to_string(),
+                    args: vec![0],
+                    hash: Some(hash.clone()),
+                },
+                TuiAction::ControlTorrent {
+                    hash,
+                    action: TorrentAction::CheckHash,
+                },
+            ]))
+        }
         (KeyCode::Char('+'), _) => Some(TuiAction::SetPriority {
             hash,
             priority: next_priority(torrent.priority),
@@ -123,11 +129,13 @@ pub fn bulk_torrent_action(
     }
 
     match (code, modifiers) {
-        (KeyCode::Char('s'), KeyModifiers::CONTROL) => Some(TuiAction::BulkControlTorrents {
-            hashes,
-            action: TorrentAction::Start,
-        }),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+        (KeyCode::Char('s') | KeyCode::Char('S'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::BulkControlTorrents {
+                hashes,
+                action: TorrentAction::Start,
+            })
+        }
+        (KeyCode::Char('d') | KeyCode::Char('D'), KeyModifiers::CONTROL) => {
             if any_active {
                 Some(TuiAction::BulkControlTorrents {
                     hashes,
@@ -137,14 +145,18 @@ pub fn bulk_torrent_action(
                 Some(TuiAction::BulkRemoveTorrents { hashes })
             }
         }
-        (KeyCode::Char('k'), KeyModifiers::CONTROL) => Some(TuiAction::BulkControlTorrents {
-            hashes,
-            action: TorrentAction::Close,
-        }),
-        (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(TuiAction::BulkControlTorrents {
-            hashes,
-            action: TorrentAction::CheckHash,
-        }),
+        (KeyCode::Char('k') | KeyCode::Char('K'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::BulkControlTorrents {
+                hashes,
+                action: TorrentAction::Close,
+            })
+        }
+        (KeyCode::Char('r') | KeyCode::Char('R'), KeyModifiers::CONTROL) => {
+            Some(TuiAction::BulkControlTorrents {
+                hashes,
+                action: TorrentAction::CheckHash,
+            })
+        }
         (KeyCode::Char('+'), _) => Some(TuiAction::BulkSetPriority {
             hashes,
             priority: next_priority(current_priority),

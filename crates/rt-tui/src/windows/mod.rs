@@ -18,10 +18,11 @@ pub use file_list::{FileListRow, FilePriority, WindowFileList};
 pub use input::WindowInput;
 pub use log::WindowLog;
 pub use menu::{
-    context_menu_for_target, download_context_menu, download_context_menu_with_state,
-    file_context_menu, file_context_menu_with_priority, peer_context_menu,
-    peer_context_menu_with_state, Menu, MenuElement, MenuEntry, MenuLevel, MenuOutcome, KEY_DOWN,
-    KEY_ENTER, KEY_ESCAPE, KEY_LEFT, KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_RIGHT, KEY_UP,
+    bulk_download_context_menu, context_menu_for_target, download_context_menu,
+    download_context_menu_with_state, file_context_menu, file_context_menu_with_priority,
+    peer_context_menu, peer_context_menu_with_state, Menu, MenuElement, MenuEntry, MenuLevel,
+    MenuOutcome, KEY_DOWN, KEY_ENTER, KEY_ESCAPE, KEY_LEFT, KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_RIGHT,
+    KEY_UP,
 };
 pub use statusbar::WindowStatusbar;
 pub use title::WindowTitle;

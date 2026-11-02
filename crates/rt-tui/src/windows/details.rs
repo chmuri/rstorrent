@@ -630,12 +630,36 @@ impl Window for WindowDownloadDetails {
         let header_style = Style::default().bg(Color::Blue).fg(Color::White);
         let tab_indicator = format!(
             " [1: Info{}] [2: Peers{}] [3: Files{}] [4: Trackers{}] [5: Chunks{}] [6: Transfers{}]  (Left / Backspace to return) ",
-            if self.current_tab == DetailTab::Info { " *" } else { "" },
-            if self.current_tab == DetailTab::Peers { " *" } else { "" },
-            if self.current_tab == DetailTab::Files { " *" } else { "" },
-            if self.current_tab == DetailTab::Trackers { " *" } else { "" },
-            if self.current_tab == DetailTab::Chunks { " *" } else { "" },
-            if self.current_tab == DetailTab::Transfers { " *" } else { "" },
+            if self.current_tab == DetailTab::Info {
+                " *"
+            } else {
+                ""
+            },
+            if self.current_tab == DetailTab::Peers {
+                " *"
+            } else {
+                ""
+            },
+            if self.current_tab == DetailTab::Files {
+                " *"
+            } else {
+                ""
+            },
+            if self.current_tab == DetailTab::Trackers {
+                " *"
+            } else {
+                ""
+            },
+            if self.current_tab == DetailTab::Chunks {
+                " *"
+            } else {
+                ""
+            },
+            if self.current_tab == DetailTab::Transfers {
+                " *"
+            } else {
+                ""
+            },
         );
         let w = canvas.width() as usize;
         let padded_header = format!("{:<width$}", tab_indicator, width = w);

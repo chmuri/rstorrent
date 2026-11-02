@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-02
+
+### Added
+
+- **Bulk operations & selection in native TUI (`rt-tui`)**:
+  - Implemented multi-selection in `RootUI`: `Space` toggles focus item selection, `Ctrl+A` selects all downloads in the view, `*` inverts selection, and `Esc` clears selection.
+  - Multi-torrent shortcuts: `^S` (start), `^D` / `x` (stop active / erase stopped), `^K` (stop, close, ignore commands), `^R` (re-check hash), and `+`/`-` (priority adjustment) now operate over all selected torrents.
+  - Bulk context menu: pressing `m` with multiple torrents selected opens `Download (N selected)` context menu, dispatching commands across all selected items.
+  - Visual indicators: selected rows are highlighted in yellow with `*` prefix (`>` indicates focus when selections are active); status bar displays `[N selected]`.
+
+### Fixed
+
+- **Key modifier handling in `rt-tui-client`**:
+  - Fixed `*` (invert selection) requiring `KeyModifiers::NONE`, allowing it to trigger with `Shift` on standard keyboard layouts.
+  - Fixed Ctrl shortcuts (`^A`, `^S`, `^D`, `^K`, `^R`) to be case-insensitive for both lowercase and uppercase key codes.
+
 ## [0.19.0] - 2026-11-01
 
 ### Added

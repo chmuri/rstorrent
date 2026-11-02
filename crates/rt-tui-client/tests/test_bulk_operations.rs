@@ -81,6 +81,42 @@ fn star_inverts_selection() {
     assert!(!app.state.is_selected("hash1"));
     assert!(app.state.is_selected("hash2"));
     assert!(app.state.is_selected("hash3"));
+
+    // Invert with SHIFT (standard keyboard layout: Shift+8 produces '*')
+    app.handle_key(KeyCode::Char('*'), KeyModifiers::SHIFT);
+    assert_eq!(app.state.selection_count(), 1);
+    assert!(app.state.is_selected("hash1"));
+    assert!(!app.state.is_selected("hash2"));
+    assert!(!app.state.is_selected("hash3"));
+}
+
+#[test]
+fn ctrl_capital_a_and_uppercase_ctrl_shortcuts() {
+    let mut app = app_with_three_torrents();
+
+    // Ctrl+A with uppercase 'A'
+    app.handle_key(KeyCode::Char('A'), KeyModifiers::CONTROL);
+    assert_eq!(app.state.selection_count(), 3);
+
+    // Ctrl+S with uppercase 'S'
+    let action = app.handle_key(KeyCode::Char('S'), KeyModifiers::CONTROL);
+    match action {
+        Some(TuiAction::BulkControlTorrents { hashes, action }) => {
+            assert_eq!(hashes.len(), 3);
+            assert_eq!(action, TorrentAction::Start);
+        }
+        other => panic!("expected BulkControlTorrents, got {other:?}"),
+    }
+
+    // Ctrl+K with uppercase 'K'
+    let action = app.handle_key(KeyCode::Char('K'), KeyModifiers::CONTROL);
+    match action {
+        Some(TuiAction::BulkControlTorrents { hashes, action }) => {
+            assert_eq!(hashes.len(), 3);
+            assert_eq!(action, TorrentAction::Close);
+        }
+        other => panic!("expected BulkControlTorrents, got {other:?}"),
+    }
 }
 
 #[test]
