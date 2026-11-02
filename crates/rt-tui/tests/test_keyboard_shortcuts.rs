@@ -1226,3 +1226,126 @@ fn file_list_right_opens_info_for_files_and_expands_directories() {
     assert!(!f.ui.menu_is_open());
     assert_eq!(f.ui.active_screen, ActiveScreen::FileList);
 }
+
+#[test]
+fn bulk_selection_shortcuts_and_statusbar() {
+    let mut f = make_fixture(false, 3);
+    assert_eq!(f.ui.selection_count(), 0);
+
+    // Space selects the first download
+    f.ui.handle_key(32);
+    assert_eq!(f.ui.selection_count(), 1);
+    let h0 = *f.downloads[0].read().unwrap().info_hash();
+    assert!(f.ui.is_selected(&h0));
+    assert!(f
+        .ui
+        .window_statusbar
+        .lock()
+        .unwrap()
+        .extra_text
+        .contains("[1 selected]"));
+
+    // Move down and select second download
+    f.ui.handle_key(KEY_DOWN);
+    f.ui.handle_key(32);
+    assert_eq!(f.ui.selection_count(), 2);
+    let h1 = *f.downloads[1].read().unwrap().info_hash();
+    assert!(f.ui.is_selected(&h1));
+    assert!(f
+        .ui
+        .window_statusbar
+        .lock()
+        .unwrap()
+        .extra_text
+        .contains("[2 selected]"));
+
+    // Space on the second download deselects it
+    f.ui.handle_key(32);
+    assert_eq!(f.ui.selection_count(), 1);
+    assert!(!f.ui.is_selected(&h1));
+
+    // Ctrl+A selects all
+    f.ui.handle_key(0x01);
+    assert_eq!(f.ui.selection_count(), 3);
+    assert!(f
+        .ui
+        .window_statusbar
+        .lock()
+        .unwrap()
+        .extra_text
+        .contains("[3 selected]"));
+
+    // '*' inverts selection (all -> none)
+    f.ui.handle_key(b'*' as i32);
+    assert_eq!(f.ui.selection_count(), 0);
+    assert!(!f
+        .ui
+        .window_statusbar
+        .lock()
+        .unwrap()
+        .extra_text
+        .contains("selected"));
+
+    // Select one, then Esc clears it
+    f.ui.handle_key(32);
+    assert_eq!(f.ui.selection_count(), 1);
+    f.ui.handle_key(0x1B);
+    assert_eq!(f.ui.selection_count(), 0);
+    assert_eq!(f.ui.active_screen, ActiveScreen::DownloadList);
+}
+
+#[test]
+fn bulk_actions_and_context_menu() {
+    let mut f = make_command_fixture(false, 3);
+    // Select first two downloads
+    f.ui.handle_key(32);
+    f.ui.handle_key(KEY_DOWN);
+    f.ui.handle_key(32);
+    assert_eq!(f.ui.selection_count(), 2);
+
+    // 'm' opens bulk context menu with extra targets
+    f.ui.handle_key(b'm' as i32);
+    assert!(f.ui.menu_is_open());
+    assert_eq!(
+        f.ui.window_menu
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .menu()
+            .title(),
+        "Download (2 selected)"
+    );
+    // Esc closes menu
+    f.ui.handle_key(0x1B);
+    assert!(!f.ui.menu_is_open());
+
+    // '+' increases priority on both selected downloads
+    f.ui.handle_key(b'+' as i32);
+    assert_eq!(f.downloads[0].read().unwrap().priority(), 3);
+    assert_eq!(f.downloads[1].read().unwrap().priority(), 3);
+    // Download 3 was not selected, remains priority 2 (default)
+    assert_eq!(f.downloads[2].read().unwrap().priority(), 2);
+
+    // '-' decreases priority on both selected downloads back to 2
+    f.ui.handle_key(b'-' as i32);
+    assert_eq!(f.downloads[0].read().unwrap().priority(), 2);
+    assert_eq!(f.downloads[1].read().unwrap().priority(), 2);
+
+    // ^S starts selected downloads
+    f.ui.handle_key(0x13);
+    assert!(f.downloads[0].read().unwrap().is_active());
+    assert!(f.downloads[1].read().unwrap().is_active());
+    assert!(!f.downloads[2].read().unwrap().is_active());
+
+    // ^D stops active selected downloads
+    f.ui.handle_key(0x04);
+    assert!(!f.downloads[0].read().unwrap().is_active());
+    assert!(!f.downloads[1].read().unwrap().is_active());
+
+    // ^D again erases stopped selected downloads
+    f.ui.handle_key(0x04);
+    assert_eq!(f.ui.selection_count(), 0);
+    let remaining = f.vm.read().unwrap().find("main").unwrap().size_visible();
+    assert_eq!(remaining, 1);
+}

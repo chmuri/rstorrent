@@ -497,15 +497,15 @@ impl App {
                 self.state.show_log = true;
                 return None;
             }
-            (KeyCode::Char(' '), KeyModifiers::NONE) => {
+            (KeyCode::Char(' '), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.state.toggle_select_focused();
                 return None;
             }
-            (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+            (KeyCode::Char('a') | KeyCode::Char('A'), KeyModifiers::CONTROL) => {
                 self.state.select_all();
                 return None;
             }
-            (KeyCode::Char('*'), KeyModifiers::NONE) => {
+            (KeyCode::Char('*'), _) => {
                 self.state.invert_selection();
                 return None;
             }
