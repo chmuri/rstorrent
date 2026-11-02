@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 pub type DownloadEventListener = Arc<dyn Fn(&str, &Arc<RwLock<Download>>) + Send + Sync>;
+pub type DownloadBatchEventListener = Arc<dyn Fn(&str, &[Arc<RwLock<Download>>]) + Send + Sync>;
 
 /// Default number of concurrent hash passes: enough to keep a few disks busy
 /// without turning a restore into a thread storm.
@@ -23,6 +24,7 @@ pub struct DownloadList {
     /// so duplicate detection and lookup do not scan the whole list.
     index: HashMap<HashString, usize>,
     listeners: Vec<DownloadEventListener>,
+    batch_listeners: Vec<DownloadBatchEventListener>,
     /// Created on the first recheck, so a process that never hashes never
     /// pays for the worker threads.
     hash_scheduler: OnceLock<Arc<HashScheduler>>,
@@ -35,6 +37,7 @@ impl DownloadList {
             downloads: Vec::new(),
             index: HashMap::new(),
             listeners: Vec::new(),
+            batch_listeners: Vec::new(),
             hash_scheduler: OnceLock::new(),
             hash_concurrency: AtomicUsize::new(default_hash_concurrency()),
         }
@@ -74,6 +77,17 @@ impl DownloadList {
 
     pub fn add_event_listener(&mut self, listener: DownloadEventListener) {
         self.listeners.push(listener);
+    }
+
+    pub fn add_batch_event_listener(&mut self, listener: DownloadBatchEventListener) {
+        self.batch_listeners.push(listener);
+    }
+
+    /// Dispatches an internal batch lifecycle event to every registered batch listener.
+    fn emit_batch(&self, event: &str, downloads: &[Arc<RwLock<Download>>]) {
+        for listener in &self.batch_listeners {
+            listener(event, downloads);
+        }
     }
 
     /// Dispatches an internal lifecycle event to every registered listener.
@@ -183,6 +197,49 @@ impl DownloadList {
     pub fn erase_hex(&mut self, hash: &str) -> Option<Arc<RwLock<Download>>> {
         let key = HashString::from_hex(hash)?;
         self.erase(&key)
+    }
+
+    /// Erases multiple downloads in a single O(N) pass, tearing down torrent state
+    /// in parallel across available CPU cores using Rayon.
+    pub fn erase_batch(
+        &mut self,
+        hashes: &std::collections::HashSet<HashString>,
+    ) -> Vec<Arc<RwLock<Download>>> {
+        if hashes.is_empty() {
+            return Vec::new();
+        }
+        use rayon::prelude::*;
+
+        let mut to_erase = Vec::with_capacity(hashes.len());
+        let mut retained = Vec::with_capacity(self.downloads.len().saturating_sub(hashes.len()));
+
+        for dl in self.downloads.drain(..) {
+            let hash = *dl.read().unwrap().info_hash();
+            if hashes.contains(&hash) {
+                to_erase.push(dl);
+            } else {
+                retained.push(dl);
+            }
+        }
+
+        self.downloads = retained;
+        self.index.clear();
+        for (pos, dl) in self.downloads.iter().enumerate() {
+            let hash = *dl.read().unwrap().info_hash();
+            self.index.insert(hash, pos);
+        }
+
+        // Parallel teardown across available CPU cores
+        to_erase.par_iter().for_each(|dl| {
+            let mut guard = dl.write().unwrap();
+            if !guard.is_erasing() {
+                guard.set_erasing(true);
+                guard.erase();
+            }
+        });
+
+        self.emit_batch("event.download.erased_batch", &to_erase);
+        to_erase
     }
 
     /// Repairs index entries whose position shifted after a removal.
@@ -427,6 +484,14 @@ impl DownloadList {
             self.emit("event.download.paused", download);
         }
         Ok(())
+    }
+
+    /// Stops multiple downloads in parallel using Rayon.
+    pub fn stop_batch(&self, downloads: &[Arc<RwLock<Download>>]) {
+        use rayon::prelude::*;
+        downloads.par_iter().for_each(|dl| {
+            let _ = dl.write().unwrap().try_stop();
+        });
     }
 
     /// rTorrent's `d.try_close`: close only when the download is not being

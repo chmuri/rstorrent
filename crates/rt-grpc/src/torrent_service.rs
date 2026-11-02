@@ -347,34 +347,64 @@ impl TorrentService for TorrentServiceImpl {
         request: Request<BulkRemoveTorrentsRequest>,
     ) -> Result<Response<BulkRemoveTorrentsResponse>, Status> {
         let req = request.into_inner();
-        let delete_data = req.delete_data;
         let mut results = Vec::with_capacity(req.hashes.len());
         let mut success_count = 0u32;
         let mut failure_count = 0u32;
 
-        for hash in req.hashes {
-            let rm_req = RemoveTorrentRequest {
-                hash: hash.clone(),
-                delete_data,
-            };
-            match self.remove_torrent(Request::new(rm_req)).await {
-                Ok(resp) => {
-                    let r = resp.into_inner();
-                    if r.success {
-                        success_count += 1;
-                    } else {
-                        failure_count += 1;
-                    }
-                    results.push(r);
-                }
-                Err(err) => {
-                    failure_count += 1;
-                    results.push(RemoveTorrentResponse {
-                        success: false,
-                        hash,
-                        error_message: err.message().to_string(),
-                    });
-                }
+        let mut valid_hashes = std::collections::HashSet::with_capacity(req.hashes.len());
+        let mut hex_to_parsed = std::collections::HashMap::with_capacity(req.hashes.len());
+
+        for hex in &req.hashes {
+            if let Some(h) = HashString::from_hex(hex) {
+                valid_hashes.insert(h);
+                hex_to_parsed.insert(hex.clone(), h);
+            }
+        }
+
+        let erased = {
+            let mut dl_list = self.ctx.download_list.write().unwrap();
+            dl_list.erase_batch(&valid_hashes)
+        };
+
+        let erased_hashes: std::collections::HashSet<HashString> = erased
+            .iter()
+            .filter_map(|dl| dl.read().ok().map(|g| *g.info_hash()))
+            .collect();
+
+        let erased_hexes: Vec<String> = erased
+            .iter()
+            .filter_map(|dl| dl.read().ok().map(|g| g.info_hash_hex()))
+            .collect();
+
+        if !erased_hexes.is_empty() {
+            let _ = self
+                .ctx
+                .session_manager
+                .lock()
+                .unwrap()
+                .erase_entries_batch(&erased_hexes);
+        }
+
+        for hex in req.hashes {
+            let is_success = hex_to_parsed
+                .get(&hex)
+                .map(|h| erased_hashes.contains(h))
+                .unwrap_or(false);
+
+            if is_success {
+                success_count += 1;
+                results.push(RemoveTorrentResponse {
+                    success: true,
+                    hash: hex,
+                    error_message: String::new(),
+                });
+            } else {
+                failure_count += 1;
+                results.push(RemoveTorrentResponse {
+                    success: false,
+                    hash: hex,
+                    error_message: "Torrent not found or already erasing".to_string(),
+                });
             }
         }
 

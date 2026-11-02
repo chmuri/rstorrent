@@ -99,6 +99,20 @@ impl ViewManager {
         }
     }
 
+    /// Erases multiple downloads from all views in a single O(N) pass per view.
+    pub fn erase_batch_from_all(
+        &mut self,
+        hashes: &std::collections::HashSet<lt_common::HashString>,
+        map: Option<&CommandMap>,
+    ) {
+        if hashes.is_empty() {
+            return;
+        }
+        for view in &mut self.views {
+            view.erase_batch(hashes, map);
+        }
+    }
+
     pub fn filter_on_trigger(&mut self, trigger: &str, map: Option<&CommandMap>) {
         for view in &mut self.views {
             if view.filter_on().iter().any(|t| t == trigger) {

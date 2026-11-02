@@ -410,6 +410,37 @@ impl SessionManager {
         Ok(true)
     }
 
+    /// Removes session files for multiple downloads in parallel using Rayon.
+    pub fn erase_entries_batch(&self, info_hash_hexes: &[String]) -> io::Result<usize> {
+        if self.path.is_empty() || !self.active || info_hash_hexes.is_empty() {
+            return Ok(0);
+        }
+        use rayon::prelude::*;
+
+        info_hash_hexes.par_iter().for_each(|hex| {
+            if let Ok(base) = DownloadStorer::build_path(&self.path, hex) {
+                DownloadStorer::unlink_files(&base);
+                for suffix in [
+                    ".new",
+                    ".libtorrent_resume.new",
+                    ".rtorrent.new",
+                    ".meta.new",
+                ] {
+                    let _ = fs::remove_file(format!("{base}{suffix}"));
+                }
+            }
+        });
+
+        {
+            let mut cache = self.write_cache.lock().unwrap();
+            for hex in info_hash_hexes {
+                cache.forget(hex);
+            }
+        }
+
+        Ok(info_hash_hexes.len())
+    }
+
     pub fn get_entries(&self) -> io::Result<Vec<DirectoryEntry>> {
         if self.path.is_empty() {
             return Ok(Vec::new());

@@ -59,7 +59,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -70,7 +70,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1522,7 +1522,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lt-common"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "base64 0.23.1",
  "bitflags 2.13.2",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "lt-crypto"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "getrandom 0.4.3",
  "lt-common",
@@ -1550,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "lt-dht"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bytes",
  "lt-common",
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "lt-engine"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1585,7 +1585,7 @@ dependencies = [
 
 [[package]]
 name = "lt-net"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1602,7 +1602,7 @@ dependencies = [
 
 [[package]]
 name = "lt-protocol"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1619,7 +1619,7 @@ dependencies = [
 
 [[package]]
 name = "lt-storage"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1637,7 +1637,7 @@ dependencies = [
 
 [[package]]
 name = "lt-sys"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "flate2",
  "libc",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "lt-tracker"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1883,7 +1883,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2677,7 +2677,7 @@ dependencies = [
 
 [[package]]
 name = "rstorrent"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -2704,7 +2704,7 @@ dependencies = [
 
 [[package]]
 name = "rt-core"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -2719,6 +2719,7 @@ dependencies = [
  "lt-sys",
  "lt-tracker",
  "nix 0.31.3",
+ "rayon",
  "rt-rpc",
  "thiserror 2.0.21",
  "tokio",
@@ -2727,7 +2728,7 @@ dependencies = [
 
 [[package]]
 name = "rt-grpc"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "futures-util",
  "lt-common",
@@ -2748,7 +2749,7 @@ dependencies = [
 
 [[package]]
 name = "rt-rpc"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "base64 0.23.1",
  "lt-common",
@@ -2764,7 +2765,7 @@ dependencies = [
 
 [[package]]
 name = "rt-scgi"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "bytes",
  "flate2",
@@ -2778,7 +2779,7 @@ dependencies = [
 
 [[package]]
 name = "rt-tui"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "crossterm",
  "lt-common",
@@ -2794,7 +2795,7 @@ dependencies = [
 
 [[package]]
 name = "rt-tui-client"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "clap",
  "crossterm",
@@ -3084,7 +3085,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3103,7 +3104,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3248,7 +3249,7 @@ dependencies = [
  "parking_lot",
  "rustix",
  "signal-hook",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

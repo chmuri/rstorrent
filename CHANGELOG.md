@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-11-02
+
+### Added
+
+- **Multi-threaded parallel bulk torrent deletion & teardown**:
+  - Accelerated batch torrent deletion (`DownloadList::erase_batch`) across all CPU cores using Rayon parallel iterators (`par_iter`), dropping teardown time for thousands of torrents from minutes to milliseconds.
+  - Added parallel batch deletion of on-disk session files (`SessionManager::erase_entries_batch`), executing `.torrent`, `.libtorrent_resume`, and state file unlinks concurrently across threads.
+  - Added batch event listener mechanism (`event.download.erased_batch`) to `DownloadList`, synchronizing view removals and session cleanup in a single batched pass.
+  - Background asynchronous session unlinking in `control.rs` via `tokio::task::spawn_blocking` to prevent blocking the engine event loop during large batch deletions.
+  - Scale integration test `test_bulk_erase_scale` benchmarking erasure of 2,500 out of 5,000 torrents across 11 views in ~125 ms.
+
+### Fixed
+
+- **$O(N^2)$ algorithm bottleneck & UI freeze during bulk deletion**:
+  - Replaced $O(N^2)$ sequential element removal (`downloads.remove(pos)` and linear reindexing) in `DownloadList` and `View` with $O(N)$ single-pass partition draining (`drain(..)`) and single-pass hash-to-index reconstruction.
+  - Eliminated redundant per-torrent focus recalculations and view change notifications (`emit_changed()`), clamping focus once and notifying listeners once per batch.
+  - Updated native TUI (`rt-tui`) to execute batch deletion (`erase_target_downloads`) when erasing selected torrents via `^D` or the context menu (`d.erase=`), preventing main thread lockups on large selections (e.g. 14,000 torrents).
+  - Updated `rt-grpc` `bulk_remove_torrents` to utilize `erase_batch` and `erase_entries_batch`.
+
 ## [0.19.1] - 2026-11-02
 
 ### Added
