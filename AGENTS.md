@@ -12,6 +12,8 @@ Rules:
 - **Never run `cargo build`, `cargo check`, `cargo test`, `cargo clippy` or
   `cargo fmt` locally.** Use the wrapper:
   - `scripts/remote-ci.sh` — `cargo test --workspace`
+  - `scripts/remote-ci.sh build --release` — builds remotely and copies binaries to `target/release/`
+  - `scripts/remote-ci.sh fetch-bins [profile]` — fetches remote binaries into `target/` without building
   - `scripts/remote-ci.sh check --workspace --all-targets`
   - `scripts/remote-ci.sh clippy --workspace --all-targets -- -D warnings`
   - `scripts/remote-ci.sh fmt --check`
