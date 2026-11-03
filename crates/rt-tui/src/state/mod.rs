@@ -236,6 +236,17 @@ pub struct FileUiRecord {
     pub priority: u8, // 0 = Off, 1 = Normal, 2 = High
 }
 
+/// Active in-flight piece download diagnostics for inspector
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InFlightPieceRecord {
+    pub piece_index: u32,
+    pub blocks_completed: u16,
+    pub blocks_total: u16,
+    pub bytes_completed: u64,
+    pub bytes_total: u64,
+    pub peer_addr: Option<String>,
+}
+
 /// Detailed diagnostics of a selected torrent for the inspector drawer
 #[derive(Debug, Clone, Default)]
 pub struct TorrentDetailSnapshot {
@@ -243,6 +254,7 @@ pub struct TorrentDetailSnapshot {
     pub trackers: Vec<TrackerUiRecord>,
     pub files: Vec<FileUiRecord>,
     pub piece_map: Vec<PieceState>,
+    pub in_flight_pieces: Vec<InFlightPieceRecord>,
     pub log_messages: Vec<String>,
 }
 

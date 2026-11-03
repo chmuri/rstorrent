@@ -162,9 +162,15 @@ async fn initial_seed_offers_one_piece_and_serves_it() {
 
     loop {
         let (id, body) = read_message(&mut stream).await;
-        if let PeerMessage::Bitfield(bits) = PeerMessage::decode(id, &body).unwrap() {
-            assert!(bits[0] & 0x80 != 0);
-            break;
+        match PeerMessage::decode(id, &body).unwrap() {
+            PeerMessage::Bitfield(bits) => {
+                assert!(bits[0] & 0x80 != 0);
+                break;
+            }
+            PeerMessage::HaveAll => {
+                break;
+            }
+            _ => {}
         }
     }
 

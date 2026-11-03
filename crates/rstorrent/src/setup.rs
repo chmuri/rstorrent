@@ -96,14 +96,24 @@ pub fn parse_config_file_comments(path: &str) -> Result<(), SetupError> {
     Ok(())
 }
 
-/// Discovers the path to the configuration file (.rstorrent.rc or fallback .rtorrent.rc)
+/// Discovers the path to the configuration file (modern `rstorrent.toml` prioritized, with `.rstorrent.rc` / `.rtorrent.rc` fallback)
 pub fn find_config_file(no_rc: bool) -> Option<PathBuf> {
     if no_rc {
         return None;
     }
 
+    // 1. Current working directory rstorrent.toml
+    let cwd_toml = PathBuf::from("rstorrent.toml");
+    if cwd_toml.exists() {
+        return Some(cwd_toml);
+    }
+
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         if !xdg.is_empty() {
+            let p_toml = Path::new(&xdg).join("rstorrent/rstorrent.toml");
+            if p_toml.exists() {
+                return Some(p_toml);
+            }
             let p_rst = Path::new(&xdg).join("rstorrent/rstorrent.rc");
             if p_rst.exists() {
                 return Some(p_rst);
@@ -118,6 +128,8 @@ pub fn find_config_file(no_rc: bool) -> Option<PathBuf> {
     if let Ok(home) = std::env::var("HOME") {
         if !home.is_empty() {
             let candidates = [
+                Path::new(&home).join(".config/rstorrent/rstorrent.toml"),
+                Path::new(&home).join(".rstorrent.toml"),
                 Path::new(&home).join(".config/rstorrent/rstorrent.rc"),
                 Path::new(&home).join(".config/rtorrent/rtorrent.rc"),
                 Path::new(&home).join(".rstorrent.rc"),
@@ -133,10 +145,12 @@ pub fn find_config_file(no_rc: bool) -> Option<PathBuf> {
 
     // System and container paths (/config and /etc)
     let system_candidates = [
+        PathBuf::from("/config/rstorrent.toml"),
         PathBuf::from("/config/.rstorrent.rc"),
         PathBuf::from("/config/.rtorrent.rc"),
         PathBuf::from("/config/rstorrent.rc"),
         PathBuf::from("/config/rtorrent.rc"),
+        PathBuf::from("/etc/rstorrent/rstorrent.toml"),
         PathBuf::from("/etc/rstorrent/rstorrent.rc"),
         PathBuf::from("/etc/rtorrent/rtorrent.rc"),
     ];

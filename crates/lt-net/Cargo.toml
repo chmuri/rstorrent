@@ -17,3 +17,4 @@ reqwest.workspace = true
 bitflags.workspace = true
 libc.workspace = true
 nix.workspace = true
+getrandom.workspace = true

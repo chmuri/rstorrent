@@ -442,6 +442,10 @@ fn spawn_peer_listeners(
             Arc::clone(&peer_pools),
         ));
         tasks.spawn(port_mapping_loop(port, shutdown.clone()));
+        tasks.spawn(choke_supervisor_loop(
+            Arc::clone(&downloads),
+            shutdown.clone(),
+        ));
 
         while tasks.join_next().await.is_some() {}
         mark_listener_closed();
@@ -1025,37 +1029,166 @@ async fn lsd_loop(
 }
 
 async fn port_mapping_loop(listen_port: u16, mut shutdown_rx: watch::Receiver<bool>) {
-    let candidate_gateways = [
-        std::net::Ipv4Addr::new(192, 168, 1, 1),
-        std::net::Ipv4Addr::new(192, 168, 0, 1),
-        std::net::Ipv4Addr::new(10, 0, 0, 1),
-    ];
+    if *shutdown_rx.borrow() {
+        return;
+    }
 
     let mut mapped = false;
-    for &gw in &candidate_gateways {
-        if *shutdown_rx.borrow() {
-            return;
-        }
-        if let Ok(ext) = lt_net::try_map_nat_pmp(
-            gw,
-            listen_port,
-            listen_port,
-            lt_net::PortMappingProtocol::Tcp,
-            3600,
-        )
-        .await
-        {
-            debug!(gateway = %gw, internal = listen_port, external = ext, "NAT-PMP port mapped successfully");
+
+    // 1. Try UPnP IGD via SSDP M-SEARCH
+    match lt_net::try_map_upnp(
+        listen_port,
+        listen_port,
+        lt_net::PortMappingProtocol::Tcp,
+        "rstorrent",
+        3600,
+    )
+    .await
+    {
+        Ok(ext) => {
+            info!(
+                internal = listen_port,
+                external = ext,
+                "UPnP port mapped successfully on router"
+            );
             mapped = true;
-            break;
+        }
+        Err(err) => {
+            debug!(error = %err, "UPnP port mapping unsuccessful; falling back to NAT-PMP");
+        }
+    }
+
+    // 2. If UPnP wasn't successful, try NAT-PMP gateways
+    if !mapped {
+        let candidate_gateways = [
+            std::net::Ipv4Addr::new(192, 168, 1, 1),
+            std::net::Ipv4Addr::new(192, 168, 0, 1),
+            std::net::Ipv4Addr::new(10, 0, 0, 1),
+        ];
+
+        for &gw in &candidate_gateways {
+            if *shutdown_rx.borrow() {
+                return;
+            }
+            if let Ok(ext) = lt_net::try_map_nat_pmp(
+                gw,
+                listen_port,
+                listen_port,
+                lt_net::PortMappingProtocol::Tcp,
+                3600,
+            )
+            .await
+            {
+                info!(gateway = %gw, internal = listen_port, external = ext, "NAT-PMP port mapped successfully");
+                mapped = true;
+                break;
+            }
         }
     }
 
     if !mapped {
-        debug!("Automatic port mapping: NAT-PMP gateway not detected on common addresses");
+        debug!("Automatic port mapping: neither UPnP nor NAT-PMP gateway available");
     }
 
     let _ = shutdown_rx.changed().await;
+}
+
+async fn choke_supervisor_loop(
+    downloads: Arc<RwLock<DownloadList>>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    let mut round: u64 = 0;
+    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval.tick().await;
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.changed() => break,
+            _ = interval.tick() => {
+                round = round.wrapping_add(1);
+                let is_optimistic_round = round.is_multiple_of(3);
+
+                let engines: Vec<Arc<Mutex<lt_engine::download::Download>>> = {
+                    let dl = downloads.read().unwrap();
+                    dl.all()
+                        .iter()
+                        .filter_map(|d| {
+                            let item = d.read().unwrap();
+                            if item.is_active() {
+                                Some(item.engine_download())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
+
+                for engine_arc in engines {
+                    if let Ok(mut dl) = engine_arc.try_lock() {
+                        if dl.is_initial_seeding() {
+                            continue;
+                        }
+                        let max_slots = dl.client_config().max_uploads().max(1);
+                        let is_seeding = dl.is_done();
+
+                        let mut interested_peers = Vec::new();
+                        for peer in dl.connection_list_mut().iter_mut() {
+                            if peer.peer_interested {
+                                interested_peers.push((
+                                    peer.peer_id,
+                                    peer.rate_down.rate(),
+                                    peer.rate_up.rate(),
+                                    peer.downloaded,
+                                ));
+                            } else {
+                                peer.is_choked = true;
+                            }
+                        }
+
+                        if interested_peers.is_empty() {
+                            continue;
+                        }
+
+                        if is_seeding {
+                            interested_peers.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                        } else {
+                            interested_peers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                        }
+
+                        let regular_slots = if is_optimistic_round && max_slots > 1 {
+                            (max_slots - 1) as usize
+                        } else {
+                            max_slots as usize
+                        };
+
+                        let mut unchoked_ids: std::collections::HashSet<HashString> = interested_peers
+                            .iter()
+                            .take(regular_slots)
+                            .map(|p| p.0)
+                            .collect();
+
+                        if is_optimistic_round && unchoked_ids.len() < interested_peers.len() {
+                            let remaining: Vec<HashString> = interested_peers
+                                .iter()
+                                .skip(regular_slots)
+                                .map(|p| p.0)
+                                .collect();
+                            if !remaining.is_empty() {
+                                let opt_idx = (round as usize) % remaining.len();
+                                unchoked_ids.insert(remaining[opt_idx]);
+                            }
+                        }
+
+                        for peer in dl.connection_list_mut().iter_mut() {
+                            peer.is_choked = !unchoked_ids.contains(&peer.peer_id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    debug!("Choke supervisor loop stopped");
 }
 
 /// Configuration for [`NetworkRuntime::spawn_with_listener_config`].

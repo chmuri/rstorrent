@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-03
+
+### Added
+- **BEP 29 Micro Transport Protocol (uTP) & LEDBAT Congestion Control**:
+  - Complete framing and parsing for 20-byte uTP packets (`ST_DATA`, `ST_FIN`, `ST_STATE`, `ST_RESET`, `ST_SYN`) with Selective ACK (SACK) extension in `crates/lt-net/src/utp/`.
+  - Full LEDBAT congestion control with rolling base-delay minimum filter, 100 ms target queuing delay, dynamic window sizing, and RFC 6298 Jacobson-Karels retransmission timeouts.
+  - `UtpStream` implementing Tokio `AsyncRead` and `AsyncWrite` with out-of-order packet reassembly and in-flight retransmissions.
+  - `UtpSocket` multiplexing multiple concurrent streams over a single `tokio::net::UdpSocket`.
+  - Seamless inbound uTP peer session handling in `lt-engine` alongside TCP.
+- **Modern `rstorrent.toml` Configuration Format**:
+  - Modern TOML configuration schema (`crates/rstorrent/src/toml_config.rs`) covering `[network]`, `[storage]`, `[protocol]`, `[rpc]`, and `[dht]`.
+  - Standard XDG configuration resolution searching `./rstorrent.toml`, `./.rstorrent.toml`, `$XDG_CONFIG_HOME/rstorrent/rstorrent.toml`, `~/.config/rstorrent/rstorrent.toml`, and `~/.rstorrent.toml` before falling back to legacy `.rtorrent.rc`.
+- **Automatic UPnP IGD & NAT-PMP Port Forwarding**:
+  - Autonomous SSDP M-SEARCH discovery and SOAP `AddPortMapping` client in `crates/lt-net/src/port_mapper.rs`.
+  - Background mapping supervisor in `rt-core` automatically mapping incoming TCP and UDP/uTP listen ports on home routers.
+- **Real-Time Watch Directory Monitoring**:
+  - Event-driven filesystem monitoring using `notify` (inotify on Linux) in `crates/rstorrent/src/control.rs`.
+  - Newly added `.torrent` files are automatically ingested, committed to `DownloadList` and `ViewManager`, and started immediately.
+- **Tit-for-Tat Choking Supervisor**:
+  - Autonomous Tit-for-Tat choking supervisor loop in `crates/rt-core/src/network_runtime.rs` running 10-second evaluation rounds.
+  - Prioritizes fastest uploaders during leeching and highest downloaders during seeding, with 30-second optimistic unchoke rotation.
+- **Endgame Mode Broadcast CANCEL**:
+  - Global peer sender registry in `lt-engine` broadcasting `CANCEL` messages across all active peer connections upon block completion.
+
+### Changed
+- **Asynchronous Non-Blocking Disk I/O Pipeline**:
+  - Decoupled peer upload block requests from the main `Download` state mutex via `read_piece_block_or_async_params`.
+  - Uncached block reads are offloaded directly to background disk threads without locking download state or starving concurrent peers.
+- **TUI & CLI Stubs Completed**:
+  - Replaced hardcoded disk capacity with live POSIX `statvfs` available and total filesystem metrics in `crates/rt-tui/src/concurrency/aggregator.rs`.
+  - Implemented interactive priority controls (`+`/`-`) for both torrents and individual files inside the inspector drawer.
+  - Connected throttle adjustment hotkeys (`a`/`z` for upload limit, `A`/`Z` for download limit).
+  - Bound CLI flags `-b` (`bind_address`) and `-i` (`local_address`) into command mapping and network configuration.
+  - Populated complete file lists and peer connections in gRPC `rtorrent.v1` service endpoints.
+
+## [0.19.4] - 2026-11-03
+
+### Added
+- **In-memory thread-safe DNS caching for trackers**:
+  - Implemented 5-minute TTL DNS resolution caching (`tracker_dns_cache`) for tracker endpoints in `lt-tracker`.
+  - Eliminates glibc `getaddrinfo` blocking lockups and scales announce requests across large swarms (reducing 40,000 DNS resolutions to 4 when endpoints match).
+- **Tracker and DHT concurrency throttling**:
+  - Added concurrency semaphore (`tracker_concurrency_semaphore`) bounding concurrent HTTP and UDP tracker announces/scrapes to 32 parallel requests.
+  - Added DHT lookup semaphore (`dht_lookup_semaphore`) in `lt-dht` bounding simultaneous DHT searches to 32 concurrent requests.
+- **Direct slice accessors in DownloadList**:
+  - Added `DownloadList::downloads()` returning `&[Arc<RwLock<Download>>]` slice references, eliminating expensive cloning of 10,000 `Arc` handles on every UI sampling tick.
+- **Unified single-pass UI state aggregation**:
+  - Implemented `sample_engine_snapshot_with_stats` in `rt-tui`, consolidating category counting, transfer rate calculation, and snapshot generation in a single atomic iteration pass.
+
+### Fixed
+- **UI freeze and thread exhaustion with 10,000+ torrents**:
+  - Fixed Tokio blocking thread pool saturation where 10k torrents starting simultaneously spawned 512 blocking threads (>5.8 GB VSZ) trying to resolve DNS queries.
+  - Throttled TUI engine snapshot sampling to 4 Hz (250 ms) instead of 60 Hz, decoupling screen redraws via dirty flags (`needs_draw`) and allowing the event loop to idle on poll.
+  - Eliminated UI thread starvation caused by allocating 40,000 heap Strings and running Rayon multi-threaded sorts 60 times/second.
+  - Reduced peak thread count from 537 to 34–58 threads, VSZ from 5.8 GB to 2.2 GB, and stabilized RSS memory at ~195 MB under 10,000 torrent load with instant keyboard responsiveness.
+- **Coordinator shutdown stall**:
+  - Added `has_pending_disk_writes` check to skip blocking disk flush workers during download shutdown when no writes are pending.
+
+### Changed
+- **Remote CI Builder Performance**:
+  - Set remote Docker builder default jobs to `auto` (saturating all host CPU cores) and memory limit to 4 GB (`MEMORY=4g`).
+
 ## [0.19.3] - 2026-11-03
 
 ### Changed

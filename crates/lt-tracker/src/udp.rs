@@ -218,7 +218,11 @@ impl AnnounceResponse {
         buf.to_vec()
     }
 
-    pub fn decode(mut data: &[u8]) -> Result<Self, UdpTrackerError> {
+    pub fn decode(data: &[u8]) -> Result<Self, UdpTrackerError> {
+        Self::decode_with_family(data, false)
+    }
+
+    pub fn decode_with_family(mut data: &[u8], is_ipv6: bool) -> Result<Self, UdpTrackerError> {
         if data.len() < 20 {
             return Err(UdpTrackerError::PacketTooShort {
                 expected: 20,
@@ -236,8 +240,9 @@ impl AnnounceResponse {
 
         let mut peers = AddressList::new();
         let remaining = data;
-        // If remaining is multiple of 6, IPv4 compact
-        if remaining.len().is_multiple_of(6) {
+        if is_ipv6 && remaining.len().is_multiple_of(18) {
+            peers.parse_address_compact_ipv6(remaining);
+        } else if remaining.len().is_multiple_of(6) {
             peers.parse_address_compact(remaining);
         } else if remaining.len().is_multiple_of(18) {
             peers.parse_address_compact_ipv6(remaining);

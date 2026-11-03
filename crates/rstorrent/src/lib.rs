@@ -7,6 +7,7 @@ pub mod metrics;
 pub mod scgi;
 pub mod setup;
 pub mod signals;
+pub mod toml_config;
 pub mod ui_commands;
 
 pub use cli::Cli;
@@ -19,6 +20,7 @@ pub use setup::{
     SetupError,
 };
 pub use signals::{spawn_signal_handlers, SignalState};
+pub use toml_config::RtorrentTomlConfig;
 
 use clap::Parser;
 use rt_tui::display::terminal::{TerminalGuard, TerminalInputOptions};
@@ -175,9 +177,110 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            rt_tui::EngineCommand::AdjustDownloadThrottle(_delta) => {}
-                            rt_tui::EngineCommand::AdjustUploadThrottle(_delta) => {}
-                            rt_tui::EngineCommand::ToggleUncappedThrottle => {}
+                            rt_tui::EngineCommand::AdjustDownloadThrottle(delta) => {
+                                let map = control.command_map.read().unwrap();
+                                let cur = map
+                                    .call_command(
+                                        "throttle.global_down.max_rate",
+                                        &lt_common::Object::create_empty(),
+                                        &rt_rpc::Target::None,
+                                        true,
+                                    )
+                                    .ok()
+                                    .and_then(|o| o.as_value().ok())
+                                    .unwrap_or(0);
+                                let new_val = (cur + delta).max(0);
+                                let _ = map.call_command(
+                                    "throttle.global_down.max_rate.set_kb",
+                                    &lt_common::Object::from(new_val / 1024),
+                                    &rt_rpc::Target::None,
+                                    true,
+                                );
+                            }
+                            rt_tui::EngineCommand::AdjustUploadThrottle(delta) => {
+                                let map = control.command_map.read().unwrap();
+                                let cur = map
+                                    .call_command(
+                                        "throttle.global_up.max_rate",
+                                        &lt_common::Object::create_empty(),
+                                        &rt_rpc::Target::None,
+                                        true,
+                                    )
+                                    .ok()
+                                    .and_then(|o| o.as_value().ok())
+                                    .unwrap_or(0);
+                                let new_val = (cur + delta).max(0);
+                                let _ = map.call_command(
+                                    "throttle.global_up.max_rate.set_kb",
+                                    &lt_common::Object::from(new_val / 1024),
+                                    &rt_rpc::Target::None,
+                                    true,
+                                );
+                            }
+                            rt_tui::EngineCommand::ToggleUncappedThrottle => {
+                                let map = control.command_map.read().unwrap();
+                                let cur = map
+                                    .call_command(
+                                        "throttle.global_down.max_rate",
+                                        &lt_common::Object::create_empty(),
+                                        &rt_rpc::Target::None,
+                                        true,
+                                    )
+                                    .ok()
+                                    .and_then(|o| o.as_value().ok())
+                                    .unwrap_or(0);
+                                let new_val = if cur > 0 { 0 } else { 10 * 1024 * 1024 };
+                                let _ = map.call_command(
+                                    "throttle.global_down.max_rate.set_kb",
+                                    &lt_common::Object::from(new_val / 1024),
+                                    &rt_rpc::Target::None,
+                                    true,
+                                );
+                                let _ = map.call_command(
+                                    "throttle.global_up.max_rate.set_kb",
+                                    &lt_common::Object::from(new_val / 1024),
+                                    &rt_rpc::Target::None,
+                                    true,
+                                );
+                            }
+                            rt_tui::EngineCommand::SetPriority {
+                                hashes,
+                                priority_step,
+                            } => {
+                                let dl_list = control.download_list.read().unwrap();
+                                for h in hashes {
+                                    let hs = lt_common::hash_string::HashString::new(h);
+                                    if let Some(d) = dl_list.find(&hs) {
+                                        let mut d_write = d.write().unwrap();
+                                        let cur = d_write.priority();
+                                        let new_p =
+                                            (cur as i32 + priority_step as i32).clamp(0, 3) as u32;
+                                        d_write.set_priority(new_p);
+                                    }
+                                }
+                            }
+                            rt_tui::EngineCommand::SetFilePriority {
+                                hash,
+                                file_index,
+                                priority,
+                            } => {
+                                let hs = lt_common::hash_string::HashString::new(hash);
+                                if let Some(d) = control.download_list.read().unwrap().find(&hs) {
+                                    let mut d_write = d.write().unwrap();
+                                    let mut dl_guard = d_write.download_mut();
+                                    if let Some(file) = dl_guard
+                                        .file_list_mut()
+                                        .files_mut()
+                                        .get_mut(file_index as usize)
+                                    {
+                                        file.set_priority(match priority {
+                                            0 => lt_storage::Priority::Off,
+                                            2 => lt_storage::Priority::High,
+                                            _ => lt_storage::Priority::Normal,
+                                        });
+                                    }
+                                }
+                            }
                             rt_tui::EngineCommand::AddTorrent {
                                 source,
                                 destination: _,
@@ -216,6 +319,8 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                         &app.mode,
                         area,
                         app.category_counts,
+                        app.selected_row,
+                        app.visible_indices.len(),
                     );
                     app.dispatch_action(action);
                     needs_draw = true;

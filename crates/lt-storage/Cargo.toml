@@ -18,3 +18,4 @@ bitflags.workspace = true
 rayon.workspace = true
 crossbeam-queue.workspace = true
 rustc-hash.workspace = true
+tokio.workspace = true

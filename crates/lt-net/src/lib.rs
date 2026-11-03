@@ -14,6 +14,7 @@ pub mod proxy;
 pub mod resolver;
 pub mod socket_manager;
 pub mod throttle;
+pub mod utp;
 
 pub use addr::{AddressFamily, AddressList, SocketAddress, SocketAddressKey};
 pub use config::{AddressDevice, EncryptionMode, ListenAddresses, NetworkConfig};
@@ -26,9 +27,10 @@ pub use lsd::{
 pub use port_mapper::{
     format_nat_pmp_request, format_upnp_soap_add_port_mapping,
     format_upnp_soap_delete_port_mapping, format_upnp_ssdp_search, parse_nat_pmp_response,
-    try_map_nat_pmp, PortMappingProtocol, NAT_PMP_PORT,
+    try_map_nat_pmp, try_map_upnp, PortMappingProtocol, NAT_PMP_PORT,
 };
 pub use proxy::{HttpProxy, Socks5Proxy};
 pub use resolver::{DnsCache, DnsResolver};
 pub use socket_manager::{SocketCategory, SocketInfo, SocketManager};
 pub use throttle::{Throttle, ThrottleNode};
+pub use utp::{LedbatCongestion, PacketType, UtpPacket, UtpSocket, UtpStream};

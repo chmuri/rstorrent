@@ -240,13 +240,23 @@ pub fn sample_engine_snapshot_with_stats(
         });
     }
 
+    let (disk_free_bytes, disk_total_bytes) = match nix::sys::statvfs::statvfs(".") {
+        Ok(stat) => {
+            let bsize = stat.block_size();
+            let free = stat.blocks_available() * bsize;
+            let total = stat.blocks() * bsize;
+            (free, total)
+        }
+        Err(_) => (480 * 1024 * 1024 * 1024, 1000 * 1024 * 1024 * 1024),
+    };
+
     let stats = SessionStats {
         global_down_bps: global_down,
         global_up_bps: global_up,
         global_down_total: 0,
         global_up_total: 0,
-        disk_free_bytes: 480 * 1024 * 1024 * 1024,
-        disk_total_bytes: 1000 * 1024 * 1024 * 1024,
+        disk_free_bytes,
+        disk_total_bytes,
         dht_nodes: 0,
         listen_port,
         port_open: true,
@@ -348,32 +358,69 @@ pub fn sample_torrent_details(
         }
     }
 
-    // 4. Piece Map
+    // 4. Piece Map & In-Flight Pieces
+    let completed_bf = eng_guard.chunk_selector().completed();
+    let transfers = eng_guard.delegator().transfers();
+    let chunk_stats = eng_guard.chunk_statistics();
+
+    let mut in_flight_pieces = Vec::new();
+    let mut downloading_set = std::collections::HashSet::new();
+
+    for bl in transfers.iter() {
+        let piece_idx = bl.index();
+        let finished_blocks = bl.finished() as u16;
+        let total_blocks = bl.len() as u16;
+        let block_size = 16_384u64;
+        let bytes_completed = (finished_blocks as u64).saturating_mul(block_size);
+        let bytes_total = (total_blocks as u64).saturating_mul(block_size);
+
+        let peer_addr = bl.blocks().iter().find_map(|b| {
+            b.transfers()
+                .first()
+                .map(|t| format!("Peer #{}", t.peer_id()))
+        });
+
+        downloading_set.insert(piece_idx);
+        in_flight_pieces.push(crate::state::InFlightPieceRecord {
+            piece_index: piece_idx,
+            blocks_completed: finished_blocks,
+            blocks_total: total_blocks,
+            bytes_completed,
+            bytes_total,
+            peer_addr,
+        });
+    }
+
     let mut piece_map = Vec::with_capacity(meta.num_pieces);
-    let completed_pieces = eng_guard.completed_chunks();
     for i in 0..meta.num_pieces {
-        if i < completed_pieces {
+        if completed_bf.get(i) {
             piece_map.push(crate::state::PieceState::Verified);
+        } else if downloading_set.contains(&(i as u32)) {
+            piece_map.push(crate::state::PieceState::Downloading);
+        } else if chunk_stats.rarity(i) > 0 {
+            piece_map.push(crate::state::PieceState::PeerAvailable);
         } else {
             piece_map.push(crate::state::PieceState::Missing);
         }
     }
 
+    let state_name = format!("{:?}", eng_guard.state());
+    drop(eng_guard);
+
     // 5. Logs
     let log_messages = vec![
         format!("Torrent: {}", d.name()),
         format!("Save path: {}", d.directory()),
-        format!("State: {:?}", d.state()),
+        format!("State: {}", state_name),
         format!("Hash: {}", d.info_hash_hex()),
     ];
-
-    drop(eng_guard);
 
     Some(crate::state::TorrentDetailSnapshot {
         peers,
         trackers,
         files,
         piece_map,
+        in_flight_pieces,
         log_messages,
     })
 }

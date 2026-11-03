@@ -448,7 +448,8 @@ pub async fn announce_udp_detailed_with_router(
 
         match result {
             Ok(data) => {
-                let response = AnnounceResponse::decode(&data)?;
+                let is_ipv6 = socket.peer_addr().map(|a| a.is_ipv6()).unwrap_or(false);
+                let response = AnnounceResponse::decode_with_family(&data, is_ipv6)?;
                 return Ok(TrackerAnnounceResult {
                     peers: socket_addresses_to_socket_addrs(&response.peers),
                     interval: Some(response.interval as u64),

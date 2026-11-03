@@ -9,6 +9,7 @@ build = "build.rs"
 
 [dependencies]
 lt-common.workspace = true
+lt-storage.workspace = true
 lt-engine.workspace = true
 rt-rpc.workspace = true
 rt-core.workspace = true

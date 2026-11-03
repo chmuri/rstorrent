@@ -920,6 +920,8 @@ fn test_mouse_and_keyboard_tabs_interaction() {
         &app.mode,
         term_rect,
         app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
     );
     assert_eq!(
         mouse_act,
@@ -947,6 +949,8 @@ fn test_mouse_and_keyboard_tabs_interaction() {
         &app.mode,
         term_rect,
         app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
     );
     assert_eq!(view_act, AppAction::SwitchView(ActiveView::Downloading));
     app.dispatch_action(view_act);
@@ -959,4 +963,361 @@ fn test_mouse_and_keyboard_tabs_interaction() {
     assert_eq!(action_left, AppAction::CycleViewPrev);
     app.dispatch_action(action_left);
     assert_eq!(app.active_view, ActiveView::All);
+}
+
+#[test]
+fn test_mouse_table_selection_and_hit_testing() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
+    use rt_tui::app::NextGenTuiApp;
+    use rt_tui::input::fsm::InteractionMode;
+    use rt_tui::input::mouse::MouseHandler;
+    use rt_tui::input::router::AppAction;
+    use rt_tui::state::{EngineSnapshot, TorrentUiState};
+    use rt_tui::ui::layout::calculate_responsive_layout;
+    use rt_tui::widgets::TorrentTableWidget;
+    use std::sync::Arc;
+
+    let term_rect = Rect::new(0, 0, 120, 30);
+    let layout = calculate_responsive_layout(term_rect, false);
+    let table = layout.table_area;
+
+    // Table row hit testing directly:
+    // Header is at table.top() + 1
+    // Row 0 is at table.top() + 2
+    // Row 1 is at table.top() + 3
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.top(), table, 0, 5),
+        None
+    ); // border
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.top() + 1, table, 0, 5),
+        None
+    ); // header
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.top() + 2, table, 0, 5),
+        Some(0)
+    ); // row 0
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.top() + 3, table, 0, 5),
+        Some(1)
+    ); // row 1
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.top() + 4, table, 0, 5),
+        Some(2)
+    ); // row 2
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.top() + 7, table, 0, 5),
+        None
+    ); // empty space (index 5 with 5 items -> None)
+    assert_eq!(
+        TorrentTableWidget::row_at_position(table.bottom() - 1, table, 0, 5),
+        None
+    ); // bottom border
+
+    // Setup an app with 5 torrents
+    let mut app = NextGenTuiApp::new("test".into());
+    let mut torrents = Vec::new();
+    for i in 0..5 {
+        let rec = mock_torrent(
+            &format!("Torrent #{}", i),
+            1024,
+            2048,
+            TorrentUiState::Downloading,
+        );
+        torrents.push(rec);
+    }
+    let snapshot = Arc::new(EngineSnapshot {
+        torrents: torrents.into(),
+        ..Default::default()
+    });
+    app.update_snapshot(snapshot);
+    assert_eq!(app.visible_indices.len(), 5);
+    assert_eq!(app.selected_row, 0);
+
+    // Left click on row 2 (table.top() + 4):
+    // Should choose row 2 (AppAction::SelectRow(2)) instead of toggling/marking row 0
+    let click_row_2 = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: table.left() + 10,
+        row: table.top() + 4,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let act = MouseHandler::handle_mouse(
+        click_row_2,
+        &layout,
+        &app.mode,
+        term_rect,
+        app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
+    );
+    assert_eq!(act, AppAction::SelectRow(2));
+    app.dispatch_action(act);
+
+    // Crucial: row 2 is chosen (selected_row == 2), and NOT multi-selected (multi_selected is empty)!
+    assert_eq!(app.selected_row, 2);
+    assert!(app.multi_selected.is_empty());
+    assert_eq!(app.mode, InteractionMode::Normal);
+
+    // Left click on row 0 (table.top() + 2):
+    let click_row_0 = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: table.left() + 5,
+        row: table.top() + 2,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let act = MouseHandler::handle_mouse(
+        click_row_0,
+        &layout,
+        &app.mode,
+        term_rect,
+        app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
+    );
+    assert_eq!(act, AppAction::SelectRow(0));
+    app.dispatch_action(act);
+    assert_eq!(app.selected_row, 0);
+    assert!(app.multi_selected.is_empty());
+
+    // Ctrl + Left click on row 1 (table.top() + 3): toggles multi-select for row 1
+    let ctrl_click_row_1 = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: table.left() + 10,
+        row: table.top() + 3,
+        modifiers: crossterm::event::KeyModifiers::CONTROL,
+    };
+    let act = MouseHandler::handle_mouse(
+        ctrl_click_row_1,
+        &layout,
+        &app.mode,
+        term_rect,
+        app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
+    );
+    assert_eq!(act, AppAction::ToggleSelectRow(1));
+    app.dispatch_action(act);
+    assert_eq!(app.selected_row, 1);
+    assert_eq!(app.multi_selected.len(), 1);
+    let expected_hash = app.snapshot.torrents[app.visible_indices[1]].hash;
+    assert!(app.multi_selected.contains(&expected_hash));
+    assert_eq!(app.mode, InteractionMode::VisualSelect);
+
+    // Plain Left click on row 3 clears multi-select and selects row 3 in Normal mode
+    let click_row_3 = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: table.left() + 15,
+        row: table.top() + 5,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let act = MouseHandler::handle_mouse(
+        click_row_3,
+        &layout,
+        &app.mode,
+        term_rect,
+        app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
+    );
+    assert_eq!(act, AppAction::SelectRow(3));
+    app.dispatch_action(act);
+    assert_eq!(app.selected_row, 3);
+    assert!(app.multi_selected.is_empty());
+    assert_eq!(app.mode, InteractionMode::Normal);
+
+    // Right click on row 4 selects row 4
+    let right_click_row_4 = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        column: table.left() + 20,
+        row: table.top() + 6,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let act = MouseHandler::handle_mouse(
+        right_click_row_4,
+        &layout,
+        &app.mode,
+        term_rect,
+        app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
+    );
+    assert_eq!(act, AppAction::SelectRow(4));
+    app.dispatch_action(act);
+    assert_eq!(app.selected_row, 4);
+
+    // Click on empty space (row table.top() + 8, beyond the 5 items) does nothing
+    let click_empty = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: table.left() + 10,
+        row: table.top() + 8,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let act = MouseHandler::handle_mouse(
+        click_empty,
+        &layout,
+        &app.mode,
+        term_rect,
+        app.category_counts,
+        app.selected_row,
+        app.visible_indices.len(),
+    );
+    assert_eq!(act, AppAction::None);
+}
+
+#[test]
+fn test_sample_torrent_details_does_not_deadlock() {
+    use lt_common::hash_string::HashString;
+    use lt_engine::constructor::TorrentMetadata;
+    use rt_core::{Download, DownloadList};
+    use std::sync::{Arc, RwLock};
+
+    let hash_bytes = [42u8; 20];
+    let metadata = TorrentMetadata {
+        info_hash: HashString::new(hash_bytes),
+        name: "test_torrent".to_string(),
+        piece_length: 1024,
+        pieces: vec![0u8; 20],
+        num_pieces: 1,
+        total_size: 1024,
+        is_multi_file: false,
+        files: Vec::new(),
+        announce: None,
+        announce_list: Vec::new(),
+        is_private: false,
+        is_meta_download: false,
+    };
+    let dl = Arc::new(RwLock::new(Download::new(
+        lt_engine::download::Download::new(metadata),
+    )));
+
+    let mut dl_list = DownloadList::new();
+    dl_list.insert(dl);
+
+    let details = rt_tui::concurrency::aggregator::sample_torrent_details(&dl_list, &hash_bytes);
+    assert!(details.is_some());
+    let d = details.unwrap();
+    assert_eq!(d.piece_map.len(), 1);
+    assert!(d
+        .log_messages
+        .iter()
+        .any(|msg| msg.contains("Torrent: test_torrent")));
+}
+
+#[test]
+fn test_pieces_tab_infographic_and_pipeline_rendering() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::widgets::Widget;
+    use rt_tui::state::InFlightPieceRecord;
+    use rt_tui::widgets::inspector::pieces::PiecesTab;
+
+    let mut record = mock_torrent(
+        "ubuntu-26.04.1-live-server-amd64.iso",
+        14_000_000,
+        2_700_000_000,
+        TorrentUiState::Downloading,
+    );
+    record.total_pieces = 11169;
+    record.verified_pieces = 89;
+    record.piece_size = 256 * 1024;
+    record.eta_seconds = Some(192);
+
+    let mut pieces = vec![PieceState::Missing; 11169];
+    for p in &mut pieces[0..89] {
+        *p = PieceState::Verified;
+    }
+    pieces[90] = PieceState::Downloading;
+    pieces[91] = PieceState::Downloading;
+
+    let in_flight = vec![
+        InFlightPieceRecord {
+            piece_index: 90,
+            blocks_completed: 10,
+            blocks_total: 16,
+            bytes_completed: 160 * 1024,
+            bytes_total: 256 * 1024,
+            peer_addr: Some("142.250.180.3:51413".into()),
+        },
+        InFlightPieceRecord {
+            piece_index: 91,
+            blocks_completed: 4,
+            blocks_total: 16,
+            bytes_completed: 64 * 1024,
+            bytes_total: 256 * 1024,
+            peer_addr: Some("82.165.197.1:6881".into()),
+        },
+    ];
+
+    let tab = PiecesTab::new(&record, &pieces, &in_flight, THEME_TOKYO_NIGHT);
+    let area = Rect::new(0, 0, 100, 24);
+    let mut buf = Buffer::empty(area);
+    tab.render(area, &mut buf);
+
+    let full_text = (0..area.height)
+        .map(|y| {
+            (0..area.width)
+                .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Assert HUD metrics
+    assert!(full_text.contains("89 / 11169 pcs"));
+    assert!(full_text.contains("Verified:"));
+    assert!(full_text.contains("Remaining: 11080 pcs"));
+    assert!(full_text.contains("Piece Size: 256.0 KB"));
+    assert!(full_text.contains("Down:"));
+    assert!(full_text.contains("In-Flight: 2 pcs"));
+
+    // Assert Active In-Flight pipeline section
+    assert!(full_text.contains("ACTIVE IN-FLIGHT PIPELINE"));
+    assert!(full_text.contains("Pc #90"));
+    assert!(full_text.contains("10/16 blk"));
+    assert!(full_text.contains("142.250.180.3:51413"));
+    assert!(full_text.contains("Pc #91"));
+    assert!(full_text.contains("4/16 blk"));
+
+    // Assert rulers
+    assert!(full_text.contains("0%"));
+    assert!(full_text.contains("100%"));
+    assert!(full_text.contains("#0000"));
+
+    // Assert legend
+    assert!(full_text.contains("Legend: █ Verified (100%)"));
+}
+
+#[test]
+fn test_pieces_tab_completed_torrent_banner() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::widgets::Widget;
+    use rt_tui::widgets::inspector::pieces::PiecesTab;
+
+    let mut record = mock_torrent("ubuntu.iso", 0, 1_000_000, TorrentUiState::Complete);
+    record.total_pieces = 100;
+    record.verified_pieces = 100;
+    record.completed_bytes = 1_000_000;
+
+    let pieces = vec![PieceState::Verified; 100];
+    let in_flight = vec![];
+
+    let tab = PiecesTab::new(&record, &pieces, &in_flight, THEME_TOKYO_NIGHT);
+    let area = Rect::new(0, 0, 80, 20);
+    let mut buf = Buffer::empty(area);
+    tab.render(area, &mut buf);
+
+    let full_text = (0..area.height)
+        .map(|y| {
+            (0..area.width)
+                .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(full_text.contains("100.0%"));
+    assert!(full_text.contains("All pieces verified and written to disk"));
 }

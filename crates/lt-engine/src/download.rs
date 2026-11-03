@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -28,7 +29,7 @@ use lt_storage::piece::Piece;
 use lt_storage::resume::{
     ResumeData, MTIME_DOWNLOADING, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED,
 };
-use lt_storage::StorageError;
+use lt_storage::{StorageError, TargetFileInfo};
 use lt_tracker::controller::TrackerController;
 use lt_tracker::list::TrackerList;
 use thiserror::Error;
@@ -512,10 +513,17 @@ impl Download {
                     tracing::error!(
                         piece = pending.piece_index,
                         error = %err,
-                        "Disk write failed; piece will be requested again"
+                        "Disk write failed; setting download to error state"
                     );
                     self.chunk_selector.not_using_index(pending.piece_index);
                     let _ = self.delegator.erase_transfer(pending.piece_index);
+                    self.set_error(format!(
+                        "Disk write failure on piece {}: {}",
+                        pending.piece_index, err
+                    ));
+                    self.stop();
+                    self.queued_writes.clear();
+                    break;
                 }
             }
         }
@@ -1317,7 +1325,31 @@ impl Download {
         self.delegator = Delegator::new();
         self.target_files = target_files;
         for peer in self.connection_list.iter_mut() {
-            peer.bitfield = Bitfield::new(num_pieces);
+            let mut bf = Bitfield::new(num_pieces);
+            if peer.raw_have_all {
+                for i in 0..num_pieces {
+                    bf.set(i);
+                }
+            } else if let Some(raw) = &peer.raw_bitfield {
+                for (b_idx, &b) in raw.iter().enumerate() {
+                    for bit in 0..8 {
+                        let idx = b_idx * 8 + bit;
+                        if idx < num_pieces && (b & (0x80 >> bit)) != 0 {
+                            bf.set(idx);
+                        }
+                    }
+                }
+            }
+            for &have_idx in &peer.pending_haves {
+                if (have_idx as usize) < num_pieces {
+                    bf.set(have_idx as usize);
+                }
+            }
+            peer.bitfield = bf;
+        }
+
+        for peer in self.connection_list.iter() {
+            self.chunk_statistics.add_peer(peer.peer_id, &peer.bitfield);
         }
 
         self.piece_data_cache.clear();
@@ -1648,6 +1680,25 @@ impl Download {
     /// Pending blocks in `piece_data_cache` are preferred so a just-written
     /// piece can be uploaded before the disk worker flushes it.
     pub fn read_piece_block(&self, index: u32, begin: u32, length: u32) -> Result<Vec<u8>, String> {
+        match self.read_piece_block_or_async_params(index, begin, length)? {
+            Ok(cached) => Ok(cached),
+            Err((thread, root, files, piece_length)) => thread
+                .read_block(root, files, piece_length, index, begin, length)
+                .map_err(|err| format!("disk read failed: {err}")),
+        }
+    }
+
+    /// Returns cached block data if available in the in-memory piece cache, or
+    /// returns the parameters required to perform an asynchronous disk read without
+    /// holding the `Download` mutex.
+    #[allow(clippy::type_complexity)]
+    pub fn read_piece_block_or_async_params(
+        &self,
+        index: u32,
+        begin: u32,
+        length: u32,
+    ) -> Result<Result<Vec<u8>, (Arc<DiskThread>, PathBuf, Arc<Vec<TargetFileInfo>>, u32)>, String>
+    {
         if index >= self.total_chunks() as u32 {
             return Err("piece index out of range".to_string());
         }
@@ -1662,17 +1713,14 @@ impl Download {
             return Err("download has no save directory".to_string());
         }
 
-        let mut out = vec![0u8; length as usize];
         if let Some(cached) = self.piece_data_cache.get(&index) {
             if cached.len() >= end as usize {
+                let mut out = vec![0u8; length as usize];
                 out.copy_from_slice(&cached[begin as usize..end as usize]);
-                return Ok(out);
+                return Ok(Ok(out));
             }
         }
 
-        // Reads are serialised with writes on the disk worker. The caller may
-        // block waiting for the reply, but no filesystem syscall is issued on
-        // the reactor thread.
         let thread = self
             .disk_thread
             .clone()
@@ -1681,16 +1729,12 @@ impl Download {
             return Err("no disk worker available for read".to_string());
         };
 
-        thread
-            .read_block(
-                self.save_directory.clone(),
-                Arc::clone(&self.target_files),
-                self.metadata.piece_length,
-                index,
-                begin,
-                length,
-            )
-            .map_err(|err| format!("disk read failed: {err}"))
+        Ok(Err((
+            thread,
+            self.save_directory.clone(),
+            Arc::clone(&self.target_files),
+            self.metadata.piece_length,
+        )))
     }
 
     pub fn completed_chunks(&self) -> usize {

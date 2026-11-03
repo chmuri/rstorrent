@@ -20,11 +20,13 @@ The project contains active implementations for core BitTorrent functionality, a
 - **Pure Rust & Memory Safe**: Zero segmentation faults, robust error handling, and structured concurrency built on [Tokio](https://tokio.rs).
 - **High-Throughput Algorithmic Engine**:
   - **Bucketed Priority Rarest-First**: SIMD/u64 bitfield operations ($O(N/64)$) with hardware `POPCNT`/`CLZ`, partial-piece priority, and random tie-breaking.
-  - **Piece Affinity & Dynamic Endgame**: Speed-classified peer allocation preventing slow straggler blocks; endgame request duplication to fastest peers with instant `CANCEL`.
+  - **Piece Affinity & Dynamic Endgame**: Speed-classified peer allocation preventing slow straggler blocks; endgame request duplication to fastest peers with instant global `CANCEL` broadcast.
+  - **Tit-for-Tat Choking & Optimistic Unchoke**: Dynamic peer unchoking re-evaluated every 10 seconds prioritizing top transfer rates, paired with 30-second rotating optimistic unchoking.
   - **BDP Dynamic Request Pipelining**: Adaptive inflight request queue depth ($Q_{\text{target}} \in [4, 512]$) tuned to peer RTT and bandwidth, with snub detection.
   - **Zero-Copy & Lock-Free Buffer Pool**: 16 KiB buffer arena (`BlockPool`) via `crossbeam-queue`, zero-copy Bencode views, and vectored network request batching.
   - **Multithreaded CPU Hashing**: Rayon-offloaded SHA-1/SHA-256 piece validation preventing Tokio executor starvation.
-  - **Positioned Asynchronous Disk I/O**: Atomic `write_all_at`/`read_exact_at` operations and in-memory piece write coalescing reducing disk IOPS by >90%.
+  - **Positioned Asynchronous Disk I/O & Non-Blocking Upload**: Atomic `write_all_at`/`read_exact_at` operations; peer upload blocks are read asynchronously without holding engine state mutexes.
+  - **Real-Time Watch Directory**: Native inotify event monitoring via `notify` automatically loading and starting new torrents on filesystem changes.
 - **BitTorrent Protocol Support**:
   - **BEP 3**: Core BitTorrent Protocol.
   - **BEP 6**: Fast Extension (`Allowed Fast`, `Suggest`, `Have All`, `Have None`, `Reject Request`).
@@ -33,6 +35,8 @@ The project contains active implementations for core BitTorrent functionality, a
   - **BEP 11**: Peer Exchange (PEX).
   - **BEP 15**: UDP Tracker Protocol with scrape support.
   - **BEP 16**: Super-Seeding (Initial Seeding).
+  - **BEP 29**: Micro Transport Protocol (uTP) with LEDBAT congestion control.
+  - **UPnP IGD & NAT-PMP**: Automatic router port forwarding.
   - **MSE / PE**: Message Stream Encryption / Protocol Encryption (RC4 + Diffie-Hellman 768-bit).
   - **Mainline DHT**: Kademlia Distributed Hash Table with bootstrap and caching.
 - **SCGI & RPC Compatibility**:
@@ -48,7 +52,7 @@ The project contains active implementations for core BitTorrent functionality, a
 - **Dual Binary Compatibility**:
   - Provides both `rstorrent` and `rtorrent` binaries out of the box for backward compatibility with existing scripts.
 - **Scales to Large Sessions**:
-  - O(1) hash-indexed lookups, parallel session restore, a bounded recheck pool and sharded disk workers keep 14,000+ torrents responsive; see [Performance and scaling](#performance-and-scaling).
+  - O(1) hash-indexed lookups, parallel session restore, bounded recheck pool, sharded disk workers, in-memory tracker DNS caching, and concurrency semaphores keep 14,000+ active torrents completely stable and responsive; see [Performance and scaling](#performance-and-scaling).
 
 ---
 
@@ -324,12 +328,40 @@ see the Flood repository for a ready-to-run `docker-compose.rstorrent.yml`.
 
 ## Configuration
 
-`rstorrent` automatically looks for configuration files in standard locations:
-1. `$XDG_CONFIG_HOME/rstorrent/rstorrent.rc` (or `rtorrent/rtorrent.rc`)
-2. `~/.config/rstorrent/rstorrent.rc` (or `~/.config/rtorrent/rtorrent.rc`)
-3. `~/.rstorrent.rc` (or `~/.rtorrent.rc`)
+`rstorrent` automatically discovers configuration files adhering to modern XDG standards, with fallback to legacy `.rtorrent.rc`:
+1. `./rstorrent.toml` (or `./.rstorrent.toml`) in the current working directory
+2. `$XDG_CONFIG_HOME/rstorrent/rstorrent.toml`
+3. `~/.config/rstorrent/rstorrent.toml`
+4. `~/.rstorrent.toml`
+5. Legacy: `$XDG_CONFIG_HOME/rstorrent/rstorrent.rc`, `~/.config/rstorrent/rstorrent.rc`, or `~/.rtorrent.rc`
 
-Example `.rstorrent.rc`:
+### Modern `rstorrent.toml` Example:
+
+```toml
+[network]
+port = 50000
+bind_address = "0.0.0.0"
+max_uploads = 8
+max_downloads = 16
+download_throttle_kb = 0
+upload_throttle_kb = 2500
+
+[storage]
+directory = "/downloads"
+session_directory = "/session"
+watch_directory = "/downloads/watch"
+
+[rpc]
+grpc_port = 50051
+scgi_port = 5000
+scgi_socket = "/session/rtorrent.sock"
+
+[dht]
+mode = "auto"
+port = 6881
+```
+
+### Legacy `.rtorrent.rc` Example:
 
 ```ini
 # Default download directory

@@ -45,6 +45,38 @@ impl<'a> TorrentTableWidget<'a> {
         self
     }
 
+    /// Calculates the visible index of the torrent row hit by a mouse click at row `y`.
+    ///
+    /// Respects table borders, the header row, and the current `scroll_offset`.
+    /// Returns `None` if the coordinates hit the border, the header, or an empty row.
+    pub fn row_at_position(
+        y: u16,
+        table_area: Rect,
+        selected_row: usize,
+        visible_count: usize,
+    ) -> Option<usize> {
+        let inner_height = table_area.height.saturating_sub(2);
+        let visible_rows_count = inner_height.saturating_sub(1) as usize;
+        if y >= table_area.top() + 2
+            && y < table_area.bottom().saturating_sub(1)
+            && visible_rows_count > 0
+        {
+            let display_idx = (y - (table_area.top() + 2)) as usize;
+            if display_idx < visible_rows_count {
+                let scroll_offset = if selected_row >= visible_rows_count {
+                    selected_row - visible_rows_count + 1
+                } else {
+                    0
+                };
+                let clicked_idx = scroll_offset + display_idx;
+                if clicked_idx < visible_count {
+                    return Some(clicked_idx);
+                }
+            }
+        }
+        None
+    }
+
     fn format_eta(eta_secs: Option<u64>, state: TorrentUiState) -> String {
         match state {
             TorrentUiState::Complete | TorrentUiState::Seeding => "Seeding".into(),

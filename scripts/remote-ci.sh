@@ -17,6 +17,7 @@
 #   scripts/remote-ci.sh sync                 # only rsync the working tree
 #   scripts/remote-ci.sh image                # rebuild the builder image
 #   scripts/remote-ci.sh doctor               # host, image and disk status
+#   scripts/remote-ci.sh sccache [args]       # inspect sccache inside container
 #   scripts/remote-ci.sh raw bash -lc '...'   # any command inside the container
 #
 # Environment overrides:
@@ -34,10 +35,10 @@ HOST="${RSTORRENT_CI_HOST:-root@10.0.2.7}"
 BASE="${RSTORRENT_CI_BASE:-/mnt/user/appdata/rstorrent-ci}"
 IMAGE="${RSTORRENT_CI_IMAGE:-rstorrent-ci:bookworm}"
 JOBS="${RSTORRENT_CI_JOBS:-auto}"
-MEMORY="${RSTORRENT_CI_MEMORY:-4g}"
+MEMORY="${RSTORRENT_CI_MEMORY:-6g}"
 SRC="$BASE/src"
 
-SSH=(ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$HOST")
+SSH=(ssh -o BatchMode=yes -o ConnectTimeout=2 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$HOST")
 
 usage() {
     sed -n '2,/^set /p' "$0" | sed '$d; s/^# \{0,1\}//'
@@ -89,6 +90,13 @@ docker_prefix() {
         -e "CARGO_TERM_COLOR=always"
         -e "CARGO_PROFILE_DEV_DEBUG=0"
         -e "CARGO_PROFILE_TEST_DEBUG=0"
+        -e "RUSTC_WRAPPER=sccache"
+        -e "SCCACHE_BUCKET=${SCCACHE_BUCKET:-sccache}"
+        -e "SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT:-http://10.0.2.7:9000}"
+        -e "SCCACHE_S3_USE_SSL=false"
+        -e "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-AAXRZ9NNKXBW76H9X5NP}"
+        -e "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-95ef3340e7b22d535fa62fe10551559aebd74a58d2c212a7}"
+        -e "SCCACHE_REGION=${SCCACHE_REGION:-us-east-1}"
         -w /work
         "$IMAGE"
     )
@@ -140,11 +148,28 @@ case "${1:-}" in
         exit 0
         ;;
     doctor)
+        if ! "${SSH[@]}" true 2>/dev/null; then
+            echo "Remote builder ($HOST) is offline/unreachable." >&2
+            echo "Local cargo: $(command -v cargo 2>/dev/null || echo 'not found') ($(cargo --version 2>/dev/null || echo 'n/a'))" >&2
+            if curl -s -m 2 -o /dev/null "http://hades.chmuri.net:9000" 2>/dev/null; then
+                echo "Remote cache: reachable at hades.chmuri.net:9000" >&2
+            else
+                echo "Remote cache: unreachable at hades.chmuri.net:9000" >&2
+            fi
+            exit 1
+        fi
         "${SSH[@]}" "uname -sr; echo \"CPUs: \$(nproc)\"; free -h; df -h $(printf '%q' "$BASE") | tail -1; docker images $(printf '%q' "$IMAGE") --format '{{.Repository}}:{{.Tag}} {{.Size}}'"
         echo "Builder configuration: JOBS=$JOBS, MEMORY=$MEMORY"
+        echo "Checking RustFS S3 backend on hades.chmuri.net:9000..."
+        "${SSH[@]}" "curl -s -o /dev/null -w 'RustFS port 9000 reachable (HTTP %{http_code})\n' http://hades.chmuri.net:9000 || echo 'RustFS unreachable'"
         exit 0
         ;;
     image)
+        if [[ -f "scripts/Dockerfile.builder" ]]; then
+            echo "==> syncing scripts/Dockerfile.builder to $HOST:$BASE/Dockerfile" >&2
+            "${SSH[@]}" "mkdir -p $(printf '%q' "$BASE")"
+            rsync -az "scripts/Dockerfile.builder" "$HOST:$BASE/Dockerfile"
+        fi
         "${SSH[@]}" "cd $(printf '%q' "$BASE") && docker build -t $(printf '%q' "$IMAGE") ."
         exit 0
         ;;
@@ -157,6 +182,13 @@ case "${1:-}" in
         shift
         fetch_binaries "${1:-}"
         exit 0
+        ;;
+    sccache)
+        shift
+        exec 9>"${TMPDIR:-/tmp}/rstorrent-remote-ci.lock"
+        flock -w 1800 9 || { echo "another remote-ci run holds the lock" >&2; exit 75; }
+        run_in_container sccache "${@:---show-stats}"
+        exit $?
         ;;
     raw)
         shift
@@ -191,7 +223,22 @@ for arg in "$@"; do
 done
 
 echo "==> cargo $* on $HOST ($IMAGE, jobs=${JOBS}, mem=${MEMORY})" >&2
-run_in_container cargo "$@"
+# Fallback: if remote builder is unreachable, run locally
+if ! "${SSH[@]}" true 2>/dev/null; then
+    echo "==> Remote builder ($HOST) is unreachable. Falling back to local: cargo $*" >&2
+    if ! curl -s -m 2 -o /dev/null "http://hades.chmuri.net:9000" 2>/dev/null; then
+        export RUSTC_WRAPPER=""
+        export CARGO_BUILD_RUSTC_WRAPPER=""
+    fi
+    cargo "$@"
+    rc=$?
+    exit $rc
+fi
+if [[ "${RSTORRENT_CI_SCCACHE_STATS:-1}" == "1" ]]; then
+    run_in_container bash -c 'cargo "$@"; rc=$?; echo "==> sccache statistics:" >&2; sccache --show-stats >&2 || true; exit $rc' -- "$@"
+else
+    run_in_container cargo "$@"
+fi
 rc=$?
 
 if [[ $rc -eq 0 && "$is_build" == "true" ]]; then

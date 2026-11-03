@@ -16,8 +16,9 @@ pub use concurrency::{
     UiComputeEngine,
 };
 pub use state::{
-    ActiveView, EngineSnapshot, FileUiRecord, PeerUiRecord, PieceState, SessionStats, SortKey,
-    SortOrder, TorrentDetailSnapshot, TorrentUiRecord, TorrentUiState, TrackerUiRecord,
+    ActiveView, EngineSnapshot, FileUiRecord, InFlightPieceRecord, PeerUiRecord, PieceState,
+    SessionStats, SortKey, SortOrder, TorrentDetailSnapshot, TorrentUiRecord, TorrentUiState,
+    TrackerUiRecord,
 };
 pub use theme::{Theme, ThemeId};
 pub use widgets::*;

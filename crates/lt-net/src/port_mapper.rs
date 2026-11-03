@@ -128,6 +128,123 @@ pub async fn try_map_nat_pmp(
     parse_nat_pmp_response(&buf[..len], protocol)
 }
 
+/// Discovers a UPnP IGD device and adds a port mapping.
+pub async fn try_map_upnp(
+    internal_port: u16,
+    external_port: u16,
+    protocol: PortMappingProtocol,
+    description: &str,
+    lease_duration: u32,
+) -> Result<u16, NetError> {
+    let socket = UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| NetError::Io(std::io::Error::other(e)))?;
+
+    let search_packet = format_upnp_ssdp_search();
+    let ssdp_target: SocketAddr = "239.255.255.250:1900".parse().unwrap();
+    let _ = socket.send_to(search_packet, ssdp_target).await;
+
+    let mut buf = [0u8; 2048];
+    let (len, _sender) = timeout(Duration::from_secs(2), socket.recv_from(&mut buf))
+        .await
+        .map_err(|_| {
+            NetError::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "SSDP timeout",
+            ))
+        })?
+        .map_err(|e| NetError::Io(std::io::Error::other(e)))?;
+
+    let response_text = String::from_utf8_lossy(&buf[..len]);
+    let location_url = response_text
+        .lines()
+        .find(|line| line.to_ascii_lowercase().starts_with("location:"))
+        .and_then(|line| line.split_once(':').map(|(_, url)| url.trim()))
+        .ok_or_else(|| NetError::Input("UPnP location header missing".into()))?;
+
+    let local_ip = socket
+        .local_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| NetError::Input(e.to_string()))?;
+
+    let desc_xml = client
+        .get(location_url)
+        .send()
+        .await
+        .map_err(|e| NetError::Input(e.to_string()))?
+        .text()
+        .await
+        .map_err(|e| NetError::Input(e.to_string()))?;
+
+    let service_type = if desc_xml.contains("urn:schemas-upnp-org:service:WANIPConnection:1") {
+        "urn:schemas-upnp-org:service:WANIPConnection:1"
+    } else if desc_xml.contains("urn:schemas-upnp-org:service:WANPPPConnection:1") {
+        "urn:schemas-upnp-org:service:WANPPPConnection:1"
+    } else {
+        "urn:schemas-upnp-org:service:WANIPConnection:1"
+    };
+
+    let control_url = if let Some(idx) = desc_xml.find("<controlURL>") {
+        let rest = &desc_xml[idx + "<controlURL>".len()..];
+        if let Some(end_idx) = rest.find("</controlURL>") {
+            let u = rest[..end_idx].trim();
+            if u.starts_with("http://") || u.starts_with("https://") {
+                u.to_string()
+            } else {
+                let base = if let Some((prefix, _)) = location_url.split_once("://") {
+                    if let Some((host_port, _)) = location_url[prefix.len() + 3..].split_once('/') {
+                        format!("{}://{}", prefix, host_port)
+                    } else {
+                        location_url.to_string()
+                    }
+                } else {
+                    location_url.to_string()
+                };
+                let slash = if u.starts_with('/') { "" } else { "/" };
+                format!("{}{}{}", base, slash, u)
+            }
+        } else {
+            location_url.to_string()
+        }
+    } else {
+        location_url.to_string()
+    };
+
+    let soap_body = format_upnp_soap_add_port_mapping(
+        service_type,
+        external_port,
+        internal_port,
+        &local_ip,
+        protocol,
+        description,
+        lease_duration,
+    );
+
+    let soap_action = format!("\"{}#AddPortMapping\"", service_type);
+    let resp = client
+        .post(&control_url)
+        .header("SOAPAction", soap_action)
+        .header("Content-Type", "text/xml; charset=\"utf-8\"")
+        .body(soap_body)
+        .send()
+        .await
+        .map_err(|e| NetError::Input(e.to_string()))?;
+
+    if resp.status().is_success() {
+        Ok(external_port)
+    } else {
+        Err(NetError::Input(format!(
+            "UPnP SOAP error: status {}",
+            resp.status()
+        )))
+    }
+}
+
 /// Formats an SSDP M-SEARCH discovery packet for UPnP IGD.
 pub fn format_upnp_ssdp_search() -> &'static [u8] {
     b"M-SEARCH * HTTP/1.1\r\n\

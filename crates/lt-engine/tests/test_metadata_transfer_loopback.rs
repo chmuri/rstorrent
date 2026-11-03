@@ -215,11 +215,7 @@ async fn metadata_requests_are_served_from_local_cache() {
             .await
             .expect("timed out waiting for metadata data")
             .expect("peer closed before metadata data");
-        if let PeerMessage::Extended {
-            id: LOCAL_METADATA_ID,
-            payload,
-        } = message
-        {
+        if let PeerMessage::Extended { id: 2, payload } = message {
             if let Ok(UtMetadataMessage::Data {
                 piece,
                 total_size,

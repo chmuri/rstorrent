@@ -98,6 +98,16 @@ pub enum DiskCommand {
         length: u32,
         reply: SyncSender<DiskReply>,
     },
+    ReadAsync {
+        id: u64,
+        root: PathBuf,
+        files: Arc<Vec<TargetFileInfo>>,
+        piece_length: u32,
+        piece_index: u32,
+        block_offset: u32,
+        length: u32,
+        reply: tokio::sync::oneshot::Sender<Result<Vec<u8>, StorageError>>,
+    },
     Write {
         id: u64,
         root: PathBuf,
@@ -143,6 +153,7 @@ impl DiskCommand {
     pub fn id(&self) -> u64 {
         match self {
             DiskCommand::Read { id, .. }
+            | DiskCommand::ReadAsync { id, .. }
             | DiskCommand::Write { id, .. }
             | DiskCommand::Sync { id, .. }
             | DiskCommand::Hash { id, .. }
@@ -865,6 +876,42 @@ impl DiskThread {
         }
     }
 
+    /// Asynchronously reads a slice of a piece without blocking the Tokio reactor.
+    pub async fn read_block_async(
+        &self,
+        root: impl Into<PathBuf>,
+        files: Arc<Vec<TargetFileInfo>>,
+        piece_length: u32,
+        piece_index: u32,
+        block_offset: u32,
+        length: u32,
+    ) -> Result<Vec<u8>, StorageError> {
+        let id = self.next_id();
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+
+        let command = DiskCommand::ReadAsync {
+            id,
+            root: root.into(),
+            files,
+            piece_length,
+            piece_index,
+            block_offset,
+            length,
+            reply: reply_tx,
+        };
+
+        self.stats.reads_submitted.fetch_add(1, Ordering::AcqRel);
+        if let Err(err) = self.send_blocking(command) {
+            self.stats.reads_submitted.fetch_sub(1, Ordering::AcqRel);
+            return Err(err);
+        }
+
+        match reply_rx.await {
+            Ok(res) => res,
+            Err(_) => Err(StorageError::DiskThreadClosed),
+        }
+    }
+
     /// Submits a hash of a whole piece. `generation` is echoed in the reply so
     /// stale results can be discarded after a chunk is released/reallocated.
     pub fn submit_hash(
@@ -1337,6 +1384,52 @@ impl DiskWorker {
                     self.stats.reads_completed.fetch_add(1, Ordering::AcqRel);
                 }
                 let _ = reply.send(DiskReply::Read { id, data: result });
+                false
+            }
+            DiskCommand::ReadAsync {
+                id: _,
+                root,
+                files,
+                piece_length,
+                piece_index,
+                block_offset,
+                length,
+                reply,
+            } => {
+                let cached_data = self
+                    .piece_cache
+                    .get(&root, piece_index, block_offset, length)
+                    .map(|slice| slice.to_vec());
+
+                let result = match cached_data {
+                    Some(data) => Ok(data),
+                    None => {
+                        let res = self.read_range(ReadRange {
+                            root: &root,
+                            files: files.as_slice(),
+                            piece_length,
+                            piece_index,
+                            block_offset,
+                            length,
+                            hashing: false,
+                        });
+                        if let Ok(ref data) = res {
+                            self.piece_cache.put(
+                                root.clone(),
+                                piece_index,
+                                block_offset,
+                                length,
+                                data.clone(),
+                            );
+                        }
+                        res
+                    }
+                };
+
+                if result.is_ok() {
+                    self.stats.reads_completed.fetch_add(1, Ordering::AcqRel);
+                }
+                let _ = reply.send(result);
                 false
             }
             DiskCommand::Write {

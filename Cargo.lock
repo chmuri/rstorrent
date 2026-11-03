@@ -1522,7 +1522,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lt-common"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "base64 0.23.1",
  "bitflags 2.13.2",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "lt-crypto"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "getrandom 0.4.3",
  "lt-common",
@@ -1550,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "lt-dht"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bytes",
  "lt-common",
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "lt-engine"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1585,10 +1585,11 @@ dependencies = [
 
 [[package]]
 name = "lt-net"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
+ "getrandom 0.4.3",
  "hickory-resolver",
  "libc",
  "lt-common",
@@ -1602,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "lt-protocol"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1619,7 +1620,7 @@ dependencies = [
 
 [[package]]
 name = "lt-storage"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1632,12 +1633,13 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "thiserror 2.0.21",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "lt-sys"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "flate2",
  "libc",
@@ -1651,7 +1653,7 @@ dependencies = [
 
 [[package]]
 name = "lt-tracker"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -2677,7 +2679,7 @@ dependencies = [
 
 [[package]]
 name = "rstorrent"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -2690,6 +2692,7 @@ dependencies = [
  "lt-storage",
  "lt-sys",
  "nix 0.31.3",
+ "notify",
  "ratatui",
  "rayon",
  "rt-core",
@@ -2697,16 +2700,18 @@ dependencies = [
  "rt-rpc",
  "rt-scgi",
  "rt-tui",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "rt-core"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -2730,11 +2735,12 @@ dependencies = [
 
 [[package]]
 name = "rt-grpc"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "futures-util",
  "lt-common",
  "lt-engine",
+ "lt-storage",
  "prost",
  "prost-types",
  "rt-core",
@@ -2751,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "rt-rpc"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "base64 0.23.1",
  "lt-common",
@@ -2767,7 +2773,7 @@ dependencies = [
 
 [[package]]
 name = "rt-scgi"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "bytes",
  "flate2",
@@ -2781,13 +2787,14 @@ dependencies = [
 
 [[package]]
 name = "rt-tui"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "crossterm",
  "lt-common",
  "lt-engine",
  "lt-net",
  "lt-protocol",
+ "nix 0.31.3",
  "ratatui",
  "rayon",
  "rt-core",
@@ -2800,7 +2807,7 @@ dependencies = [
 
 [[package]]
 name = "rt-tui-client"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "clap",
  "crossterm",
