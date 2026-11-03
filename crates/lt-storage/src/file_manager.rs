@@ -11,10 +11,12 @@ use crate::socket_file::{OpenFlags, SocketFile};
 /// Set once the first time the kernel/filesystem reports that `fallocate` is
 /// unavailable. The fallback path is still attempted; this only suppresses
 /// repeated log spam when it fails on every allocation.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 static FALLOCATE_UNSUPPORTED_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// Set once if the `posix_fallocate` fallback also fails, so an unsupported
 /// filesystem does not emit a warning for every allocation.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 static FALLOCATE_FALLBACK_FAILED_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// Snapshot of the counters maintained by [`FileManager`].
@@ -141,10 +143,12 @@ fn is_fd_exhaustion(err: &std::io::Error) -> bool {
 }
 
 /// Returns true only for the first unsupported-`fallocate` report.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn log_fallocate_unsupported_once(errno: i32) -> bool {
     log_fallocate_unsupported_once_with(&FALLOCATE_UNSUPPORTED_LOGGED, errno)
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn log_fallocate_unsupported_once_with(flag: &AtomicBool, errno: i32) -> bool {
     if errno != libc::EOPNOTSUPP && errno != libc::ENOSYS {
         return false;

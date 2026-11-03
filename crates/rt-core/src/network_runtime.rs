@@ -8,6 +8,7 @@ use lt_protocol::encryption::EncryptionPolicy;
 use lt_protocol::handshake::{is_plaintext_handshake_prefix, HandshakeMessage};
 use lt_protocol::mse::{accept as mse_accept, matches_obfuscated_info_hash};
 use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::io;
 use std::os::fd::{FromRawFd, RawFd};
