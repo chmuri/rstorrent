@@ -240,11 +240,12 @@ pub fn sample_engine_snapshot_with_stats(
         });
     }
 
+    #[allow(clippy::unnecessary_cast)]
     let (disk_free_bytes, disk_total_bytes) = match nix::sys::statvfs::statvfs(".") {
         Ok(stat) => {
-            let bsize = stat.block_size();
-            let free = stat.blocks_available() * bsize;
-            let total = stat.blocks() * bsize;
+            let bsize = stat.block_size() as u64;
+            let free = stat.blocks_available() as u64 * bsize;
+            let total = stat.blocks() as u64 * bsize;
             (free, total)
         }
         Err(_) => (480 * 1024 * 1024 * 1024, 1000 * 1024 * 1024 * 1024),
