@@ -528,6 +528,11 @@ impl Download {
         completed
     }
 
+    /// Returns true if there are disk writes currently queued or in-flight.
+    pub fn has_pending_disk_writes(&self) -> bool {
+        !self.pending_writes.is_empty() || !self.queued_writes.is_empty()
+    }
+
     /// Flushes all pending writes and cached file handles. Blocking; use on
     /// shutdown or explicit sync, never per piece.
     pub fn flush_disk(&mut self) -> Result<(), StorageError> {

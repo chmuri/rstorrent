@@ -27,6 +27,21 @@ fn global_udp_router() -> &'static tokio::sync::Mutex<UdpRouter> {
     ROUTER.get_or_init(|| tokio::sync::Mutex::new(UdpRouter::new()))
 }
 
+/// Global concurrency limit for tracker requests to prevent exhausting sockets and DNS threads.
+fn tracker_concurrency_semaphore() -> &'static tokio::sync::Semaphore {
+    static SEMAPHORE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(32))
+}
+
+/// In-memory cache for resolved UDP tracker hostnames to prevent thousands of redundant DNS lookups.
+fn tracker_dns_cache(
+) -> &'static std::sync::RwLock<std::collections::HashMap<String, (SocketAddr, Instant)>> {
+    static CACHE: OnceLock<
+        std::sync::RwLock<std::collections::HashMap<String, (SocketAddr, Instant)>>,
+    > = OnceLock::new();
+    CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
+}
+
 #[derive(Debug, Error)]
 pub enum TrackerClientError {
     #[error("HTTP error: {0}")]
@@ -152,6 +167,11 @@ pub async fn announce_http_detailed(
     url: &str,
     params: &AnnounceParams,
 ) -> Result<TrackerAnnounceResult, TrackerClientError> {
+    let _permit = tracker_concurrency_semaphore()
+        .acquire()
+        .await
+        .map_err(|_| TrackerClientError::Timeout)?;
+
     let announce_url = build_announce_url(AnnounceQuery {
         base_url: url,
         info_hash: params.info_hash.as_bytes(),
@@ -210,13 +230,27 @@ async fn resolve_udp_tracker(url: &str) -> Result<SocketAddr, TrackerClientError
     let stripped = url.strip_prefix("udp://").unwrap_or(url);
     let host_port_part = stripped.split('/').next().unwrap_or(stripped);
 
+    if let Ok(cache) = tracker_dns_cache().read() {
+        if let Some((addr, timestamp)) = cache.get(host_port_part) {
+            if timestamp.elapsed() < Duration::from_secs(300) {
+                return Ok(*addr);
+            }
+        }
+    }
+
     let mut addrs = tokio::net::lookup_host(host_port_part)
         .await
         .map_err(|_| TrackerClientError::DnsResolutionFailed(host_port_part.to_string()))?;
 
-    addrs
+    let addr = addrs
         .next()
-        .ok_or_else(|| TrackerClientError::DnsResolutionFailed(host_port_part.to_string()))
+        .ok_or_else(|| TrackerClientError::DnsResolutionFailed(host_port_part.to_string()))?;
+
+    if let Ok(mut cache) = tracker_dns_cache().write() {
+        cache.insert(host_port_part.to_string(), (addr, Instant::now()));
+    }
+
+    Ok(addr)
 }
 
 async fn bind_udp_socket(tracker_addr: SocketAddr) -> Result<UdpSocket, TrackerClientError> {
@@ -365,6 +399,11 @@ pub async fn announce_udp_detailed_with_router(
     params: &AnnounceParams,
     router: &mut UdpRouter,
 ) -> Result<TrackerAnnounceResult, TrackerClientError> {
+    let _permit = tracker_concurrency_semaphore()
+        .acquire()
+        .await
+        .map_err(|_| TrackerClientError::Timeout)?;
+
     let tracker_addr = resolve_udp_tracker(url).await?;
     let tracker_address = SocketAddress::from(tracker_addr);
     let socket = bind_udp_socket(tracker_addr).await?;
@@ -464,6 +503,11 @@ pub async fn scrape_http(
     url: &str,
     info_hash: HashString,
 ) -> Result<ScrapeStats, TrackerClientError> {
+    let _permit = tracker_concurrency_semaphore()
+        .acquire()
+        .await
+        .map_err(|_| TrackerClientError::Timeout)?;
+
     if !uri_can_scrape(url) {
         return Err(TrackerClientError::TrackerHttp(
             HttpTrackerError::InvalidScrapeUrl,
@@ -538,6 +582,11 @@ pub async fn scrape_udp_with_router(
     info_hash: HashString,
     router: &mut UdpRouter,
 ) -> Result<ScrapeStats, TrackerClientError> {
+    let _permit = tracker_concurrency_semaphore()
+        .acquire()
+        .await
+        .map_err(|_| TrackerClientError::Timeout)?;
+
     let tracker_addr = resolve_udp_tracker(url).await?;
     let tracker_address = SocketAddress::from(tracker_addr);
     let socket = bind_udp_socket(tracker_addr).await?;

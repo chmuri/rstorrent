@@ -78,21 +78,27 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
 
     app.set_status_message("rstorrent ready. Press '?' for shortcuts, ':' for commands.");
 
-    while !control.signals.is_shutdown() {
+    let mut last_snapshot_time = std::time::Instant::now()
+        .checked_sub(Duration::from_secs(1))
+        .unwrap_or_else(std::time::Instant::now);
+    let snapshot_interval = Duration::from_millis(250);
+    let mut needs_draw = true;
+
+    'main_loop: while !control.signals.is_shutdown() {
         control.inc_tick();
-        sequence += 1;
 
         // Process Crossterm events with responsive 16ms poll (60 FPS target)
         while crossterm::event::poll(Duration::from_millis(16))? {
             let event = crossterm::event::read()?;
             match event {
                 crossterm::event::Event::Key(key) => {
+                    needs_draw = true;
                     let action = rt_tui::input::router::KeyRouter::route_key(key, &app.mode);
                     if let Some(cmd) = app.dispatch_action(action) {
                         match cmd {
                             rt_tui::EngineCommand::Quit => {
                                 control.signals.request_normal_shutdown();
-                                break;
+                                break 'main_loop;
                             }
                             rt_tui::EngineCommand::StartTorrent(hashes) => {
                                 let dl_list = control.download_list.read().unwrap();
@@ -212,67 +218,60 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                         app.category_counts,
                     );
                     app.dispatch_action(action);
+                    needs_draw = true;
                 }
                 crossterm::event::Event::Resize(_w, _h) => {
                     terminal.autoresize()?;
+                    needs_draw = true;
                 }
                 crossterm::event::Event::Paste(text) => {
                     app.dispatch_action(rt_tui::input::router::AppAction::PasteInput(text));
+                    needs_draw = true;
                 }
                 _ => {}
             }
         }
 
-        // Sample engine snapshot (lock-free for UI rendering)
-        let stats = {
-            let dl_guard = control.download_list.read().unwrap();
-            let total_dl = dl_guard.len() as u32;
-            let mut active_count = 0;
-            let mut global_down = 0;
-            let mut global_up = 0;
-            for d in dl_guard.all() {
-                if let Ok(guard) = d.read() {
-                    let down = guard.rate_down();
-                    let up = guard.rate_up();
-                    global_down += down;
-                    global_up += up;
-                    if down > 0 || up > 0 || guard.is_downloading() {
-                        active_count += 1;
-                    }
-                }
-            }
-            rt_tui::state::SessionStats {
-                global_down_bps: global_down,
-                global_up_bps: global_up,
-                global_down_total: 0,
-                global_up_total: 0,
-                disk_free_bytes: 480 * 1024 * 1024 * 1024,
-                disk_total_bytes: 1000 * 1024 * 1024 * 1024,
-                dht_nodes: 0,
-                listen_port: control.listen_port,
-                port_open: true,
-                total_torrents: total_dl,
-                active_torrents: active_count,
-            }
-        };
+        if control.signals.is_shutdown() {
+            break 'main_loop;
+        }
 
-        let dl_guard = control.download_list.read().unwrap();
-        let snapshot = rt_tui::concurrency::sample_engine_snapshot(&dl_guard, stats, sequence);
-        let inspector_details = if app.show_inspector {
-            if let Some(focused) = app.focused_torrent() {
-                rt_tui::concurrency::aggregator::sample_torrent_details(&dl_guard, &focused.hash)
+        // Sample engine snapshot at 4 Hz (every 250ms) rather than 60 Hz to avoid
+        // re-allocating tens of thousands of records and re-sorting 60 times a second.
+        if last_snapshot_time.elapsed() >= snapshot_interval {
+            sequence += 1;
+            last_snapshot_time = std::time::Instant::now();
+
+            let dl_guard = control.download_list.read().unwrap();
+            let snapshot = rt_tui::concurrency::sample_engine_snapshot_with_stats(
+                &dl_guard,
+                control.listen_port,
+                sequence,
+            );
+            let inspector_details = if app.show_inspector {
+                if let Some(focused) = app.focused_torrent() {
+                    rt_tui::concurrency::aggregator::sample_torrent_details(
+                        &dl_guard,
+                        &focused.hash,
+                    )
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
-        drop(dl_guard);
-        app.update_snapshot(std::sync::Arc::new(snapshot));
-        app.active_torrent_details = inspector_details;
+            };
+            drop(dl_guard);
 
-        // Render frame with Ratatui 0.30 diffing engine
-        terminal.draw(|f| app.render(f))?;
+            app.update_snapshot(std::sync::Arc::new(snapshot));
+            app.active_torrent_details = inspector_details;
+            needs_draw = true;
+        }
+
+        // Render frame with Ratatui 0.30 diffing engine only when needed
+        if needs_draw {
+            terminal.draw(|f| app.render(f))?;
+            needs_draw = false;
+        }
     }
 
     // Immediately restore the terminal so raw mode, alternate screen and mouse
@@ -285,6 +284,8 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     while crossterm::event::poll(Duration::from_millis(20)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
+
+    eprintln!("rstorrent: saving session and shutting down...");
 
     // A second ^Q forces an immediate exit without waiting for the graceful
     // network/session shutdown sequence.

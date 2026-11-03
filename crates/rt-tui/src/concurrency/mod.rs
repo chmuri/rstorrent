@@ -3,5 +3,7 @@
 pub mod aggregator;
 pub mod compute;
 
-pub use aggregator::{sample_engine_snapshot, EngineSnapshotBroadcaster};
+pub use aggregator::{
+    sample_engine_snapshot, sample_engine_snapshot_with_stats, EngineSnapshotBroadcaster,
+};
 pub use compute::UiComputeEngine;

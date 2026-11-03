@@ -1046,11 +1046,15 @@ impl DownloadNetworkCoordinator {
             while connect_tasks.join_next().await.is_some() {}
 
             // Flush verified pieces before the coordinator exits. This blocks,
-            // so run it on a blocking pool rather than a reactor worker.
-            let flush_download = Arc::clone(&download);
-            let _ =
-                tokio::task::spawn_blocking(move || flush_download.lock().unwrap().flush_disk())
-                    .await;
+            // so run it on a blocking pool rather than a reactor worker, only if needed.
+            let needs_flush = download.lock().unwrap().has_pending_disk_writes();
+            if needs_flush {
+                let flush_download = Arc::clone(&download);
+                let _ = tokio::task::spawn_blocking(move || {
+                    flush_download.lock().unwrap().flush_disk()
+                })
+                .await;
+            }
 
             info!(
                 torrent = %download.lock().unwrap().name(),
