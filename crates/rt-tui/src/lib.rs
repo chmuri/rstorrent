@@ -11,7 +11,10 @@ pub mod widgets;
 pub mod windows;
 
 pub use app::{EngineCommand, NextGenTuiApp};
-pub use concurrency::{sample_engine_snapshot, EngineSnapshotBroadcaster, UiComputeEngine};
+pub use concurrency::{
+    sample_engine_snapshot, sample_engine_snapshot_with_stats, EngineSnapshotBroadcaster,
+    UiComputeEngine,
+};
 pub use state::{
     ActiveView, EngineSnapshot, FileUiRecord, PeerUiRecord, PieceState, SessionStats, SortKey,
     SortOrder, TorrentDetailSnapshot, TorrentUiRecord, TorrentUiState, TrackerUiRecord,

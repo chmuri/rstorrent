@@ -123,6 +123,10 @@ impl DownloadList {
         self.downloads.clone()
     }
 
+    pub fn downloads(&self) -> &[Arc<RwLock<Download>>] {
+        &self.downloads
+    }
+
     pub fn clear(&mut self) {
         for d in &self.downloads {
             let mut d_guard = d.write().unwrap();

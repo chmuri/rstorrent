@@ -75,12 +75,27 @@ pub(crate) fn decode_nodes(bytes: &[u8]) -> Vec<DhtNode> {
         .collect()
 }
 
+fn dht_lookup_semaphore() -> &'static tokio::sync::Semaphore {
+    static SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(32))
+}
+
 async fn lookup(
     server: Arc<DhtServer>,
     router: Arc<Mutex<DhtRouter>>,
     target: HashString,
     max_queries: usize,
 ) -> LookupOutcome {
+    let _permit = match dht_lookup_semaphore().acquire().await {
+        Ok(permit) => permit,
+        Err(_) => {
+            return LookupOutcome {
+                peers: Vec::new(),
+                tokens: Vec::new(),
+                queries: 0,
+            };
+        }
+    };
     let own_id = router.lock().await.own_id;
 
     let mut candidates = router.lock().await.closest_nodes(&target, MAX_CANDIDATES);
