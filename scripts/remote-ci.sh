@@ -19,6 +19,13 @@
 #   scripts/remote-ci.sh doctor               # host, image and disk status
 #   scripts/remote-ci.sh raw bash -lc '...'   # any command inside the container
 #
+# Environment overrides:
+#   RSTORRENT_CI_HOST   (default: root@192.0.2.1)
+#   RSTORRENT_CI_BASE   (default: /opt/rstorrent-ci)
+#   RSTORRENT_CI_IMAGE  (default: rtorrent-ci:bookworm)
+#   RSTORRENT_CI_JOBS   (default: auto — uses all available CPUs)
+#   RSTORRENT_CI_MEMORY (default: 4g — 4 GB RAM container limit)
+#
 # Escape hatch for a genuinely local run: `command cargo test` (the OpenCode
 # plugin only rewrites commands that start with `cargo`).
 set -euo pipefail
@@ -26,7 +33,8 @@ set -euo pipefail
 HOST="${RSTORRENT_CI_HOST:-root@192.0.2.1}"
 BASE="${RSTORRENT_CI_BASE:-/opt/rstorrent-ci}"
 IMAGE="${RSTORRENT_CI_IMAGE:-rstorrent-ci:bookworm}"
-JOBS="${RSTORRENT_CI_JOBS:-2}"
+JOBS="${RSTORRENT_CI_JOBS:-auto}"
+MEMORY="${RSTORRENT_CI_MEMORY:-4g}"
 SRC="$BASE/src"
 
 SSH=(ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$HOST")
@@ -61,17 +69,35 @@ sync_tree() {
 docker_prefix() {
     # The target and cargo caches live in Docker volumes on the server's native
     # filesystem: Unraid's shfs (FUSE) is far too slow for a Rust build.
-    printf 'docker run --rm --init -v %q -v %q -v %q -v %q -v %q -e %q -e %q -e %q -e %q -w /work %q' \
-        "$SRC:/work" \
-        "rstorrent-target:/work/target" \
-        "rstorrent-cargo-registry:/usr/local/cargo/registry" \
-        "rstorrent-cargo-git:/usr/local/cargo/git" \
-        "$BASE/rustup:/usr/local/rustup" \
-        "CARGO_BUILD_JOBS=$JOBS" \
-        "CARGO_TERM_COLOR=always" \
-        "CARGO_PROFILE_DEV_DEBUG=0" \
-        "CARGO_PROFILE_TEST_DEBUG=0" \
+    local cmd=(
+        docker run --rm --init
+        --memory="$MEMORY"
+        -v "$SRC:/work"
+        -v "rstorrent-target:/work/target"
+        -v "rstorrent-cargo-registry:/usr/local/cargo/registry"
+        -v "rstorrent-cargo-git:/usr/local/cargo/git"
+        -v "$BASE/rustup:/usr/local/rustup"
+    )
+
+    # When JOBS is auto or max (default), Cargo defaults to all logical CPUs ($(nproc)).
+    # If a numeric limit or other value is given, set CARGO_BUILD_JOBS explicitly.
+    if [[ "$JOBS" != "auto" && "$JOBS" != "max" && -n "$JOBS" ]]; then
+        cmd+=(-e "CARGO_BUILD_JOBS=$JOBS")
+    fi
+
+    cmd+=(
+        -e "CARGO_TERM_COLOR=always"
+        -e "CARGO_PROFILE_DEV_DEBUG=0"
+        -e "CARGO_PROFILE_TEST_DEBUG=0"
+        -w /work
         "$IMAGE"
+    )
+
+    local out=""
+    for item in "${cmd[@]}"; do
+        out+="$(printf '%q ' "$item")"
+    done
+    printf '%s' "$out"
 }
 
 run_in_container() {
@@ -114,7 +140,8 @@ case "${1:-}" in
         exit 0
         ;;
     doctor)
-        "${SSH[@]}" "uname -sr; nproc; df -h $(printf '%q' "$BASE") | tail -1; docker images $(printf '%q' "$IMAGE") --format '{{.Repository}}:{{.Tag}} {{.Size}}'"
+        "${SSH[@]}" "uname -sr; echo \"CPUs: \$(nproc)\"; free -h; df -h $(printf '%q' "$BASE") | tail -1; docker images $(printf '%q' "$IMAGE") --format '{{.Repository}}:{{.Tag}} {{.Size}}'"
+        echo "Builder configuration: JOBS=$JOBS, MEMORY=$MEMORY"
         exit 0
         ;;
     image)
@@ -163,7 +190,7 @@ for arg in "$@"; do
     fi
 done
 
-echo "==> cargo $* on $HOST ($IMAGE)" >&2
+echo "==> cargo $* on $HOST ($IMAGE, jobs=${JOBS}, mem=${MEMORY})" >&2
 run_in_container cargo "$@"
 rc=$?
 

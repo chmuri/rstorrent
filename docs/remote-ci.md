@@ -36,19 +36,45 @@ scripts/remote-ci.sh raw bash -lc 'cargo tree -d'     # anything in the containe
 ```
 
 Environment overrides: `RSTORRENT_CI_HOST`, `RSTORRENT_CI_BASE`,
-`RSTORRENT_CI_IMAGE`, `RSTORRENT_CI_JOBS` (default `2`).
+`RSTORRENT_CI_IMAGE`, `RSTORRENT_CI_JOBS` (default `auto` — uses all available CPUs),
+`RSTORRENT_CI_MEMORY` (default `4g` — limits Docker container to 4 GB RAM).
 
 The script takes an exclusive lock (`/tmp/rstorrent-remote-ci.lock`), so
 concurrent agent runs queue instead of copying the tree under each other.
 
 ## Resource limits
 
-The host runs ~30 other containers and has 16 GB RAM, of which roughly 2–2.5 GB
-is available. That is why:
+The remote server runs other background containers and has 16 GB physical RAM.
+To maximize build performance while preserving host stability:
 
-- `CARGO_BUILD_JOBS` defaults to **2** (raise it only after checking `free -m`);
+- **Memory limit**: Container RAM is capped at **4 GB** (`--memory=4g` /
+  `RSTORRENT_CI_MEMORY`), preventing cargo/rustc memory spikes from impacting host services;
+- **CPU parallelism**: `RSTORRENT_CI_JOBS` defaults to **auto** (all logical
+  cores on the Xeon host, e.g. 36 threads), maximizing compilation speed across crates;
 - `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0` keep debug info
   out of the build, cutting disk and link time.
+
+## Laptop shell integration (prevent local CPU burning)
+
+By default, typing `cargo ...` directly in a terminal on the laptop executes locally,
+consuming all laptop CPU cores. To seamlessly route `cargo` calls inside this
+repository to the remote builder, add this wrapper function to your `~/.bashrc`:
+
+```bash
+cargo() {
+    if [[ -f "./scripts/remote-ci.sh" && -d ".git" ]]; then
+        ./scripts/remote-ci.sh cargo "$@"
+    else
+        command cargo "$@"
+    fi
+}
+```
+
+Or invoke the wrapper directly:
+```bash
+./scripts/remote-ci.sh check --workspace --all-targets
+./scripts/remote-ci.sh test -p rt-tui
+./scripts/remote-ci.sh build --release
 
 ## OpenCode integration
 
