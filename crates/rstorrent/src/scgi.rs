@@ -231,7 +231,7 @@ pub fn register_scgi_commands(
                 _ => {
                     return Err(RpcError::InputError(format!(
                         "Unsupported XML-RPC dialect '{value}'."
-                    )))
+                    )));
                 }
             };
             xmlrpc_dialect_set.set_dialect(dialect);

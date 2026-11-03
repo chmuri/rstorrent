@@ -1,4 +1,5 @@
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
@@ -147,12 +148,17 @@ pub fn restore_terminal_once() -> bool {
         return false;
     }
 
-    let _ = crossterm::terminal::disable_raw_mode();
+    let mut out = std::io::stdout();
     let _ = crossterm::execute!(
-        std::io::stdout(),
+        out,
+        crossterm::event::DisableMouseCapture,
+        crossterm::event::DisableFocusChange,
+        crossterm::event::DisableBracketedPaste,
         crossterm::terminal::LeaveAlternateScreen,
         crossterm::cursor::Show
     );
+    let _ = out.flush();
+    let _ = crossterm::terminal::disable_raw_mode();
     true
 }
 

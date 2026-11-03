@@ -43,12 +43,20 @@ impl Widget for DetailsWidget<'_> {
                 TrackerListWidget::new(&self.state.trackers).render(body_area, buf);
             }
             DetailTab::Chunks => {
-                render_count(
-                    "Chunks",
-                    self.state.info.piece_count as usize,
-                    body_area,
-                    buf,
-                );
+                let piece_count = self.state.info.piece_count as usize;
+                if piece_count > 0 {
+                    let chunks_layout =
+                        Layout::vertical([Constraint::Length(1), Constraint::Min(2)])
+                            .split(body_area);
+
+                    render_count("Chunks", piece_count, chunks_layout[0], buf);
+
+                    let pieces = vec![rt_tui::state::PieceState::Verified; piece_count];
+                    rt_tui::widgets::PieceMapWidget::new(&pieces, rt_tui::theme::THEME_TOKYO_NIGHT)
+                        .render(chunks_layout[1], buf);
+                } else {
+                    render_count("Chunks", 0, body_area, buf);
+                }
             }
         }
     }

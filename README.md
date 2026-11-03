@@ -210,6 +210,37 @@ tmux new -s rstorrent
 rstorrent --daemon --session /var/lib/rstorrent/session "magnet:?xt=urn:btih:..."
 ```
 
+### Interactive TUI Controls & Keybindings
+
+`rstorrent` features a next-generation terminal interface built with Ratatui and Crossterm, featuring full mouse and keyboard navigation parity:
+
+#### Category Views Bar
+- **Keyboard**: Press `1`..`8` to switch views directly (`[1] All`, `[2] Downloading`, `[3] Seeding`, `[4] Active`, `[5] Paused`, `[6] Complete`, `[7] Error`, `[8] Hashing`).
+- **Arrows / Vim**: `Left`/`Right` or `h`/`l` cycles between adjacent category views when the table is focused.
+- **Mouse**: Click directly on any view tab pill to immediately filter the download list.
+
+#### Torrent Inspector Drawer
+- **Toggle / Focus**: Press `i` or `Enter` on any torrent to open and focus the Inspector drawer. Press `i`, `Esc`, or `q` to return focus to the torrent list.
+- **Tabs**: Switch between inspector tabs via keyboard `1`..`6` or `Left`/`Right` / `h`/`l` / `Tab`:
+  - `[1:General]`: Transfer summary, piece counts, hash, save path, and status messages.
+  - `[2:Trackers]`: Multi-tier tracker list with live scrape seeds, peers, and announce intervals.
+  - `[3:Peers]`: Connected swarm peers, transfer speeds, encryption status, and client identifiers.
+  - `[4:Files]`: File priority tree with progress bars; press `Space` to cycle file priority (`Off`, `Normal`, `High`).
+  - `[★ 5:Piece Map]`: High-density Braille piece availability heatmap and verified piece counts.
+  - `[6:Logs]`: Filterable daemon events, session logs, and error diagnostic traces.
+- **Mouse**: Click any inspector tab pill to switch tabs, click `[i: Close]` to close the drawer, click any file/peer row to select it, or scroll with the mouse wheel.
+
+#### Multi-Torrent Operations & Batch Actions
+- `Space`: Toggle multi-selection on focused torrent.
+- `Ctrl+A`: Select all visible torrents in the active view.
+- `*`: Invert current selection.
+- `s` / `p`: Start or pause all selected torrents simultaneously.
+- `x`: Open the safe removal confirmation dialog (with disk file deletion toggle).
+- `+` / `-`: Increase or decrease priority across all selected items.
+- `:`: Open command palette for fuzzy search across all actions.
+- `t`: Open live theme selector (Tokyo Night, Catppuccin, Gruvbox, Nord, Solarized, Monokai, Dracula, ASCII).
+- `?` or `F1`: Open searchable keyboard shortcuts cheatsheet.
+
 The session directory stores both the static `.torrent` files and resume data,
 so downloads are restored after a restart. Magnet downloads persist their
 metadata as soon as it is fetched; while metadata is still missing the original
