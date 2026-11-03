@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-11-03
+
+### Changed
+- **Renamed title display to `rstorrent`**: Updated Dashboard telemetry header and startup status messages from `rtorrent-next` to `rstorrent v0.19.3`.
+
+### Fixed
+- **Full mouse and keyboard interactivity for Category View and Torrent Inspector tabs**:
+  - Implemented spatial hit-testing for Inspector Drawer tabs (`[1:General]`, `[2:Trackers]`, `[3:Peers]`, `[4:Files]`, `[★ 5:Piece Map]`, `[6:Logs]`) and close button `[i: Close]`, enabling instantaneous mouse switching and drawer toggling.
+  - Implemented content body hit-testing to click-focus the inspector and select item rows directly.
+  - Refined Category View tab spatial hit-testing to eliminate dead zones between tabs and on separators.
+  - Added direct keyboard number jumping (`1`..`6`) when inspector is focused to jump directly to any inspector tab.
+  - Added `Tab` / `Shift+Tab` and `Left`/`Right` / `h`/`l` inspector tab cycling.
+  - Added `Left`/`Right` / `h`/`l` view cycling in Normal mode when table is focused.
+  - Added `Tab` shortcut in Normal mode to open and focus the Inspector drawer.
+  - Fixed selection cursor synchronization in `InspectorFocus` mode so `CursorDown` / `CursorUp` updates `inspector_sub_idx` properly.
+  - Populated live detailed diagnostics (files, peers, trackers, piece verification heatmap, and save path / status message) for the focused torrent upon opening the inspector.
+
 ## [0.19.2] - 2026-11-02
 
 ### Added

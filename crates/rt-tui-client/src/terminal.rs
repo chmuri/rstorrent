@@ -4,9 +4,10 @@
 //! the terminal. [`install_panic_hook`] covers the paths that unwind instead of
 //! returning.
 
-use std::io::{self, Stdout};
+use std::io::{self, Stdout, Write};
 
 use crossterm::cursor::Show;
+use crossterm::event::DisableMouseCapture;
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -59,8 +60,10 @@ impl Drop for TerminalSession {
 
 /// Leaves the alternate screen and disables raw mode, ignoring failures.
 fn restore_terminal() {
+    let mut out = io::stdout();
+    let _ = execute!(out, DisableMouseCapture, LeaveAlternateScreen, Show);
+    let _ = out.flush();
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), LeaveAlternateScreen, Show);
 }
 
 /// Makes every panic restore the terminal before the previous hook prints.

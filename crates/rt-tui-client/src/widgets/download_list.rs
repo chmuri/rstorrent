@@ -206,18 +206,20 @@ fn cell_for(column: Column, torrent: &TorrentViewModel, is_selected: bool) -> Ce
     }
 }
 
-/// Rounded progress bar of [`BAR_WIDTH`] cells.
+/// Smooth fractional sub-block progress bar of [`BAR_WIDTH`] cells.
 fn progress_bar(percent: f64) -> Line<'static> {
     let ratio = (percent / 100.0).clamp(0.0, 1.0);
-    let filled = ((ratio * BAR_WIDTH as f64).round() as usize).min(BAR_WIDTH);
+    let bar_str = rt_tui::widgets::format_fractional_bar(ratio, BAR_WIDTH);
 
-    Line::from(vec![
-        Span::styled("█".repeat(filled), Style::new().fg(Color::Green)),
-        Span::styled(
-            "░".repeat(BAR_WIDTH - filled),
-            Style::new().fg(Color::DarkGray),
-        ),
-    ])
+    let style = if ratio >= 1.0 {
+        Style::new().fg(Color::Green)
+    } else if ratio >= 0.5 {
+        Style::new().fg(Color::Cyan)
+    } else {
+        Style::new().fg(Color::Yellow)
+    };
+
+    Line::from(Span::styled(bar_str, style))
 }
 
 /// Centred "No torrents" placeholder.

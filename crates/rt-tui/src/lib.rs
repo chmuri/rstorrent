@@ -1,9 +1,23 @@
 //! Crate `rt-tui`: Terminal User Interface for rstorrent
 
+pub mod app;
+pub mod concurrency;
 pub mod display;
 pub mod input;
+pub mod state;
+pub mod theme;
 pub mod ui;
+pub mod widgets;
 pub mod windows;
+
+pub use app::{EngineCommand, NextGenTuiApp};
+pub use concurrency::{sample_engine_snapshot, EngineSnapshotBroadcaster, UiComputeEngine};
+pub use state::{
+    ActiveView, EngineSnapshot, FileUiRecord, PeerUiRecord, PieceState, SessionStats, SortKey,
+    SortOrder, TorrentDetailSnapshot, TorrentUiRecord, TorrentUiState, TrackerUiRecord,
+};
+pub use theme::{Theme, ThemeId};
+pub use widgets::*;
 
 pub use display::{
     canvas::Canvas,

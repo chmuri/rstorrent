@@ -1,10 +1,17 @@
 pub mod bindings;
 pub mod completion;
+pub mod fsm;
 pub mod history;
 pub mod keymap;
 pub mod manager;
+pub mod mouse;
 pub mod path_input;
+pub mod router;
 pub mod text_input;
+
+pub use fsm::InteractionMode;
+pub use mouse::MouseHandler;
+pub use router::{AppAction, KeyRouter};
 
 pub use bindings::Bindings;
 pub use history::{InputHistory, DEFAULT_INPUT_HISTORY_SIZE, MAX_INPUT_HISTORY_SIZE};

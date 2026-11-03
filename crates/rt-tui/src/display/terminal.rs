@@ -228,21 +228,17 @@ impl TerminalGuard {
 
         let mut out = stdout();
 
-        if self.options.mouse {
-            let _ = execute!(out, DisableMouseCapture);
-            self.options.mouse = false;
-        }
-        if self.options.focus {
-            let _ = execute!(out, DisableFocusChange);
-            self.options.focus = false;
-        }
-        if self.options.bracketed_paste {
-            let _ = execute!(out, DisableBracketedPaste);
-            self.options.bracketed_paste = false;
-        }
-
-        let _ = execute!(out, LeaveAlternateScreen, Show);
+        let _ = execute!(
+            out,
+            DisableMouseCapture,
+            DisableFocusChange,
+            DisableBracketedPaste,
+            LeaveAlternateScreen,
+            Show
+        );
+        let _ = out.flush();
         let _ = disable_raw_mode();
+        self.options = TerminalInputOptions::none();
         self.active = false;
         Ok(())
     }
