@@ -14,6 +14,8 @@ rechecks, and which knobs change that. Numbers live in
 | Session files rewritten on an unchanged shutdown | every entry, 3 files each | 1 file (`dht.cache`) via dirty-only writes |
 | `d.hash` p99 at 14k | 1.04 ms (scan) | 0.17 ms (flat in N) |
 | `d.multicall2` at 14k x 12 | 47 s | ~0.18–0.22 s |
+| 10k concurrent torrent announces | 512 blocking threads (>5.8 GB VSZ, hang) | 34–58 threads, 2.2 GB VSZ (32-permit limit + DNS cache) |
+| TUI 10k torrent redraw & stats | 60 FPS continuous locks & heap churn | 4 Hz single-pass snapshot, instant key handling |
 | Rechecks | one OS thread each | bounded pool, FIFO queue |
 | Disk I/O | one global worker | sharded pool, per-torrent FIFO |
 | Hash pass flushes | `fsync` per piece | one flush per pass |
@@ -87,6 +89,15 @@ Measured RSS at 14k paused torrents is ~140 MB (~10 KB/torrent), well under the
 **deferred**: it is gated on a profile (heaptrack) showing a real cost, and no
 such cost appears at this scale. Re-evaluate it if a many-piece workload shows
 `pieces` vectors dominating RSS.
+
+## Network & Tracker Scaling
+
+When loading or starting large batches of torrents (such as 10,000+ torrents in a session or watch folder), announce storms can overwhelm network stacks and Tokio thread pools:
+
+- **In-Memory DNS Cache**: `lt-tracker` maintains a thread-safe DNS cache with a 5-minute TTL. Simultaneous announcements across swarms sharing tracker hostnames resolve DNS once instead of executing thousands of blocking `getaddrinfo` lookups.
+- **Tracker Concurrency Limiter**: A 32-permit semaphore bounds simultaneous HTTP and UDP tracker requests, preventing socket exhaustion and blocking thread starvation.
+- **DHT Lookup Limiter**: A 32-permit semaphore in `lt-dht` limits concurrent DHT search queries.
+- **TUI Snapshot Decoupling**: For 10,000+ items, the terminal UI throttles full engine state aggregation to 4 Hz (250 ms) using atomic single-pass statistics calculation and slice accessors (`DownloadList::downloads()`), while keeping key handling and redraws instant at 60 FPS via dirty tracking.
 
 ## Tunables
 

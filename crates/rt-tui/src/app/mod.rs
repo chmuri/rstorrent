@@ -41,6 +41,15 @@ pub enum EngineCommand {
         sequential: bool,
     },
     ToggleSequential([u8; 20]),
+    SetPriority {
+        hashes: Vec<[u8; 20]>,
+        priority_step: i8,
+    },
+    SetFilePriority {
+        hash: [u8; 20],
+        file_index: u32,
+        priority: u8,
+    },
     Quit,
 }
 
@@ -340,6 +349,66 @@ impl NextGenTuiApp {
             }
 
             // Selection
+            AppAction::SelectRow(idx) => {
+                if matches!(self.mode, InteractionMode::InspectorFocus { .. }) {
+                    self.mode = InteractionMode::Normal;
+                }
+                if !self.visible_indices.is_empty() {
+                    let target = idx.min(self.visible_indices.len() - 1);
+                    self.selected_row = target;
+                    self.multi_selected.clear();
+                    if matches!(self.mode, InteractionMode::VisualSelect) {
+                        self.mode = InteractionMode::Normal;
+                    }
+                }
+                None
+            }
+
+            AppAction::ToggleSelectRow(idx) => {
+                if matches!(self.mode, InteractionMode::InspectorFocus { .. }) {
+                    self.mode = InteractionMode::Normal;
+                }
+                if !self.visible_indices.is_empty() {
+                    let target = idx.min(self.visible_indices.len() - 1);
+                    self.selected_row = target;
+                    let actual_idx = self.visible_indices[target];
+                    if let Some(t) = self.snapshot.torrents.get(actual_idx) {
+                        let hash = t.hash;
+                        if self.multi_selected.contains(&hash) {
+                            self.multi_selected.remove(&hash);
+                        } else {
+                            self.multi_selected.insert(hash);
+                        }
+                        self.mode = if self.multi_selected.is_empty() {
+                            InteractionMode::Normal
+                        } else {
+                            InteractionMode::VisualSelect
+                        };
+                    }
+                }
+                None
+            }
+
+            AppAction::SelectRange(idx) => {
+                if matches!(self.mode, InteractionMode::InspectorFocus { .. }) {
+                    self.mode = InteractionMode::Normal;
+                }
+                if !self.visible_indices.is_empty() {
+                    let target = idx.min(self.visible_indices.len() - 1);
+                    let start = self.selected_row.min(target);
+                    let end = self.selected_row.max(target);
+                    for i in start..=end {
+                        let actual_idx = self.visible_indices[i];
+                        if let Some(t) = self.snapshot.torrents.get(actual_idx) {
+                            self.multi_selected.insert(t.hash);
+                        }
+                    }
+                    self.selected_row = target;
+                    self.mode = InteractionMode::VisualSelect;
+                }
+                None
+            }
+
             AppAction::ToggleSelect => {
                 match &mut self.mode {
                     InteractionMode::ConfirmRemoveModal { delete_files, .. } => {
@@ -472,6 +541,52 @@ impl NextGenTuiApp {
             AppAction::ToggleSequential => self
                 .focused_torrent()
                 .map(|t| EngineCommand::ToggleSequential(t.hash)),
+
+            AppAction::PriorityUp => {
+                if let InteractionMode::InspectorFocus { selected_sub_idx } = self.mode {
+                    if self.active_inspector_tab == crate::widgets::InspectorTab::Files {
+                        if let Some(t) = self.focused_torrent() {
+                            return Some(EngineCommand::SetFilePriority {
+                                hash: t.hash,
+                                file_index: selected_sub_idx as u32,
+                                priority: 2,
+                            });
+                        }
+                    }
+                }
+                let hashes = self.target_hashes();
+                if hashes.is_empty() {
+                    None
+                } else {
+                    Some(EngineCommand::SetPriority {
+                        hashes,
+                        priority_step: 1,
+                    })
+                }
+            }
+
+            AppAction::PriorityDown => {
+                if let InteractionMode::InspectorFocus { selected_sub_idx } = self.mode {
+                    if self.active_inspector_tab == crate::widgets::InspectorTab::Files {
+                        if let Some(t) = self.focused_torrent() {
+                            return Some(EngineCommand::SetFilePriority {
+                                hash: t.hash,
+                                file_index: selected_sub_idx as u32,
+                                priority: 0,
+                            });
+                        }
+                    }
+                }
+                let hashes = self.target_hashes();
+                if hashes.is_empty() {
+                    None
+                } else {
+                    Some(EngineCommand::SetPriority {
+                        hashes,
+                        priority_step: -1,
+                    })
+                }
+            }
 
             // Bandwidth
             AppAction::DownloadThrottleUp => Some(EngineCommand::AdjustDownloadThrottle(50 * 1024)),

@@ -109,18 +109,43 @@ pub fn download_to_details(download: &Download) -> TorrentDetails {
     let summary = download_to_summary(download);
     let metadata = download.metadata();
 
-    let files = metadata
-        .files
-        .iter()
-        .enumerate()
-        .map(|(idx, f)| FileInfo {
-            index: idx as u32,
-            path: f.path.as_string(),
-            size_bytes: f.length as i64,
-            completed_bytes: 0,
-            priority: 1,
-        })
-        .collect();
+    let engine_dl = download.download();
+    let files = if engine_dl.file_list().files().is_empty() {
+        metadata
+            .files
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| FileInfo {
+                index: idx as u32,
+                path: f.path.as_string(),
+                size_bytes: f.length as i64,
+                completed_bytes: 0,
+                priority: 1,
+            })
+            .collect()
+    } else {
+        engine_dl
+            .file_list()
+            .files()
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| {
+                let completed = (f.completed_chunks() as u64 * metadata.piece_length as u64)
+                    .min(f.size_bytes()) as i64;
+                FileInfo {
+                    index: idx as u32,
+                    path: f.path().to_string_lossy().to_string(),
+                    size_bytes: f.size_bytes() as i64,
+                    completed_bytes: completed,
+                    priority: match f.priority() {
+                        lt_storage::Priority::Off => 0,
+                        lt_storage::Priority::High => 2,
+                        _ => 1,
+                    },
+                }
+            })
+            .collect()
+    };
 
     let mut trackers = Vec::new();
     let mut tracker_idx = 0;
@@ -147,13 +172,28 @@ pub fn download_to_details(download: &Download) -> TorrentDetails {
         }
     }
 
+    let peers = engine_dl
+        .connection_list()
+        .iter()
+        .map(|p| {
+            let info = p.info();
+            PeerInfo {
+                address: info.socket_address.to_string(),
+                up_rate_bytes_per_sec: info.rate_up as i64,
+                down_rate_bytes_per_sec: info.rate_down as i64,
+                peer_id: info.peer_id.to_hex(),
+                is_encrypted: info.is_encrypted,
+            }
+        })
+        .collect();
+
     TorrentDetails {
         summary: Some(summary),
         piece_length: metadata.piece_length,
         num_pieces: metadata.num_pieces as u32,
         files,
         trackers,
-        peers: Vec::new(),
+        peers,
         throttle_name: download.throttle_name().to_string(),
         is_private: metadata.is_private,
         connection_seed: download.connection_seed().to_string(),

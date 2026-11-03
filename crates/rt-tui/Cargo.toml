@@ -16,6 +16,7 @@ crossterm.workspace = true
 rayon.workspace = true
 tokio.workspace = true
 serde.workspace = true
+nix.workspace = true
 
 [dev-dependencies]
 lt-engine.workspace = true

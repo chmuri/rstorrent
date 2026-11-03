@@ -7,7 +7,7 @@ Compilation and tests for this repo run on a Docker builder on
 
 ```
 /opt/rstorrent-ci/
-├── Dockerfile        rust:1-bookworm + protobuf-compiler, cmake, clang, git, rsync
+├── Dockerfile        rust:1-bookworm + protobuf-compiler, cmake, clang, git, rsync, sccache
 ├── src/              working tree (rsync --delete of the repo, ~15 MB)
 └── rustup/           rustup toolchains mounted at /usr/local/rustup (1.5 GB)
 
@@ -15,6 +15,10 @@ Docker volumes (native filesystem, NOT shfs):
   rstorrent-target            -> /work/target
   rstorrent-cargo-registry    -> /usr/local/cargo/registry
   rstorrent-cargo-git         -> /usr/local/cargo/git
+
+Shared S3 Build Cache:
+  RustFS on root@192.0.2.1:9000 (bucket: `sccache`)
+  Used by both the remote builder and local development builds
 ```
 
 `target/` **must** stay on a Docker volume. Unraid's `shfs` (FUSE) is a single
@@ -29,8 +33,9 @@ scripts/remote-ci.sh check --workspace --all-targets
 scripts/remote-ci.sh clippy --workspace --all-targets -- -D warnings
 scripts/remote-ci.sh fmt --check
 scripts/remote-ci.sh test -p rt-core --test test_view
-scripts/remote-ci.sh doctor                           # host, image, disk
+scripts/remote-ci.sh doctor                           # host, image, disk, rustfs status
 scripts/remote-ci.sh image                            # rebuild the builder
+scripts/remote-ci.sh sccache                          # show sccache stats in container
 scripts/remote-ci.sh sync                             # only rsync
 scripts/remote-ci.sh raw bash -lc 'cargo tree -d'     # anything in the container
 ```
@@ -75,6 +80,15 @@ Or invoke the wrapper directly:
 ./scripts/remote-ci.sh check --workspace --all-targets
 ./scripts/remote-ci.sh test -p rt-tui
 ./scripts/remote-ci.sh build --release
+```
+
+## Shared S3 Cache (sccache & RustFS)
+
+The setup uses `sccache` backed by RustFS (high-performance S3-compatible object storage) running on `192.0.2.1:9000`:
+- **Bucket**: `sccache`
+- **Config**: `.cargo/config.toml` configures `rustc-wrapper = "sccache"`, sets `[profile.dev] incremental = false`, and injects S3 endpoint/credentials into compiler processes.
+- **Local config**: Local user configuration is also stored in `~/.config/sccache/config` and `~/.aws/credentials`.
+- **Remote CI**: The remote container image includes `sccache` with S3 support enabled and connects to `http://192.0.2.1:9000`. Cache statistics are reported after remote cargo runs.
 
 ## OpenCode integration
 

@@ -19,6 +19,9 @@ pub enum AppAction {
     PageDown,
 
     // Selection
+    SelectRow(usize),
+    ToggleSelectRow(usize),
+    SelectRange(usize),
     ToggleSelect,
     ToggleSelectOnly,
     SelectAll,

@@ -11,6 +11,7 @@ use tracing::debug;
 use lt_net::addr::SocketAddress;
 
 use crate::error::DhtError;
+use crate::node::DhtNode;
 use crate::router::DhtRouter;
 use crate::transaction::{KrpcMessage, KrpcQuery, KrpcResponse};
 
@@ -341,7 +342,23 @@ impl DhtServer {
     }
 
     async fn process_query(&self, query: KrpcQuery, from_sa: &SocketAddress) -> KrpcResponse {
+        let sender_id = match &query {
+            KrpcQuery::Ping { id }
+            | KrpcQuery::FindNode { id, .. }
+            | KrpcQuery::GetPeers { id, .. }
+            | KrpcQuery::AnnouncePeer { id, .. } => *id,
+        };
+
         let mut router = self.router.lock().await;
+        if !sender_id.is_zero() && sender_id != router.own_id {
+            let mut node = DhtNode::new(sender_id, from_sa.clone());
+            node.last_seen = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as u32)
+                .unwrap_or(0);
+            node.recently_active = true;
+            router.add_node(node);
+        }
         let own_id = router.own_id;
 
         match query {

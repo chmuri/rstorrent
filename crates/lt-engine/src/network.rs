@@ -259,6 +259,56 @@ pub fn local_metadata(info_hash: &HashString) -> Option<Arc<Vec<u8>>> {
         .cloned()
 }
 
+type PeerSenderMap = Mutex<HashMap<(HashString, HashString), mpsc::Sender<PeerMessage>>>;
+
+fn peer_senders() -> &'static PeerSenderMap {
+    static SENDERS: OnceLock<PeerSenderMap> = OnceLock::new();
+    SENDERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_peer_sender(
+    info_hash: &HashString,
+    peer_id: &HashString,
+    tx: mpsc::Sender<PeerMessage>,
+) {
+    peer_senders()
+        .lock()
+        .unwrap()
+        .insert((*info_hash, *peer_id), tx);
+}
+
+fn unregister_peer_sender(info_hash: &HashString, peer_id: &HashString) {
+    peer_senders()
+        .lock()
+        .unwrap()
+        .remove(&(*info_hash, *peer_id));
+}
+
+fn broadcast_endgame_cancel(
+    info_hash: &HashString,
+    sender_peer_id: &HashString,
+    index: u32,
+    begin: u32,
+    length: u32,
+) {
+    let senders = {
+        let guard = peer_senders().lock().unwrap();
+        guard
+            .iter()
+            .filter(|((h, pid), _)| h == info_hash && pid != sender_peer_id)
+            .map(|(_, tx)| tx.clone())
+            .collect::<Vec<_>>()
+    };
+
+    for tx in senders {
+        let _ = tx.try_send(PeerMessage::Cancel {
+            index,
+            begin,
+            length,
+        });
+    }
+}
+
 /// Reconstructs the bencoded `info` dictionary from a parsed metadata value.
 /// Torrents with unknown extension keys cannot be reconstructed byte-for-byte;
 /// such metadata is only cached when the rebuilt bytes verify against the
@@ -1214,6 +1264,23 @@ async fn outgoing_handshake(
     connect_timeout: Duration,
     policy: &EncryptionPolicy,
 ) -> Result<OutgoingHandshake, ()> {
+    let session =
+        outgoing_handshake_internal(peer_addr, info_hash, our_peer_id, connect_timeout, policy)
+            .await?;
+    if session.peer_handshake.peer_id == our_peer_id {
+        debug!(peer = %peer_addr, "Dropping outgoing self-connection");
+        return Err(());
+    }
+    Ok(session)
+}
+
+async fn outgoing_handshake_internal(
+    peer_addr: SocketAddr,
+    info_hash: HashString,
+    our_peer_id: HashString,
+    connect_timeout: Duration,
+    policy: &EncryptionPolicy,
+) -> Result<OutgoingHandshake, ()> {
     if !policy.is_valid() {
         debug!(peer = %peer_addr, "Invalid encryption policy");
         return Err(());
@@ -1425,6 +1492,11 @@ async fn run_inbound_peer_with_pool_timeout(
         Err(_) => return,
     };
 
+    if handshake.peer_id == our_peer_id {
+        debug!(peer = %peer_addr, "Dropping inbound self-connection");
+        return;
+    }
+
     debug!(peer = %peer_addr, peer_id = %handshake.peer_id.to_hex(), "Accepted inbound peer");
 
     if let Some(pool) = &pool {
@@ -1440,6 +1512,67 @@ async fn run_inbound_peer_with_pool_timeout(
     let response = HandshakeMessage::new(handshake.info_hash, our_peer_id);
     if let Err(e) = writer.write_all(&response.encode()).await {
         debug!(peer = %peer_addr, error = %e, "Failed to send handshake response");
+        if let Some(pool) = &pool {
+            pool.lock()
+                .unwrap()
+                .record_disconnected(peer_addr, Instant::now());
+        }
+        return;
+    }
+
+    run_peer_session(
+        reader,
+        writer,
+        peer_addr,
+        handshake.peer_id,
+        download,
+        shutdown_rx,
+        None,
+        None,
+        PeerDirection::Incoming,
+        false,
+        false,
+        remote_fast,
+        remote_dht,
+        pool,
+        None,
+        request_timeout,
+    )
+    .await;
+}
+
+/// Runs an inbound uTP peer whose handshake message has been received.
+pub async fn run_inbound_utp_peer(
+    stream: lt_net::UtpStream,
+    handshake: HandshakeMessage,
+    our_peer_id: HashString,
+    download: Arc<Mutex<Download>>,
+    shutdown_rx: watch::Receiver<bool>,
+    pool: Option<PeerPoolHandle>,
+    request_timeout: Option<Duration>,
+) {
+    let peer_addr = normalize_socket_addr(stream.peer_addr());
+
+    if handshake.peer_id == our_peer_id {
+        debug!(peer = %peer_addr, "Dropping inbound uTP self-connection");
+        return;
+    }
+
+    debug!(peer = %peer_addr, peer_id = %handshake.peer_id.to_hex(), "Accepted inbound uTP peer");
+
+    if let Some(pool) = &pool {
+        pool.lock()
+            .unwrap()
+            .record_inbound(peer_addr, Instant::now());
+    }
+
+    let (reader, mut writer) = tokio::io::split(stream);
+
+    let remote_fast = handshake.has_fast();
+    let remote_dht = handshake.has_dht();
+    let response = HandshakeMessage::new(handshake.info_hash, our_peer_id);
+    if let Err(e) = writer.write_all(&response.encode()).await {
+        debug!(peer = %peer_addr, error = %e, "Failed to send uTP handshake response");
         if let Some(pool) = &pool {
             pool.lock()
                 .unwrap()
@@ -1930,9 +2063,9 @@ async fn serve_metadata_piece(
 
 /// Shared message loop for outbound and inbound peers.
 #[allow(clippy::too_many_arguments)]
-async fn run_peer_session(
-    mut reader: tokio::net::tcp::OwnedReadHalf,
-    mut writer: tokio::net::tcp::OwnedWriteHalf,
+async fn run_peer_session<R, W>(
+    mut reader: R,
+    mut writer: W,
     peer_addr: SocketAddr,
     peer_id: HashString,
     download: Arc<Mutex<Download>>,
@@ -1947,7 +2080,10 @@ async fn run_peer_session(
     pool: Option<PeerPoolHandle>,
     dht: Option<DhtHandle>,
     request_timeout: Option<Duration>,
-) {
+) where
+    R: AsyncReadExt + Unpin + Send + 'static,
+    W: AsyncWriteExt + Unpin + Send + 'static,
+{
     let mut cipher_dec = cipher_dec;
     let mut request_tick = tokio::time::interval(Duration::from_secs(1));
     request_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1998,6 +2134,7 @@ async fn run_peer_session(
 
     // 4. Send our Interested message
     let (tx, mut rx) = mpsc::channel::<PeerMessage>(256);
+    register_peer_sender(&info_hash, &peer_id, tx.clone());
     let _ = tx.send(PeerMessage::Interested).await;
     update_peer_flags(&download, &peer_id, |peer| peer.is_interested = true);
 
@@ -2408,6 +2545,11 @@ async fn run_peer_session(
                             debug!(peer = %peer_addr, index, "Peer have chunk");
                             let (initial_complete, next_offer) = {
                                 let mut dl = download.lock().unwrap();
+                                if dl.total_chunks() == 0 {
+                                    if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
+                                        peer.pending_haves.push(index);
+                                    }
+                                }
                                 dl.receive_have(&peer_id, index);
                                 if dl.is_initial_seeding() {
                                     let complete = dl.initial_seed_seen(index, &peer_id);
@@ -2423,9 +2565,13 @@ async fn run_peer_session(
                             };
 
                             if initial_complete {
-                                let bitfield =
-                                    download.lock().unwrap().completed_bitfield_bytes();
-                                let _ = tx.send(PeerMessage::Bitfield(bitfield)).await;
+                                if remote_fast {
+                                    let _ = tx.send(PeerMessage::HaveAll).await;
+                                } else {
+                                    let bitfield =
+                                        download.lock().unwrap().completed_bitfield_bytes();
+                                    let _ = tx.send(PeerMessage::Bitfield(bitfield)).await;
+                                }
                             } else if let Some(next) = next_offer {
                                 let _ = tx.send(PeerMessage::Have { index: next }).await;
                             }
@@ -2453,6 +2599,9 @@ async fn run_peer_session(
                             }
                             {
                                 let mut dl = download.lock().unwrap();
+                                if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
+                                    peer.raw_bitfield = Some(data.clone());
+                                }
                                 dl.receive_bitfield(&peer_id, bf);
                             }
 
@@ -2481,8 +2630,8 @@ async fn run_peer_session(
                             } else {
                                 upload_requests.insert(request_key, length);
 
-                                let block = {
-                                    let mut dl = download.lock().unwrap();
+                                let maybe_read = {
+                                    let dl = download.lock().unwrap();
                                     let unchoked = dl
                                         .connection_list()
                                         .find_by_id(&peer_id)
@@ -2497,10 +2646,33 @@ async fn run_peer_session(
                                     if !allowed {
                                         None
                                     } else {
-                                        match dl.read_piece_block(index, begin, length) {
+                                        Some(dl.read_piece_block_or_async_params(index, begin, length))
+                                    }
+                                };
+
+                                match maybe_read {
+                                    Some(Ok(Ok(cached_data))) => {
+                                        {
+                                            let mut dl = download.lock().unwrap();
+                                            dl.record_upload_for_peer(&peer_id, cached_data.len());
+                                        }
+                                        let _ = tx
+                                            .send(PeerMessage::Piece { index, begin, data: cached_data })
+                                            .await;
+                                    }
+                                    Some(Ok(Err((thread, root, files, piece_length)))) => {
+                                        match thread
+                                            .read_block_async(root, files, piece_length, index, begin, length)
+                                            .await
+                                        {
                                             Ok(data) => {
-                                                dl.record_upload_for_peer(&peer_id, data.len());
-                                                Some(data)
+                                                {
+                                                    let mut dl = download.lock().unwrap();
+                                                    dl.record_upload_for_peer(&peer_id, data.len());
+                                                }
+                                                let _ = tx
+                                                    .send(PeerMessage::Piece { index, begin, data })
+                                                    .await;
                                             }
                                             Err(err) => {
                                                 debug!(
@@ -2509,18 +2681,38 @@ async fn run_peer_session(
                                                     begin,
                                                     length,
                                                     error = %err,
-                                                    "Could not read requested block"
+                                                    "Could not asynchronously read requested block"
                                                 );
-                                                None
+                                                if remote_fast {
+                                                    let _ = tx
+                                                        .send(PeerMessage::RejectRequest { index, begin, length })
+                                                        .await;
+                                                }
                                             }
                                         }
                                     }
-                                };
-
-                                if let Some(data) = block {
-                                    let _ = tx
-                                        .send(PeerMessage::Piece { index, begin, data })
-                                        .await;
+                                    Some(Err(err)) => {
+                                        debug!(
+                                            peer = %peer_addr,
+                                            index,
+                                            begin,
+                                            length,
+                                            error = %err,
+                                            "Could not read requested block parameters"
+                                        );
+                                        if remote_fast {
+                                            let _ = tx
+                                                .send(PeerMessage::RejectRequest { index, begin, length })
+                                                .await;
+                                        }
+                                    }
+                                    None => {
+                                        if remote_fast {
+                                            let _ = tx
+                                                .send(PeerMessage::RejectRequest { index, begin, length })
+                                                .await;
+                                        }
+                                    }
                                 }
                                 upload_requests.remove(&request_key);
                             }
@@ -2538,6 +2730,9 @@ async fn run_peer_session(
 
                             let received = request_list.take_block_at(index, begin);
                             request_list.on_block_received(data.len(), received.first().map(|r| r.sent_at), Instant::now());
+
+                            // Broadcast cancel to other peers downloading this block in endgame mode
+                            broadcast_endgame_cancel(&info_hash, &peer_id, index, begin, data.len() as u32);
 
                             // All copies except the one we just received are
                             // endgame duplicates sent to this peer; cancel
@@ -2599,6 +2794,9 @@ async fn run_peer_session(
                             }
                             {
                                 let mut dl = download.lock().unwrap();
+                                if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
+                                    peer.raw_have_all = true;
+                                }
                                 dl.receive_bitfield(&peer_id, bitfield);
                             }
                             refill_requests(
@@ -2712,7 +2910,12 @@ async fn run_peer_session(
                             // remote chose for its own messages.
                             match UtMetadataMessage::parse(&payload) {
                                 Ok(UtMetadataMessage::Request { piece }) => {
-                                    serve_metadata_piece(&download, &tx, id, piece).await;
+                                    let ext_id = if remote_metadata_id != 0 {
+                                        remote_metadata_id
+                                    } else {
+                                        id
+                                    };
+                                    serve_metadata_piece(&download, &tx, ext_id, piece).await;
                                 }
                                 Ok(UtMetadataMessage::Data {
                                     piece,
@@ -2904,6 +3107,7 @@ async fn run_peer_session(
     }
 
     request_list.clear();
+    unregister_peer_sender(&info_hash, &peer_id);
     remove_peer_request_stats(&info_hash, &peer_id);
     remove_fast_state(&info_hash, &peer_id);
     set_peer_down_choked(&info_hash, &peer_id, false);

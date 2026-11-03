@@ -237,6 +237,7 @@ impl Control {
 
         // 4. Parse config files
         let phase = Instant::now();
+        let mut watch_dir_from_toml: Option<String> = None;
         if !cli.ignore_rc_file() {
             let config_path = cli
                 .config_file
@@ -252,13 +253,27 @@ impl Control {
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         tracing::info!("Loaded configuration from {}", path_str);
                         let map = self.command_map.read().unwrap();
-                        for line in content.lines() {
-                            let trimmed = line.trim();
-                            if trimmed.is_empty() || trimmed.starts_with('#') {
-                                continue;
+                        if path_str.ends_with(".toml") {
+                            match crate::toml_config::RtorrentTomlConfig::parse(&content) {
+                                Ok(cfg) => {
+                                    cfg.apply(&map, &mut self.network_config, &self.dht_config);
+                                    if let Some(wd) = cfg.storage.watch_directory {
+                                        watch_dir_from_toml = Some(wd);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("TOML config error in {}: {}", path_str, e);
+                                }
                             }
-                            if let Err(e) = parse_command(trimmed, &Target::None, &map, true) {
-                                tracing::warn!("Config error in {}: {}", path_str, e);
+                        } else {
+                            for line in content.lines() {
+                                let trimmed = line.trim();
+                                if trimmed.is_empty() || trimmed.starts_with('#') {
+                                    continue;
+                                }
+                                if let Err(e) = parse_command(trimmed, &Target::None, &map, true) {
+                                    tracing::warn!("Config error in {}: {}", path_str, e);
+                                }
                             }
                         }
                     }
@@ -277,6 +292,26 @@ impl Control {
             // CLI overrides are local, trusted configuration; some setters are
             // not marked untrusted-safe, so they must be called trusted or they
             // fail silently (e.g. used to lose `-d/--directory`).
+            if let Some(bind_addr) = &cli.bind_address {
+                let _ = map.call_command(
+                    "network.bind_address.set",
+                    &Object::from(bind_addr.as_str()),
+                    &Target::None,
+                    true,
+                );
+                let _ = self.network_config.set_bind_address(bind_addr);
+            }
+
+            if let Some(local_addr) = &cli.local_address {
+                let _ = map.call_command(
+                    "network.local_address.set",
+                    &Object::from(local_addr.as_str()),
+                    &Target::None,
+                    true,
+                );
+                let _ = self.network_config.set_local_address(local_addr);
+            }
+
             if let Some(port) = cli.port() {
                 let _ = map.call_command(
                     "network.port_range.set",
@@ -737,13 +772,15 @@ impl Control {
         // 8.6 Load torrents from the watch directory, if configured. A bad
         // watch directory is reported but must not abort startup.
         let phase = Instant::now();
-        if let Some(watch_dir) = &cli.watch_dir {
+        let effective_watch_dir = cli.watch_dir.clone().or(watch_dir_from_toml);
+        if let Some(watch_dir) = &effective_watch_dir {
             match self.load_watch_directory(watch_dir) {
                 Ok(loaded) => watch_loaded = loaded,
                 Err(e) => {
                     tracing::warn!("Failed to load watch directory '{}': {}", watch_dir, e);
                 }
             }
+            self.spawn_watch_directory_monitor(watch_dir);
         }
         self.metrics.phase(
             "startup.phase",
@@ -1011,6 +1048,24 @@ impl Control {
 
     /// Returns `true` when the torrent was newly inserted into the session.
     fn import_watch_torrent(&self, torrent_path: &std::path::Path, directory: &str) -> bool {
+        Self::import_watch_torrent_inner(
+            torrent_path,
+            directory,
+            &self.download_list,
+            &self.view_manager,
+            Some(&self.queued_rechecks),
+            Some(&self.root_ui),
+        )
+    }
+
+    fn import_watch_torrent_inner(
+        torrent_path: &std::path::Path,
+        directory: &str,
+        download_list: &Arc<RwLock<DownloadList>>,
+        view_manager: &Arc<RwLock<ViewManager>>,
+        queued_rechecks: Option<&AtomicU64>,
+        root_ui: Option<&Arc<Mutex<RootUI>>>,
+    ) -> bool {
         let path_str = torrent_path.to_string_lossy().to_string();
 
         let mut factory = DownloadFactory::new();
@@ -1021,7 +1076,7 @@ impl Control {
             return false;
         }
 
-        let mut dl_list = self.download_list.write().unwrap();
+        let mut dl_list = download_list.write().unwrap();
         let download = match factory.commit(&mut dl_list) {
             Ok(download) => download,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -1045,16 +1100,94 @@ impl Control {
             let mut guard = download.write().unwrap();
             guard.set_directory(directory);
             if guard.queue_recheck_if_files_exist() {
-                self.queued_rechecks.fetch_add(1, Ordering::Relaxed);
+                if let Some(rechecks) = queued_rechecks {
+                    rechecks.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
 
         dl_list.start(&download);
         drop(dl_list);
 
-        let mut vm = self.view_manager.write().unwrap();
+        let mut vm = view_manager.write().unwrap();
         vm.insert_download_to_all(Arc::clone(&download));
+
+        if let Some(ui) = root_ui {
+            let msg = format!("Watch dir loaded torrent: {}", path_str);
+            ui.lock().unwrap().push_log(msg);
+        }
+
         true
+    }
+
+    /// Spawns a real-time filesystem watcher that automatically imports new `.torrent` files
+    pub fn spawn_watch_directory_monitor(&self, watch_dir: &str) {
+        use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+
+        let watch_path = std::path::PathBuf::from(watch_dir);
+        if !watch_path.is_dir() {
+            return;
+        }
+
+        let download_list = Arc::clone(&self.download_list);
+        let view_manager = Arc::clone(&self.view_manager);
+        let root_ui = Arc::clone(&self.root_ui);
+        let default_download_dir = self.default_download_directory();
+        let watch_path_clone = watch_path.clone();
+
+        tokio::spawn(async move {
+            let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+
+            let mut watcher = match RecommendedWatcher::new(
+                move |res: Result<Event, notify::Error>| {
+                    if let Ok(event) = res {
+                        let _ = tx.blocking_send(event);
+                    }
+                },
+                notify::Config::default(),
+            ) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!("Failed to initialize directory watcher: {}", e);
+                    return;
+                }
+            };
+
+            if let Err(e) = watcher.watch(&watch_path_clone, RecursiveMode::NonRecursive) {
+                tracing::warn!(
+                    "Failed to watch directory '{}': {}",
+                    watch_path_clone.display(),
+                    e
+                );
+                return;
+            }
+
+            tracing::info!(
+                "Real-time watch directory active on {}",
+                watch_path_clone.display()
+            );
+
+            while let Some(event) = rx.recv().await {
+                match event.kind {
+                    EventKind::Create(_) | EventKind::Modify(_) => {
+                        for path in event.paths {
+                            if path.is_file() && Self::has_torrent_extension(&path) {
+                                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                                Self::import_watch_torrent_inner(
+                                    &path,
+                                    &default_download_dir,
+                                    &download_list,
+                                    &view_manager,
+                                    None,
+                                    Some(&root_ui),
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
 
     fn has_torrent_extension(path: &std::path::Path) -> bool {

@@ -230,9 +230,9 @@ impl<'a> Widget for InspectorDrawerWidget<'a> {
             }
             InspectorTab::PieceMap => {
                 pieces::PiecesTab::new(
+                    self.record,
                     &details.piece_map,
-                    self.record.total_pieces,
-                    self.record.verified_pieces,
+                    &details.in_flight_pieces,
                     self.theme,
                 )
                 .render(chunks[1], buf);

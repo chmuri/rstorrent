@@ -4,7 +4,7 @@ use crate::input::fsm::InteractionMode;
 use crate::input::router::AppAction;
 use crate::state::ActiveView;
 use crate::ui::layout::ComputedLayout;
-use crate::widgets::{InspectorDrawerWidget, ViewTabsWidget};
+use crate::widgets::{InspectorDrawerWidget, TorrentTableWidget, ViewTabsWidget};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
@@ -17,6 +17,8 @@ impl MouseHandler {
         mode: &InteractionMode,
         term_area: Rect,
         counts: [usize; 8],
+        selected_row: usize,
+        visible_count: usize,
     ) -> AppAction {
         match event.kind {
             MouseEventKind::ScrollDown => {
@@ -130,14 +132,52 @@ impl MouseHandler {
 
                 // 4. Check if click was in main table
                 let table = layout.table_area;
-                if x >= table.left() && x < table.right() && y > table.top() && y < table.bottom() {
-                    return AppAction::ToggleSelect;
+                if x >= table.left() && x < table.right() && y >= table.top() && y < table.bottom()
+                {
+                    if let Some(clicked_idx) =
+                        TorrentTableWidget::row_at_position(y, table, selected_row, visible_count)
+                    {
+                        if event
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            return AppAction::ToggleSelectRow(clicked_idx);
+                        } else if event
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::SHIFT)
+                        {
+                            return AppAction::SelectRange(clicked_idx);
+                        } else {
+                            return AppAction::SelectRow(clicked_idx);
+                        }
+                    }
+                    return AppAction::None;
                 }
 
                 // 5. Check if click was in footer
                 let footer = layout.footer_area;
                 if y == footer.y && x >= footer.right().saturating_sub(10) {
                     return AppAction::Quit;
+                }
+
+                AppAction::None
+            }
+            MouseEventKind::Down(MouseButton::Right) => {
+                let x = event.column;
+                let y = event.row;
+
+                if mode.is_modal() {
+                    return AppAction::None;
+                }
+
+                let table = layout.table_area;
+                if x >= table.left() && x < table.right() && y >= table.top() && y < table.bottom()
+                {
+                    if let Some(clicked_idx) =
+                        TorrentTableWidget::row_at_position(y, table, selected_row, visible_count)
+                    {
+                        return AppAction::SelectRow(clicked_idx);
+                    }
                 }
 
                 AppAction::None
