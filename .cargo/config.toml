@@ -1,21 +1,3 @@
-[build]
-rustc-wrapper = "sccache"
-
 [alias]
 trim = "sweep --maxsize 4GB"
 clean-cache = "sweep --installed"
-
-[profile.dev]
-incremental = false
-
-[profile.test]
-incremental = false
-
-[env]
-CARGO_INCREMENTAL = "0"
-SCCACHE_BUCKET = "sccache"
-SCCACHE_ENDPOINT = "http://192.0.2.1:9000"
-SCCACHE_S3_USE_SSL = "false"
-AWS_ACCESS_KEY_ID = "***REMOVED***"
-AWS_SECRET_ACCESS_KEY = "***REMOVED***"
-SCCACHE_REGION = "us-east-1"
