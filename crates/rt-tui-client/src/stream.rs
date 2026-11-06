@@ -16,7 +16,10 @@ pub const STREAM_CAPACITY: usize = 256;
 #[derive(Debug)]
 pub enum StreamUpdate {
     /// A torrent state change.
-    Event(TorrentEvent),
+    ///
+    /// Boxed because `TorrentEvent` embeds the (large) `TorrentSummary`
+    /// protobuf message and would otherwise dominate the enum size.
+    Event(Box<TorrentEvent>),
     /// Session-wide statistics.
     Stats(SessionStatsResponse),
 }
@@ -69,7 +72,11 @@ async fn subscribe_events(endpoint: String, timeout: Duration, sender: mpsc::Sen
                 Ok(mut stream) => {
                     connection.record_success();
                     while let Ok(Some(event)) = stream.message().await {
-                        if sender.send(StreamUpdate::Event(event)).await.is_err() {
+                        if sender
+                            .send(StreamUpdate::Event(Box::new(event)))
+                            .await
+                            .is_err()
+                        {
                             return;
                         }
                     }
