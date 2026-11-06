@@ -158,3 +158,41 @@ async fn test_grpc_command_and_system_service() {
 
     let _ = server_handle.await;
 }
+
+#[test]
+fn summary_exposes_numbered_custom1_as_category() {
+    use lt_common::hash_string::HashString;
+    use lt_common::path::Path as TorrentPath;
+    use lt_engine::constructor::{TorrentFileEntry, TorrentMetadata};
+    use rt_core::download::Download;
+
+    let mut file_path = TorrentPath::new();
+    file_path.push("payload.bin");
+
+    let metadata = TorrentMetadata {
+        info_hash: HashString::from_hex("5152535455565758595a5b5c5d5e5f6061626364").unwrap(),
+        name: "category-summary".to_string(),
+        piece_length: 16384,
+        pieces: vec![0u8; 20],
+        num_pieces: 1,
+        total_size: 16384,
+        is_multi_file: false,
+        files: vec![TorrentFileEntry {
+            path: file_path,
+            length: 16384,
+            offset: 0,
+        }],
+        announce: None,
+        announce_list: Vec::new(),
+        is_private: false,
+        is_meta_download: false,
+    };
+
+    let mut download = Download::from_metadata(metadata);
+    download.set_custom_field(1, "tv-sonarr");
+
+    let summary = rt_grpc::conversion::download_to_summary(&download);
+
+    assert_eq!(summary.category, "tv-sonarr");
+    assert_eq!(summary.name, "category-summary");
+}

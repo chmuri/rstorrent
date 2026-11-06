@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-11-06
+
+### Added
+- **Persistent numbered custom fields**: `d.custom1`..`d.custom5` now live on the
+  download and are written to the `.rtorrent` session sidecar as
+  `custom1`..`custom5`, so labels set by an external client survive a daemon
+  restart.
+- **gRPC `TorrentSummary.category`**: the native `rtorrent.v1.TorrentService`
+  now reports the torrent label (`d.custom1`) on every summary, which lets
+  download clients such as Sonarr filter and tag their own torrents.
+
+### Fixed
+- `d.custom1`..`d.custom5` no longer disappear when the command map is rebuilt
+  (e.g. after a configuration reload) and are consistently scoped per download.
+
 ## [0.20.0] - 2026-11-03
 
 ### Added

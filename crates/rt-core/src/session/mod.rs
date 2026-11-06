@@ -137,6 +137,18 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> Rtorr
         }
     }
 
+    // Numbered custom fields (`d.custom1`..`d.custom5`). Older sidecars do not
+    // contain them, so a missing key simply leaves the field empty.
+    for index in 1..=5 {
+        if let Ok(value) = object.get_key_string(format!("custom{index}")) {
+            if !value.is_empty() {
+                if let Ok(value) = std::str::from_utf8(value) {
+                    download.set_custom_field(index, value);
+                }
+            }
+        }
+    }
+
     // Session transfer counters. Without these the UI reports zero downloaded
     // and uploaded bytes after a restart even though the bitfield resumes.
     if let Ok(value) = object.get_key_value("total_downloaded") {

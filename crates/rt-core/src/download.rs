@@ -32,6 +32,11 @@ pub struct Download {
     resume_flags: u32,
     group: u32,
     directory: String,
+    /// rTorrent-compatible numbered custom fields (`d.custom1`..`d.custom5`).
+    ///
+    /// They live on the download (not in a command-map side table) so the
+    /// session writer can persist them and restore them after a restart.
+    custom_fields: [String; 5],
     throttle_name: String,
     hash_failed: bool,
     hash_checked: bool,
@@ -63,6 +68,7 @@ impl Download {
             resume_flags: DEFAULT_RESUME_FLAGS,
             group: 0,
             directory: String::new(),
+            custom_fields: Default::default(),
             throttle_name: String::new(),
             hash_failed: false,
             hash_checked: false,
@@ -105,6 +111,29 @@ impl Download {
 
     pub fn set_magnet_uri(&mut self, uri: impl Into<String>) {
         self.magnet_uri = Some(uri.into());
+    }
+
+    /// Returns a numbered custom field (`d.custom1`..`d.custom5`).
+    ///
+    /// `index` is 1-based, matching the rTorrent command names. Unknown
+    /// indexes return an empty string instead of panicking.
+    pub fn custom_field(&self, index: usize) -> &str {
+        index
+            .checked_sub(1)
+            .and_then(|i| self.custom_fields.get(i))
+            .map(String::as_str)
+            .unwrap_or_default()
+    }
+
+    /// Sets a numbered custom field (`d.custom1`..`d.custom5`). `index` is
+    /// 1-based; out-of-range indexes are ignored.
+    pub fn set_custom_field(&mut self, index: usize, value: impl Into<String>) {
+        if let Some(slot) = index
+            .checked_sub(1)
+            .and_then(|i| self.custom_fields.get_mut(i))
+        {
+            *slot = value.into();
+        }
     }
 
     pub fn is_metadata_download(&self) -> bool {

@@ -63,6 +63,8 @@ message TorrentSummary {
   uint64 started_timestamp = 17;
   uint64 finished_timestamp = 18;
   string message = 19;
+  // Free-form rTorrent label (`d.custom1`), persisted in the session.
+  string category = 20;
 }
 
 message FileInfo {

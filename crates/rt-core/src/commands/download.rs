@@ -3288,24 +3288,15 @@ fn register_download_extended_commands(
 
     // `d.custom1`..`d.custom5` are independent `rtorrent:customN` variables in
     // rtorrent, not entries in the `rtorrent:custom` map used by `d.custom`.
-    let numbered_custom_store: Arc<RwLock<HashMap<(lt_common::HashString, usize), String>>> =
-        Arc::new(RwLock::new(HashMap::new()));
-
+    // They live on the download itself so the session writer can persist them.
     for index in 1..=5 {
         let key = format!("custom{index}");
-        let store = Arc::clone(&numbered_custom_store);
         let list_get = Arc::clone(download_list);
         map.insert_func(
             &format!("d.{key}"),
             move |target, _obj| {
                 let dl = get_download(target, &list_get)?;
-                let hash = *dl.read().unwrap().info_hash();
-                let value = store
-                    .read()
-                    .unwrap()
-                    .get(&(hash, index))
-                    .cloned()
-                    .unwrap_or_default();
+                let value = dl.read().unwrap().custom_field(index).to_string();
                 Ok(Object::from(value))
             },
             FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
@@ -3313,15 +3304,13 @@ fn register_download_extended_commands(
             "Get a numbered custom download field.",
         )?;
 
-        let store = Arc::clone(&numbered_custom_store);
         let list_set = Arc::clone(download_list);
         map.insert_func(
             &format!("d.{key}.set"),
             move |target, obj| {
                 let dl = get_download(target, &list_set)?;
-                let hash = *dl.read().unwrap().info_hash();
                 let value = to_str(obj)?;
-                store.write().unwrap().insert((hash, index), value);
+                dl.write().unwrap().set_custom_field(index, value);
                 Ok(Object::create_empty())
             },
             FLAG_PUBLIC_RPC,
