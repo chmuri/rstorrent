@@ -23,7 +23,7 @@ Download pre-built binaries or `.deb` packages from the [GitHub Releases](https:
 
 ```bash
 # Ubuntu / Debian
-sudo apt install ./rstorrent_0.20.0_amd64.deb
+sudo apt install ./rstorrent_0.20.1_amd64.deb
 
 # Or run standalone
 ./rstorrent

@@ -102,6 +102,7 @@ pub fn download_to_summary(download: &Download) -> TorrentSummary {
         started_timestamp: download.timestamp_started(),
         finished_timestamp: download.timestamp_finished(),
         message: download.message().to_string(),
+        category: download.custom_field(1).to_string(),
     }
 }
 

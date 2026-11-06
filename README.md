@@ -324,6 +324,11 @@ XML-RPC-style target routing, so existing integrations can be ported one call
 at a time. Flood's dedicated `rstorrent` connector consumes the gRPC streams;
 see the Flood repository for a ready-to-run `docker-compose.rstorrent.yml`.
 
+`TorrentSummary` exposes the rTorrent label (`d.custom1`) as `category`, and
+`d.custom1`..`d.custom5` are persisted in the session sidecar. Download
+managers such as Sonarr can therefore tag their own torrents and keep filtering
+them after a daemon restart.
+
 ---
 
 ## Configuration

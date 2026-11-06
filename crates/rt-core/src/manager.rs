@@ -113,6 +113,16 @@ impl Manager {
             let _ = rtorrent_obj.insert_key("magnet_uri", Object::from(uri));
         }
 
+        // Numbered custom fields (rTorrent's `rtorrent:customN`). Only the
+        // non-empty ones are written so older sidecars stay small; the reader
+        // treats missing keys as empty strings.
+        for index in 1..=5 {
+            let value = download.custom_field(index);
+            if !value.is_empty() {
+                let _ = rtorrent_obj.insert_key(format!("custom{index}"), Object::from(value));
+            }
+        }
+
         let resume = download.to_resume_data();
         let mut resume_obj = resume.to_object();
         crate::session::resume_extras(&resume, download.metadata(), &download.uncertain_pieces())
