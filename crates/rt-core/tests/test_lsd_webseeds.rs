@@ -83,6 +83,30 @@ fn web_seeds_bep19_bencode_loading() {
 }
 
 #[test]
+fn magnet_xs_web_seeds_and_btms_loading() {
+    let uri = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567\
+&dn=Magnet+ISO\
+&xs=https%3A%2F%2Fmirror.example.org%2Fmagnet.iso\
+&xs=http://seed.example.org/magnet.iso\
+&btms=0123456789abcdef0123456789abcdef01234567";
+
+    let mut factory = DownloadFactory::new();
+    factory.load_magnet(uri).expect("magnet must load");
+    let download = factory
+        .create_download()
+        .expect("create_download must succeed");
+
+    let seeds = download.web_seeds();
+    assert_eq!(
+        seeds,
+        vec![
+            "https://mirror.example.org/magnet.iso",
+            "http://seed.example.org/magnet.iso",
+        ]
+    );
+}
+
+#[test]
 fn port_mapping_codecs_test() {
     let req = format_nat_pmp_request(PortMappingProtocol::Tcp, 51413, 51413, 7200);
     assert_eq!(req[0], 0); // version

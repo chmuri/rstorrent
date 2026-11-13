@@ -38,6 +38,7 @@ fn make_download(
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     Arc::new(RwLock::new(Download::new(

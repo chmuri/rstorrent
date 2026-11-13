@@ -2,6 +2,7 @@ use crate::proto::system_service_server::SystemService;
 use crate::proto::*;
 use crate::server::GrpcContext;
 use futures_util::Stream;
+use rt_rpc::Target;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio_stream::wrappers::IntervalStream;
@@ -15,6 +16,22 @@ pub struct SystemServiceImpl {
 impl SystemServiceImpl {
     pub fn new(ctx: GrpcContext) -> Self {
         Self { ctx }
+    }
+
+    /// Read a scalar command as i64, defaulting to 0 when it is missing or
+    /// returns a non-integer. Used for session stats sourced from the command
+    /// map (listen port, global throttle limits).
+    fn command_i64(&self, name: &str) -> i64 {
+        let map = self.ctx.command_map.read().unwrap();
+        map.call_command(
+            name,
+            &lt_common::Object::create_empty(),
+            &Target::None,
+            true,
+        )
+        .ok()
+        .and_then(|obj| obj.as_value().ok())
+        .unwrap_or(0)
     }
 
     fn calculate_stats(&self) -> SessionStatsResponse {
@@ -58,9 +75,9 @@ impl SystemServiceImpl {
             down_total_bytes: down_total,
             active_torrents: active_count,
             total_torrents: total_count,
-            listen_port: 0,
-            throttle_up_limit: 0,
-            throttle_down_limit: 0,
+            listen_port: self.command_i64("network.listen.port") as u32,
+            throttle_up_limit: self.command_i64("throttle.global_up.max_rate"),
+            throttle_down_limit: self.command_i64("throttle.global_down.max_rate"),
             dht_active,
             dht_nodes,
             dht_torrents,
@@ -113,12 +130,20 @@ impl SystemService for SystemServiceImpl {
 
     async fn shutdown(
         &self,
-        _request: Request<ShutdownRequest>,
+        request: Request<ShutdownRequest>,
     ) -> Result<Response<ShutdownResponse>, Status> {
+        let force = request.into_inner().force;
+        if force {
+            crate::security::request_force_shutdown();
+        }
         let _ = self.ctx.shutdown_tx.send(true);
         Ok(Response::new(ShutdownResponse {
             acknowledged: true,
-            message: "Shutdown sequence initiated".to_string(),
+            message: if force {
+                "Forced shutdown sequence initiated".to_string()
+            } else {
+                "Shutdown sequence initiated".to_string()
+            },
         }))
     }
 }

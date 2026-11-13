@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rstorrent</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2029; --border: #2a323d; --text: #d7dde5;
+    --muted: #8b97a5; --accent: #4a9eff; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+    background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; color: var(--accent); }
+  header .ver { color: var(--muted); font-size: 12px; }
+  header .status { margin-left: auto; font-size: 12px; color: var(--muted); }
+  header .status.on { color: var(--ok); }
+  main { padding: 16px 18px; max-width: 1400px; margin: 0 auto; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 14px; }
+  .bar label { color: var(--muted); font-size: 12px; }
+  input[type=text], input[type=password] { background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font: inherit; }
+  input:focus { outline: none; border-color: var(--accent); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+    padding: 7px 14px; font: inherit; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button.sm { padding: 3px 8px; font-size: 12px; }
+  button.danger { background: var(--err); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; }
+  .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .stat .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    background: #161c24; }
+  tr:last-child td { border-bottom: 0; }
+  td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .prog { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; min-width: 80px; }
+  .prog > i { display: block; height: 100%; background: var(--accent); }
+  .state { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--bg);
+    border: 1px solid var(--border); white-space: nowrap; }
+  .actions { display: flex; gap: 4px; }
+  .empty { color: var(--muted); text-align: center; padding: 28px; }
+  .toast { position: fixed; bottom: 16px; right: 16px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; max-width: 360px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  .toast.err { border-color: var(--err); }
+  .toast.ok { border-color: var(--ok); }
+  .grow { flex: 1; min-width: 200px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>rstorrent</h1>
+  <span class="ver" id="version"></span>
+  <span class="status" id="status">disconnected</span>
+</header>
+<main>
+  <div class="bar">
+    <label for="token">Token</label>
+    <input type="password" id="token" placeholder="bearer token (empty = no auth)" autocomplete="off">
+    <button id="connect">Connect</button>
+    <button class="ghost" id="disconnect">Disconnect</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="bar">
+    <input type="text" id="add-input" class="grow" placeholder="magnet:?xt=… or /path/to.torrent">
+    <button id="add">Add torrent</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>Size</th><th>Progress</th><th>State</th>
+        <th class="num">Down</th><th class="num">Up</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty">No torrents. Connect and add one above.</div>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const torrents = new Map();
+let token = localStorage.getItem("rstorrent.token") || "";
+let ws = null;
+let statsTimer = null;
+
+$("token").value = token;
+
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  const u = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+}
+function fmtRate(n) { return fmtBytes(n) + "/s"; }
+
+function toast(msg, kind) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.className = "toast " + (kind || "");
+  el.hidden = false;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.hidden = true; }, 4000);
+}
+
+function authHeaders() {
+  const h = { "Content-Type": "application/json" };
+  if (token) h["Authorization"] = "Bearer " + token;
+  return h;
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, Object.assign({ headers: authHeaders() }, opts || {}));
+  if (res.status === 401) { toast("Unauthorized — check the token.", "err"); throw new Error("401"); }
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+function setStatus(text, on) {
+  const el = $("status");
+  el.textContent = text;
+  el.className = "status" + (on ? " on" : "");
+}
+
+function renderStats(s) {
+  if (!s) return;
+  const cells = [
+    ["Torrents", s.total_torrents + " (" + s.active_torrents + " active)"],
+    ["Down", fmtRate(s.down_rate)],
+    ["Up", fmtRate(s.up_rate)],
+    ["Downloaded", fmtBytes(s.down_total)],
+    ["Uploaded", fmtBytes(s.up_total)],
+    ["DHT", s.dht_active ? s.dht_nodes + " nodes" : "off"],
+    ["Port", s.listen_port || "—"],
+  ];
+  const box = $("stats");
+  box.textContent = "";
+  for (const [k, v] of cells) {
+    const d = document.createElement("div");
+    d.className = "stat";
+    const kk = document.createElement("div"); kk.className = "k"; kk.textContent = k;
+    const vv = document.createElement("div"); vv.className = "v"; vv.textContent = v;
+    d.append(kk, vv);
+    box.append(d);
+  }
+}
+
+function actionButton(label, cls, hash, verb) {
+  const b = document.createElement("button");
+  b.className = "ghost sm " + (cls || "");
+  b.textContent = label;
+  b.addEventListener("click", async () => {
+    try {
+      const r = await api("/api/torrents/" + hash + "/" + verb, { method: "POST" });
+      if (r.success) { toast(label + " ok", "ok"); refresh(); }
+      else toast(r.error || "command failed", "err");
+    } catch (e) { toast(String(e.message || e), "err"); }
+  });
+  return b;
+}
+
+function renderRow(t) {
+  const tr = document.createElement("tr");
+  tr.dataset.hash = t.hash;
+
+  const name = document.createElement("td");
+  name.className = "name";
+  name.textContent = t.name || t.hash;
+  name.title = t.hash + (t.message ? "\n" + t.message : "");
+
+  const size = document.createElement("td");
+  size.className = "num";
+  size.textContent = fmtBytes(t.size_bytes);
+
+  const prog = document.createElement("td");
+  const pct = t.size_bytes > 0 ? Math.min(100, (t.completed_bytes / t.size_bytes) * 100) : 0;
+  const bar = document.createElement("div"); bar.className = "prog";
+  const fill = document.createElement("i"); fill.style.width = pct.toFixed(1) + "%";
+  bar.append(fill);
+  const lbl = document.createElement("div");
+  lbl.style.fontSize = "11px"; lbl.style.color = "var(--muted)";
+  lbl.textContent = pct.toFixed(1) + "%";
+  prog.append(bar, lbl);
+
+  const state = document.createElement("td");
+  const badge = document.createElement("span");
+  badge.className = "state";
+  badge.textContent = t.is_hash_checking ? "checking" : (t.state || "unknown");
+  state.append(badge);
+
+  const down = document.createElement("td");
+  down.className = "num"; down.textContent = fmtRate(t.down_rate);
+  const up = document.createElement("td");
+  up.className = "num"; up.textContent = fmtRate(t.up_rate);
+
+  const actions = document.createElement("td");
+  const wrap = document.createElement("div"); wrap.className = "actions";
+  if (t.is_active) wrap.append(actionButton("Stop", "", t.hash, "stop"));
+  else wrap.append(actionButton("Start", "", t.hash, "start"));
+  wrap.append(actionButton("Check", "", t.hash, "recheck"));
+  wrap.append(actionButton("Remove", "danger", t.hash, "remove"));
+  actions.append(wrap);
+
+  tr.append(name, size, prog, state, down, up, actions);
+  return tr;
+}
+
+function renderTable() {
+  const body = $("rows");
+  body.textContent = "";
+  const list = Array.from(torrents.values()).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  for (const t of list) body.append(renderRow(t));
+  $("empty").hidden = list.length > 0;
+}
+
+function upsert(t) {
+  if (!t || !t.hash) return;
+  torrents.set(t.hash, t);
+  renderTable();
+}
+
+async function refresh() {
+  try {
+    const list = await api("/api/torrents");
+    torrents.clear();
+    for (const t of list) torrents.set(t.hash, t);
+    renderTable();
+    renderStats(await api("/api/stats"));
+  } catch (e) { /* surfaced by api() */ }
+}
+
+function openWs() {
+  if (ws) { ws.close(); ws = null; }
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url = proto + "//" + location.host + "/api/events" + (token ? "?token=" + encodeURIComponent(token) : "");
+  ws = new WebSocket(url);
+  ws.onopen = () => setStatus("live", true);
+  ws.onclose = () => setStatus("disconnected", false);
+  ws.onerror = () => setStatus("error", false);
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === "torrent") upsert(msg.summary);
+    else if (msg.type === "stats") renderStats(msg.stats);
+  };
+}
+
+async function connect() {
+  token = $("token").value.trim();
+  localStorage.setItem("rstorrent.token", token);
+  setStatus("connecting…", false);
+  try {
+    const v = await api("/api/version");
+    $("version").textContent = "v" + v.version + " · api " + v.api_version + " · " + v.build_target;
+    await refresh();
+    openWs();
+    clearInterval(statsTimer);
+    statsTimer = setInterval(() => { api("/api/stats").then(renderStats).catch(() => {}); }, 5000);
+    setStatus("live", true);
+  } catch (e) {
+    setStatus("disconnected", false);
+  }
+}
+
+function disconnect() {
+  if (ws) { ws.close(); ws = null; }
+  clearInterval(statsTimer);
+  setStatus("disconnected", false);
+}
+
+$("connect").addEventListener("click", connect);
+$("disconnect").addEventListener("click", disconnect);
+$("add").addEventListener("click", async () => {
+  const value = $("add-input").value.trim();
+  if (!value) { toast("Enter a magnet link or torrent path.", "err"); return; }
+  try {
+    const r = await api("/api/command", {
+      method: "POST",
+      body: JSON.stringify({ command: "load.start", target: "", args: [value] }),
+    });
+    if (r.success) { toast("Added.", "ok"); $("add-input").value = ""; refresh(); }
+    else toast(r.error || "add failed", "err");
+  } catch (e) { toast(String(e.message || e), "err"); }
+});
+$("add-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("add").click(); });
+
+if (token) connect();
+</script>
+</body>
+</html>

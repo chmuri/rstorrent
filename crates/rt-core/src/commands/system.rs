@@ -15,11 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::pieces::parse_byte_size;
 
 /// Process-wide socket accounting used by `system.sockets.*` and the legacy
-/// `network.*open_sockets*` aliases.
-static GLOBAL_SOCKET_MANAGER: OnceLock<SocketManager> = OnceLock::new();
-
+/// `network.*open_sockets*` aliases. Delegates to the shared `lt-net` budget so
+/// the peer accept/dial paths enforce the same limit these commands report.
 pub fn socket_manager() -> &'static SocketManager {
-    GLOBAL_SOCKET_MANAGER.get_or_init(SocketManager::new)
+    lt_net::socket_manager::shared_socket_manager()
 }
 
 /// Process-wide `stat(2)` cache used by `system.file_status_cache.*`.

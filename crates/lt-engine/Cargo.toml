@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 lt-common.workspace = true
 lt-protocol.workspace = true
@@ -21,5 +24,14 @@ tracing.workspace = true
 tokio.workspace = true
 getrandom.workspace = true
 rustc-hash.workspace = true
+lru.workspace = true
 rayon.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "hot_paths"
+harness = false
 

@@ -123,7 +123,7 @@ async fn cache_round_trip_keeps_self_id_public_nodes_and_trackers() {
             .get_tracker(&info_hash, false)
             .expect("tracker cache was not restored");
         assert_eq!(tracker.size(), 1);
-        assert_eq!(tracker.get_peers(1)[0], [1, 2, 3, 4, 0xc8, 0xd5]);
+        assert_eq!(tracker.get_peers(1)[0], vec![1, 2, 3, 4, 0xc8, 0xd5]);
     }
 
     // File round-trip uses the same object format.

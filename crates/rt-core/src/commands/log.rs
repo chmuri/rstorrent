@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use lt_common::option_strings::{option_find_string, OptionEnum};
 use lt_common::Object;
 use lt_sys::log::{
-    log_add_group_output, log_close_output, log_open_file_output, log_open_gz_file_output,
+    groups, log_add_group_output, log_close_output, log_open_file_output, log_open_gz_file_output,
     log_print, LOG_GROUP_MAX_SIZE,
 };
 use rt_rpc::command_flags::*;
@@ -61,6 +61,41 @@ fn open_output(
     }));
 
     result.map_err(|_| RpcError::InputError(format!("Could not open log file '{filename}'")))
+}
+
+/// Wire a `log.*.set` destination to a real file output: open the file, route
+/// the given log groups to it, and remember the path. An empty string closes
+/// the output again. This replaces the previous string-only save stub.
+fn set_log_destination(
+    store: &Arc<RwLock<String>>,
+    output_name: &str,
+    groups_to_route: &[usize],
+    obj: &Object,
+) -> Result<Object, RpcError> {
+    let value = convert_to_string(obj)?;
+    let mut guard = store.write().unwrap();
+    if !guard.is_empty() {
+        log_close_output(output_name);
+    }
+    if value.is_empty() {
+        guard.clear();
+        return Ok(Object::create_empty());
+    }
+
+    let opened = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        log_open_file_output(output_name, &value, true, true);
+        for &group in groups_to_route {
+            log_add_group_output(group, output_name);
+        }
+    }));
+    if opened.is_err() {
+        return Err(RpcError::InputError(format!(
+            "Could not open log file '{value}'"
+        )));
+    }
+
+    *guard = value;
+    Ok(Object::create_empty())
 }
 
 pub fn register_log_commands(map: &mut CommandMap) -> Result<(), RpcError> {
@@ -150,13 +185,10 @@ pub fn register_log_commands(map: &mut CommandMap) -> Result<(), RpcError> {
         "",
         "Execute log destination.",
     )?;
+    let execute_set = Arc::clone(&execute_log);
     map.insert_func(
         "log.execute.set",
-        move |_target, obj| {
-            let value = convert_to_string(obj)?;
-            *execute_log.write().unwrap() = value;
-            Ok(Object::create_empty())
-        },
+        move |_target, obj| set_log_destination(&execute_set, "execute", &[groups::EVENTS], obj),
         FLAG_PUBLIC_RPC,
         "<file>",
         "Set the execute log destination.",
@@ -174,9 +206,12 @@ pub fn register_log_commands(map: &mut CommandMap) -> Result<(), RpcError> {
     map.insert_func(
         "log.rpc.set",
         move |_target, obj| {
-            let value = convert_to_string(obj)?;
-            *rpc_set.write().unwrap() = value;
-            Ok(Object::create_empty())
+            set_log_destination(
+                &rpc_set,
+                "rpc",
+                &[groups::RPC_EVENTS, groups::RPC_DUMP],
+                obj,
+            )
         },
         FLAG_PUBLIC_RPC,
         "<file>",
@@ -195,9 +230,12 @@ pub fn register_log_commands(map: &mut CommandMap) -> Result<(), RpcError> {
     map.insert_func(
         "log.xmlrpc.set",
         move |_target, obj| {
-            let value = convert_to_string(obj)?;
-            *rpc_xml_set.write().unwrap() = value;
-            Ok(Object::create_empty())
+            set_log_destination(
+                &rpc_xml_set,
+                "rpc",
+                &[groups::RPC_EVENTS, groups::RPC_DUMP],
+                obj,
+            )
         },
         FLAG_PUBLIC_RPC,
         "<file>",

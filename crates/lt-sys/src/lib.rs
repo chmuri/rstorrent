@@ -1,5 +1,6 @@
 //! `lt-sys` — System bindings, file operations, logging, and instrumentation
 
+pub mod error;
 pub mod fs;
 pub mod instrumentation;
 pub mod lockfile;
@@ -9,6 +10,7 @@ pub mod scheduler;
 pub mod thread;
 pub mod watch;
 
+pub use error::SysError;
 pub use fs::FileStat;
 pub use instrumentation::{
     instrumentation_get, instrumentation_initialize, instrumentation_reset, instrumentation_set,

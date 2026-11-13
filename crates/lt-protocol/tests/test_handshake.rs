@@ -1,9 +1,6 @@
 use lt_common::hash_string::HashString;
-use lt_net::addr::SocketAddress;
-use lt_protocol::encryption::{EncryptionPolicy, HandshakeEncryption};
+use lt_protocol::encryption::HandshakeEncryption;
 use lt_protocol::handshake::{HandshakeError, HandshakeMessage, BT_HANDSHAKE_SIZE};
-use lt_protocol::handshake_manager::{HandshakeManager, HandshakePhase};
-use std::str::FromStr;
 
 #[test]
 fn test_plaintext_handshake_roundtrip() {
@@ -117,35 +114,4 @@ fn test_mse_pe_exchange_and_encryption() {
 
     alice.decrypt(&mut msg_bob_to_alice);
     assert_eq!(msg_bob_to_alice, original2);
-}
-
-#[test]
-fn test_handshake_manager_lifecycle() {
-    let mut own_id = HashString::default();
-    own_id.clear_byte(0x77);
-
-    let policy = EncryptionPolicy::require();
-
-    let mut mgr = HandshakeManager::new(own_id, policy);
-    let sa1 = SocketAddress::from_str("127.0.0.1:6881").unwrap();
-    let sa2 = SocketAddress::from_str("127.0.0.1:6882").unwrap();
-
-    let mut target_hash = HashString::default();
-    target_hash.clear_byte(0x88);
-
-    mgr.start_outgoing(sa1.clone(), target_hash);
-    mgr.start_incoming(sa2.clone());
-
-    assert_eq!(mgr.sessions.len(), 2);
-    let s1 = mgr.get_session_mut(&sa1).unwrap();
-    assert!(!s1.is_incoming);
-    assert_eq!(s1.phase, HandshakePhase::NegotiatingEncryption);
-
-    let s2 = mgr.get_session_mut(&sa2).unwrap();
-    assert!(s2.is_incoming);
-    assert_eq!(s2.phase, HandshakePhase::NegotiatingEncryption);
-
-    mgr.remove_session(&sa1);
-    assert_eq!(mgr.sessions.len(), 1);
-    assert!(mgr.get_session_mut(&sa1).is_none());
 }

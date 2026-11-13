@@ -1,3 +1,4 @@
+pub mod error;
 pub mod manager;
 pub mod stats;
 pub mod storer;
@@ -18,6 +19,7 @@ use lt_storage::resume::{
 use crate::download::Download;
 use crate::download_factory::DownloadFactory;
 
+pub use error::SessionError;
 pub use manager::{write_workers, SessionCommitEntry, SessionManager, SessionWriter};
 pub use storer::{
     get_formatted_entries, get_restorable_entries, is_correct_format, load_resume_file,
@@ -145,6 +147,15 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> Rtorr
                 if let Ok(value) = std::str::from_utf8(value) {
                     download.set_custom_field(index, value);
                 }
+            }
+        }
+    }
+
+    // Generic custom variables (`d.custom`), persisted as a nested dict.
+    if let Ok(custom) = object.get_key_map("custom") {
+        for (key, value) in custom {
+            if let (Ok(key), Ok(value)) = (std::str::from_utf8(key), value.as_str()) {
+                download.custom_set(key.to_string(), value.to_string());
             }
         }
     }

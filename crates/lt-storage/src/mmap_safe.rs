@@ -76,6 +76,20 @@ pub struct MappedMemory {
     is_mmap: bool,
 }
 
+// SAFETY: `MappedMemory` is the sole owner of a single contiguous allocation —
+// either an `mmap` region (`is_mmap == true`) or a heap buffer produced by
+// `from_vec` (`is_mmap == false`, the `Box` is `forget`ten and reclaimed in
+// `Drop`). The pointer is never aliased by another owner, and `Drop` releases it
+// exactly once (nulling `ptr` afterwards), so there is no double-free.
+//
+// * Send: ownership of the allocation can move between threads; neither the
+//   mapping nor the heap buffer carries thread-local state.
+// * Sync: every `&self` method (`mincore`, `madvise`, `msync`, `len`, ...) is a
+//   read-only query or a kernel syscall on the mapping, all of which are
+//   thread-safe. `ptr()` merely *returns* a raw pointer (a safe operation);
+//   dereferencing it for writes is `unsafe` and the caller must synchronize
+//   concurrent writes, exactly as with `Vec::as_mut_ptr`. The type itself
+//   exposes no interior mutability through `&self`, so sharing it is race-free.
 unsafe impl Send for MappedMemory {}
 unsafe impl Sync for MappedMemory {}
 
@@ -312,5 +326,131 @@ pub fn allocate_file(fd: RawFd, size: u64) -> Result<(), StorageError> {
         Err(StorageError::FallocateFailed(
             std::io::Error::last_os_error().to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::io::AsRawFd;
+    use std::sync::Arc;
+    use std::thread;
+
+    fn temp_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "rtorrent_mmap_unit_{}_{}.bin",
+            tag,
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn from_vec_heap_buffer_queries_and_drop() {
+        let m = MappedMemory::from_vec(vec![0u8; 4096]);
+        assert_eq!(m.len(), 4096);
+        assert!(!m.is_empty());
+        assert!(!m.ptr().is_null());
+
+        // Heap buffers are reported as fully resident and advise/sync are no-ops.
+        let mut resident = vec![0u8; 1];
+        m.mincore(0, 4096, &mut resident).unwrap();
+        assert_eq!(resident, vec![1]);
+        m.madvise(0, 4096, Advice::Sequential).unwrap();
+        m.msync(0, 4096, SyncFlags::SYNC).unwrap();
+
+        unsafe {
+            std::ptr::write_bytes(m.ptr(), 0x5a, 4096);
+            assert_eq!(*m.ptr(), 0x5a);
+            assert_eq!(*m.ptr().add(4095), 0x5a);
+        }
+        // Drop reclaims the forgotten Box without leaking or double-freeing.
+    }
+
+    #[test]
+    fn anonymous_mapping_read_write_and_range_guard() {
+        let m = MappedMemory::map_anon(4096, Prot::READ | Prot::WRITE, MapFlags::PRIVATE).unwrap();
+        assert_eq!(m.len(), 4096);
+        unsafe {
+            std::ptr::write_bytes(m.ptr(), 0xab, 4096);
+            assert_eq!(*m.ptr(), 0xab);
+        }
+        m.madvise(0, 4096, Advice::Normal).unwrap();
+
+        let pages = 4096usize.div_ceil(system_page_size());
+        let mut resident = vec![0u8; pages];
+        m.mincore(0, 4096, &mut resident).unwrap();
+
+        // Out-of-bounds queries are rejected before touching the pointer.
+        let mut bad = vec![0u8; pages + 1];
+        assert!(m.mincore(0, 8192, &mut bad).is_err());
+        assert!(m.madvise(0, 8192, Advice::Normal).is_err());
+        assert!(m.msync(0, 8192, SyncFlags::SYNC).is_err());
+    }
+
+    #[test]
+    fn zero_length_mapping_is_rejected() {
+        assert!(MappedMemory::map_anon(0, Prot::READ, MapFlags::PRIVATE).is_err());
+    }
+
+    #[test]
+    fn file_backed_mapping_persists_writes_via_msync() {
+        let path = temp_path("file");
+        let _ = fs::remove_file(&path);
+        let original = vec![0x11u8; 8192];
+        fs::write(&path, &original).unwrap();
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        let m = MappedMemory::map(
+            file.as_raw_fd(),
+            0,
+            8192,
+            Prot::READ | Prot::WRITE,
+            MapFlags::SHARED,
+        )
+        .unwrap();
+
+        assert_eq!(
+            unsafe { std::slice::from_raw_parts(m.ptr(), 8192) },
+            &original[..]
+        );
+        unsafe {
+            *m.ptr() = 0x22;
+        }
+        m.msync(0, 8192, SyncFlags::SYNC).unwrap();
+
+        let pages = 8192usize.div_ceil(system_page_size());
+        let mut resident = vec![0u8; pages];
+        m.mincore(0, 8192, &mut resident).unwrap();
+        m.madvise(0, 8192, Advice::WillNeed).unwrap();
+
+        drop(m);
+        let after = fs::read(&path).unwrap();
+        assert_eq!(after[0], 0x22);
+        assert_eq!(&after[1..], &original[1..]);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn mapped_memory_is_send() {
+        let m = MappedMemory::from_vec(vec![1, 2, 3, 4]);
+        let handle = thread::spawn(move || {
+            assert_eq!(m.len(), 4);
+            unsafe { *m.ptr() }
+        });
+        assert_eq!(handle.join().unwrap(), 1);
+    }
+
+    #[test]
+    fn mapped_memory_is_sync() {
+        let m = Arc::new(MappedMemory::from_vec(vec![9u8; 16]));
+        let shared = Arc::clone(&m);
+        let handle = thread::spawn(move || shared.len());
+        assert_eq!(handle.join().unwrap(), 16);
+        assert_eq!(m.len(), 16);
     }
 }

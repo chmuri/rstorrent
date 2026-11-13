@@ -82,7 +82,7 @@ async fn exchange_handshake(client: &mut TcpStream, metadata_id: u8, total_size:
         .write_all(
             &PeerMessage::Extended {
                 id: 0,
-                payload: extension_handshake_payload(0, metadata_id, total_size),
+                payload: extension_handshake_payload(0, metadata_id, total_size, None),
             }
             .encode(),
         )

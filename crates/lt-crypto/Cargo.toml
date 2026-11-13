@@ -5,10 +5,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 lt-common.workspace = true
 thiserror.workspace = true
 sha1.workspace = true
+sha2.workspace = true
 rc4.workspace = true
 num-bigint.workspace = true
 num-traits.workspace = true

@@ -26,6 +26,7 @@ pub mod piece;
 pub mod piece_cache;
 pub mod resume;
 pub mod socket_file;
+pub mod v2_layout;
 pub mod writer;
 
 pub use block::{Block, BlockList, BlockState, BlockTransfer, TransferList, DEFAULT_BLOCK_SIZE};
@@ -53,8 +54,8 @@ pub use hash_check_queue::{HashCheckQueue, FLAG_NEED, FLAG_WILL_NEED};
 pub use hash_chunk::HashChunk;
 pub use hash_queue::{HashQueue, HashQueueNode};
 pub use hash_torrent::{
-    default_read_cache_entries, set_default_read_cache_entries, HashResult, HashTorrent,
-    DEFAULT_READ_CACHE_ENTRIES,
+    default_read_cache_entries, set_default_read_cache_entries, verify_v2_file, HashResult,
+    HashTorrent, DEFAULT_READ_CACHE_ENTRIES,
 };
 pub use memory_chunk::MemoryChunk;
 pub use memory_manager::{memory_manager, MemoryManager};
@@ -65,6 +66,10 @@ pub use piece::Piece;
 pub use piece_cache::{PieceCache, PieceCacheStats, DEFAULT_PIECE_CACHE_CAPACITY_BYTES};
 pub use resume::{ResumeData, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED};
 pub use socket_file::{FallocateFlags, OpenFlags, SocketFile, INVALID_FD};
+pub use v2_layout::{
+    hash_v2_files, v2_expected_piece_root, V2FileEntry, V2FileHash, V2Layout, V2LayoutError,
+    V2PieceSegment,
+};
 pub use writer::{sync_files, write_piece_to_disk, TargetFileInfo};
 
 #[cfg(test)]
@@ -542,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_file_list_multi_file_assembly() {
+    fn test_file_list_multi_file_tracking() {
         let mut file_list = FileList::new();
 
         let mut f1 = File::new();
@@ -564,22 +569,6 @@ mod tests {
         assert_eq!(file_list.size_chunks(), 4);
         assert_eq!(file_list.completed_chunks(), 0);
         assert!(!file_list.is_done());
-
-        // Chunk 0 (0..1024) spans File 1 (0..1000) and File 2 (1000..1024)
-        let chunk0 = file_list
-            .create_chunk_index(0, Prot::READ | Prot::WRITE)
-            .unwrap();
-        assert_eq!(chunk0.chunk_size(), 1024);
-        assert_eq!(chunk0.parts().len(), 2);
-        assert_eq!(chunk0.parts()[0].size(), 1000);
-        assert_eq!(chunk0.parts()[1].size(), 24);
-
-        // Chunk 3 (3072..3500 = 428 bytes) is entirely within File 2
-        let chunk3 = file_list
-            .create_chunk_index(3, Prot::READ | Prot::WRITE)
-            .unwrap();
-        assert_eq!(chunk3.chunk_size(), 428);
-        assert_eq!(chunk3.parts().len(), 1);
 
         // Mark completed
         file_list.mark_completed(0);

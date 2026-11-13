@@ -16,6 +16,7 @@ fn args(obj: &Object) -> Result<Vec<Object>, RpcError> {
 pub fn register_scheduler_commands(
     map: &mut CommandMap,
     scheduler: Arc<Mutex<CommandScheduler>>,
+    max_active: Arc<AtomicI64>,
 ) -> Result<(), RpcError> {
     let sched = Arc::clone(&scheduler);
     map.insert_func(
@@ -117,7 +118,7 @@ pub fn register_scheduler_commands(
         "Remove a scheduled command (legacy alias).",
     )?;
 
-    let max_active = Arc::new(AtomicI64::new(-1));
+    // Shared with DownloadList so the stored cap is the one enforced on start.
     let max_get = Arc::clone(&max_active);
     map.insert_func(
         "scheduler.max_active",

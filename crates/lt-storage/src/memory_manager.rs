@@ -50,6 +50,17 @@ pub fn memory_manager() -> &'static MemoryManager {
     GLOBAL_MEMORY_MANAGER.get_or_init(MemoryManager::default)
 }
 
+/// Callback that reclaims unused memory (e.g. idle block-pool buffers) and
+/// returns the number of bytes freed. Registered by the engine layer, which
+/// owns the block pool; lt-storage cannot depend on lt-protocol directly.
+pub type FreeMemoryHook = std::sync::Arc<dyn Fn(u64) -> u64 + Send + Sync>;
+
+static FREE_MEMORY_HOOK: OnceLock<FreeMemoryHook> = OnceLock::new();
+
+pub fn set_free_memory_hook(hook: FreeMemoryHook) {
+    let _ = FREE_MEMORY_HOOK.set(hook);
+}
+
 impl MemoryManager {
     pub fn new() -> Self {
         Self::default()
@@ -79,6 +90,15 @@ impl MemoryManager {
     pub fn release_memory_block(&self, bytes: u64) {
         self.memory_usage.fetch_sub(bytes, Ordering::AcqRel);
         self.memory_block_count.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    /// Reclaim up to `bytes` of unused memory through the registered hook.
+    /// Returns the number of bytes actually freed (0 when no hook is set).
+    pub fn try_free_memory(&self, bytes: u64) -> u64 {
+        match FREE_MEMORY_HOOK.get() {
+            Some(hook) => hook(bytes),
+            None => 0,
+        }
     }
 
     pub fn sync_queue_block_count(&self) -> u32 {

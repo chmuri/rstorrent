@@ -1,74 +1,74 @@
-# Uruchomienie rTorrent (Rust) + Flood w Dockerze
+# Running rTorrent (Rust) + Flood in Docker
 
-Ten zestaw pozwala na natychmiastowe uruchomienie nowoczesnego portu **rTorrent** napisanego w **Rust** wraz z nowoczesnym interfejsem webowym **Flood** (`jesec/flood`).
+This setup lets you instantly run a modern **rTorrent** port written in **Rust** together with the modern **Flood** web interface (`jesec/flood`).
 
-Komunikacja między panelem Flood a rTorrentem odbywa się za pomocą natywnego protokołu **SCGI** (identycznie jak w oryginalnym C++ rTorrent).
+Communication between the Flood panel and rTorrent uses the native **SCGI** protocol (exactly as in the original C++ rTorrent).
 
 ---
 
-## 🚀 Szybki start
+## 🚀 Quick start
 
-### Opcja A: Gotowy obraz z GitHub Container Registry (zalecane)
+### Option A: Prebuilt image from GitHub Container Registry (recommended)
 
-Możesz uruchomić gotowy stos bez konieczności kompilowania kodu:
+You can run the ready-made stack without compiling any code:
 
 ```bash
 docker compose up -d
 ```
-*(Docker Compose automatycznie pobierze gotowy obraz `ghcr.io/chmuri/rstorrent:latest`)*
+*(Docker Compose will automatically pull the prebuilt image `ghcr.io/chmuri/rstorrent:latest`)*
 
-Możesz też pobrać obraz bezpośrednio poleceniem `docker pull`:
+You can also pull the image directly with `docker pull`:
 ```bash
 docker pull ghcr.io/chmuri/rstorrent:latest
 ```
 
-### Opcja B: Budowanie ze źródeł lokalnie
+### Option B: Building from source locally
 
-Aby samodzielnie zbudować obraz rTorrenta ze źródeł w repozytorium i uruchomić stos:
+To build the rTorrent image yourself from the sources in this repository and start the stack:
 
 ```bash
 docker compose up -d --build
 ```
 
-Po uruchomieniu:
-1. Otwórz przeglądarkę i wejdź pod adres: **[http://localhost:3000](http://localhost:3000)**.
-2. Interfejs **Flood uruchamia się automatycznie połączony z rTorrentem** (nie wymaga przechodzenia przez kreatora ani podawania parametrów SCGI – wszystko jest wstępnie skonfigurowane przez flagi `--auth=none --rthost=rtorrent --rtport=5000`).
+Once it's running:
+1. Open your browser and go to: **[http://localhost:3000](http://localhost:3000)**.
+2. The **Flood interface starts automatically, already connected to rTorrent** (no setup wizard or SCGI parameters required – everything is preconfigured via the `--auth=none --rthost=rtorrent --rtport=5000` flags).
 
 ---
 
-## 📁 Struktura wolumenów i katalogów
+## 📁 Volume and directory structure
 
-Wszystkie dane zapisywane są lokalnie w podkatalogu `./data`:
+All data is stored locally in the `./data` subdirectory:
 
-| Ścieżka lokalna | Ścieżka w kontenerze | Opis |
+| Local path | Path in container | Description |
 |-----------------|----------------------|------|
-| `./data/downloads` | `/downloads` | Pobrane i aktywnie pobierane pliki (współdzielone z Flood) |
-| `./data/session` | `/session` | Stan sesji rTorrenta, pliki `.torrent` oraz socket `rtorrent.sock` |
-| `./data/config` | `/config` | Pliki konfiguracyjne rTorrenta (`.rtorrent.rc`) |
-| `./data/flood` | `/config` | Baza danych i ustawienia użytkowników interfejsu Flood |
+| `./data/downloads` | `/downloads` | Completed and in-progress downloads (shared with Flood) |
+| `./data/session` | `/session` | rTorrent session state, `.torrent` files, and the `rtorrent.sock` socket |
+| `./data/config` | `/config` | rTorrent configuration files (`.rtorrent.rc`) |
+| `./data/flood` | `/config` | Flood UI database and user settings |
 
 ---
 
-## 🔌 Porty sieciowe
+## 🔌 Network ports
 
-- `3000` – Panel webowy Flood (dostępny w przeglądarce).
-- `50000` (TCP) – Port nasłuchiwania połączeń P2P BitTorrent.
-- `6881` (UDP) – Port sieci DHT (Distributed Hash Table).
-- `5000` (TCP, opcjonalnie) – Bezpośredni dostęp do SCGI na `127.0.0.1` dla zewnętrznych skryptów lub narzędzi konsolowych.
+- `3000` – Flood web panel (accessible in a browser).
+- `50000` (TCP) – Listening port for BitTorrent P2P connections.
+- `6881` (UDP) – DHT (Distributed Hash Table) network port.
+- `5000` (TCP, optional) – Direct SCGI access on `127.0.0.1` for external scripts or console tools.
 
 ---
 
-## 🛠️ Zarządzanie kontenerami
+## 🛠️ Container management
 
-- **Podgląd logów w czasie rzeczywistym:**
+- **View logs in real time:**
   ```bash
   docker compose logs -f
   ```
-- **Zatrzymanie usług:**
+- **Stop the services:**
   ```bash
   docker compose down
   ```
-- **Restart pojedynczej usługi (np. po zmianie konfiguracji):**
+- **Restart a single service (e.g. after a configuration change):**
   ```bash
   docker compose restart rtorrent
   ```

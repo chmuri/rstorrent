@@ -186,6 +186,7 @@ fn summary_exposes_numbered_custom1_as_category() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let mut download = Download::from_metadata(metadata);

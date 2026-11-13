@@ -40,6 +40,7 @@ fn make_download(id: u64) -> Arc<RwLock<Download>> {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     Arc::new(RwLock::new(Download::from_metadata(metadata)))

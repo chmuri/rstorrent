@@ -7,7 +7,7 @@
 
 use std::collections::VecDeque;
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 
 /// Something the event loop has to act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +26,17 @@ pub enum AppEvent {
         /// New height in rows.
         rows: u16,
     },
+    /// A mouse event at `column` × `row`.
+    Mouse {
+        /// What the pointer did (press, release, scroll, drag).
+        kind: MouseEventKind,
+        /// Column under the pointer.
+        column: u16,
+        /// Row under the pointer.
+        row: u16,
+        /// Modifier keys held during the event.
+        modifiers: KeyModifiers,
+    },
 }
 
 impl AppEvent {
@@ -37,6 +48,16 @@ impl AppEvent {
     /// Builds a resize event.
     pub fn resize(cols: u16, rows: u16) -> Self {
         Self::Resize { cols, rows }
+    }
+
+    /// Builds a mouse event.
+    pub fn mouse(kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) -> Self {
+        Self::Mouse {
+            kind,
+            column,
+            row,
+            modifiers,
+        }
     }
 
     /// `true` for [`AppEvent::Resize`].

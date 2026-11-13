@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use lt_common::hash_string::HashString;
 use lt_common::object::Object;
 use lt_crypto::sha1::sha1_hash;
 use lt_net::addr::SocketAddress;
 
-use crate::bucket::DhtBucket;
+use crate::bucket::{DhtBucket, NUM_NODES};
 use crate::node::{is_persistable_address, DhtNode};
 use crate::tracker::DhtTracker;
 
@@ -15,6 +16,9 @@ pub const TIMEOUT_TRACKER_EVICT: u32 = 3600; // 1 hour
 pub const TIMEOUT_UPDATE: u32 = 15 * 60; // 15 minutes
 pub const TIMEOUT_REMOVE_NODE: u32 = 4 * 60 * 60; // 4 hours
 pub const TIMEOUT_PEER_ANNOUNCE: u32 = 30 * 60; // 30 minutes
+/// Announce-token validity window. Tokens are keyed by a time bucket derived
+/// from a random per-router secret, so they expire and cannot be forged.
+pub const TOKEN_WINDOW_SECS: u64 = 15 * 60; // 15 minutes
 
 #[derive(Clone, Debug, Default)]
 pub struct DhtStatistics {
@@ -45,13 +49,17 @@ impl DhtRouter {
 
         let initial_bucket = DhtBucket::new(begin, end);
 
+        let mut token_secret = [0u8; 20];
+        // A predictable secret would let any peer forge announce tokens.
+        getrandom::fill(&mut token_secret).expect("OS RNG unavailable for DHT token secret");
+
         Self {
             own_id,
             buckets: vec![initial_bucket],
             trackers: HashMap::new(),
             last_tracker_evict: 0,
             private_info_hashes: HashSet::new(),
-            token_secret: [0x5au8; 20],
+            token_secret,
         }
     }
 
@@ -104,6 +112,16 @@ impl DhtRouter {
 
         self.trackers.insert(*hash, DhtTracker::new());
         self.trackers.get_mut(hash)
+    }
+
+    /// BEP 51: returns up to `limit` stored info-hashes as a concatenated
+    /// 20-byte `samples` buffer plus the total number of stored info-hashes.
+    pub fn sample_infohashes(&self, limit: usize) -> (Vec<u8>, usize) {
+        let mut samples = Vec::new();
+        for hash in self.trackers.keys().take(limit) {
+            samples.extend_from_slice(hash.as_slice());
+        }
+        (samples, self.trackers.len())
     }
 
     pub fn evict_stale_trackers_at(&mut self, now: u32) {
@@ -211,11 +229,19 @@ impl DhtRouter {
         }
     }
 
-    pub fn get_closest_nodes(&self, id: &HashString) -> Vec<u8> {
-        let bucket = self.find_bucket_ref(id);
-        let mut buffer = Vec::new();
-        bucket.full_bucket(&mut buffer);
-        buffer
+    /// Returns the K closest nodes split into IPv4 (`nodes`) and IPv6
+    /// (`nodes6`) compact buffers (BEP 32), across the whole routing table.
+    pub fn get_closest_nodes(&self, id: &HashString) -> (Vec<u8>, Vec<u8>) {
+        let mut nodes = Vec::new();
+        let mut nodes6 = Vec::new();
+        for node in self.closest_nodes(id, NUM_NODES) {
+            if node.address.ip().map(|ip| ip.is_ipv6()).unwrap_or(false) {
+                node.store_compact(&mut nodes6);
+            } else {
+                node.store_compact(&mut nodes);
+            }
+        }
+        (nodes, nodes6)
     }
 
     /// Returns up to `max` known nodes ordered by XOR distance to `target`.
@@ -317,9 +343,23 @@ impl DhtRouter {
         before.saturating_sub(self.trackers.len())
     }
 
-    pub fn make_token(&self, sa: &SocketAddress) -> [u8; 8] {
+    fn current_token_window() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() / TOKEN_WINDOW_SECS)
+            .unwrap_or(0)
+    }
+
+    fn token_for_window(&self, sa: &SocketAddress, window: u64) -> [u8; 8] {
+        // Derive a per-window key from the random secret so a token captured in
+        // one window cannot be replayed in another.
+        let mut key_material = self.token_secret.to_vec();
+        key_material.extend_from_slice(&window.to_le_bytes());
+        let window_key = sha1_hash(&key_material);
+
         let mut data = Vec::new();
-        data.extend_from_slice(&self.token_secret);
+        data.extend_from_slice(&window_key);
+        data.extend_from_slice(&window.to_le_bytes());
         if let Some(ip) = sa.ip() {
             match ip {
                 std::net::IpAddr::V4(v4) => data.extend_from_slice(&v4.octets()),
@@ -332,12 +372,19 @@ impl DhtRouter {
         token
     }
 
+    pub fn make_token(&self, sa: &SocketAddress) -> [u8; 8] {
+        self.token_for_window(sa, Self::current_token_window())
+    }
+
     pub fn token_valid(&self, token: &[u8], sa: &SocketAddress) -> bool {
         if token.len() != 8 {
             return false;
         }
-        let expected = self.make_token(sa);
-        token == expected
+        let window = Self::current_token_window();
+        // Accept the current and the previous window so a token issued near a
+        // boundary remains valid for a full window.
+        token == self.token_for_window(sa, window)
+            || (window > 0 && token == self.token_for_window(sa, window - 1))
     }
 
     pub fn store_cache(&self) -> Object {
@@ -345,11 +392,8 @@ impl DhtRouter {
         for bucket in &self.buckets {
             for node in &bucket.nodes {
                 // Never persist bad nodes, and never store loopback/private/
-                // link-local addresses or non-IPv4 entries.
-                if !node.is_bad()
-                    && node.address.ip().map(|ip| ip.is_ipv4()).unwrap_or(false)
-                    && is_persistable_address(&node.address)
-                {
+                // link-local addresses (IPv4 and IPv6 alike).
+                if !node.is_bad() && is_persistable_address(&node.address) {
                     let mut node_map = node.store_cache();
                     node_map
                         .insert_key("id", Object::create_string(node.id.as_slice().to_vec()))
@@ -431,4 +475,30 @@ pub fn xor_distance(a: &HashString, b: &HashString) -> [u8; 20] {
         *byte = a.as_slice()[index] ^ b.as_slice()[index];
     }
     distance
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_infohashes_concatenates_tracker_keys_and_reports_total() {
+        let mut router = DhtRouter::new(HashString::new([1u8; 20]));
+        for byte in [2u8, 3, 4] {
+            let hash = HashString::new([byte; 20]);
+            assert!(router.get_tracker(&hash, true).is_some());
+        }
+
+        let (samples, num) = router.sample_infohashes(2);
+        assert_eq!(num, 3);
+        assert_eq!(samples.len(), 2 * 20);
+
+        let (all, num) = router.sample_infohashes(10);
+        assert_eq!(num, 3);
+        assert_eq!(all.len(), 3 * 20);
+
+        let (empty, num) = DhtRouter::new(HashString::new([9u8; 20])).sample_infohashes(20);
+        assert_eq!(num, 0);
+        assert!(empty.is_empty());
+    }
 }

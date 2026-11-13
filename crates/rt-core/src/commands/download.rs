@@ -898,20 +898,20 @@ pub fn register_download_commands(
         "Set download priority.",
     )?;
 
-    // Custom key/value storage per download
-    let custom_store: Arc<RwLock<HashMap<(lt_common::HashString, String), String>>> =
-        Arc::new(RwLock::new(HashMap::new()));
-
-    let cs_get = Arc::clone(&custom_store);
+    // Generic custom key/value storage lives on the download itself so the
+    // session writer persists it alongside the numbered `custom1..5` fields.
     let dl_custom_get = Arc::clone(&download_list);
     map.insert_func(
         "d.custom",
         move |target, obj| {
             let dl = get_download(target, &dl_custom_get)?;
-            let hash = *dl.read().unwrap().info_hash();
             let key = to_str(obj)?;
-            let store = cs_get.read().unwrap();
-            let val = store.get(&(hash, key)).cloned().unwrap_or_default();
+            let val = dl
+                .read()
+                .unwrap()
+                .custom_get(&key)
+                .unwrap_or_default()
+                .to_string();
             Ok(Object::from(val))
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
@@ -919,18 +919,14 @@ pub fn register_download_commands(
         "Get custom variable for download.",
     )?;
 
-    let cs_get_throw = Arc::clone(&custom_store);
     let dl_custom_throw = Arc::clone(&download_list);
     map.insert_func(
         "d.custom_throw",
         move |target, obj| {
             let dl = get_download(target, &dl_custom_throw)?;
-            let hash = *dl.read().unwrap().info_hash();
             let key = to_str(obj)?;
-            let store = cs_get_throw.read().unwrap();
-            store
-                .get(&(hash, key))
-                .cloned()
+            let value = dl.read().unwrap().custom_get(&key).map(str::to_string);
+            value
                 .map(Object::from)
                 .ok_or_else(|| RpcError::InputError("No such custom value.".into()))
         },
@@ -939,13 +935,11 @@ pub fn register_download_commands(
         "Get custom variable for download or throw.",
     )?;
 
-    let cs_set = Arc::clone(&custom_store);
     let dl_custom_set = Arc::clone(&download_list);
     map.insert_func(
         "d.custom.set",
         move |target, obj| {
             let dl = get_download(target, &dl_custom_set)?;
-            let hash = *dl.read().unwrap().info_hash();
             let list = obj
                 .as_list()
                 .map_err(|_| RpcError::InputError("Missing key argument.".into()))?;
@@ -957,8 +951,7 @@ pub fn register_download_commands(
             }
             let key = to_str(&list[0])?;
             let val = to_str(&list[1])?;
-            let mut store = cs_set.write().unwrap();
-            store.insert((hash, key), val);
+            dl.write().unwrap().custom_set(key, val);
             Ok(Object::create_empty())
         },
         FLAG_PUBLIC_RPC,
@@ -966,13 +959,11 @@ pub fn register_download_commands(
         "Set custom variable for download.",
     )?;
 
-    let cs_if_z = Arc::clone(&custom_store);
     let dl_custom_if_z = Arc::clone(&download_list);
     map.insert_func(
         "d.custom.if_z",
         move |target, obj| {
             let dl = get_download(target, &dl_custom_if_z)?;
-            let hash = *dl.read().unwrap().info_hash();
             let list = obj
                 .as_list()
                 .map_err(|_| RpcError::InputError("d.custom.if_z: Missing key argument.".into()))?;
@@ -992,12 +983,12 @@ pub fn register_download_commands(
                     "d.custom.if_z: Missing default argument.".into(),
                 ));
             }
-            let value = cs_if_z
+            let value = dl
                 .read()
                 .unwrap()
-                .get(&(hash, key))
+                .custom_get(&key)
                 .filter(|value| !value.is_empty())
-                .cloned();
+                .map(str::to_string);
             match value {
                 Some(value) => Ok(Object::from(value)),
                 None => Ok(list[1].clone()),
@@ -1008,7 +999,6 @@ pub fn register_download_commands(
         "Get custom variable, or a default when unset/empty.",
     )?;
 
-    let cs_keys = Arc::clone(&custom_store);
     let dl_custom_keys = Arc::clone(&download_list);
     map.insert_func(
         "d.custom.keys",
@@ -1019,14 +1009,8 @@ pub fn register_download_commands(
                 ));
             }
             let dl = get_download(target, &dl_custom_keys)?;
-            let hash = *dl.read().unwrap().info_hash();
-            let store = cs_keys.read().unwrap();
-            let mut keys: Vec<String> = Vec::new();
-            for key in store.keys() {
-                if key.0 == hash {
-                    keys.push(key.1.clone());
-                }
-            }
+            let guard = dl.read().unwrap();
+            let mut keys: Vec<String> = guard.custom_map().keys().cloned().collect();
             keys.sort();
             Ok(Object::create_list_with(
                 keys.into_iter()
@@ -1039,7 +1023,6 @@ pub fn register_download_commands(
         "List custom variable keys for download.",
     )?;
 
-    let cs_items = Arc::clone(&custom_store);
     let dl_custom_items = Arc::clone(&download_list);
     map.insert_func(
         "d.custom.items",
@@ -1050,14 +1033,11 @@ pub fn register_download_commands(
                 ));
             }
             let dl = get_download(target, &dl_custom_items)?;
-            let hash = *dl.read().unwrap().info_hash();
-            let store = cs_items.read().unwrap();
+            let guard = dl.read().unwrap();
             let mut items: std::collections::BTreeMap<Vec<u8>, Object> =
                 std::collections::BTreeMap::new();
-            for (key, value) in store.iter() {
-                if key.0 == hash {
-                    items.insert(key.1.clone().into_bytes(), Object::from(value.as_str()));
-                }
+            for (key, value) in guard.custom_map() {
+                items.insert(key.clone().into_bytes(), Object::from(value.as_str()));
             }
             Ok(Object::create_map_with(items))
         },
@@ -2848,8 +2828,10 @@ fn register_download_extended_commands(
         if statistics.is_empty() {
             return Object::from("");
         }
+        // `d.chunks_seen` is a hex byte-per-chunk string on the wire; clamp the
+        // internal u16 rarity to u8 so the legacy format is preserved.
         let counts: Vec<u8> = (0..statistics.len())
-            .map(|index| statistics.rarity(index))
+            .map(|index| statistics.rarity(index).min(u8::MAX as u16) as u8)
             .collect();
         Object::from(bytes_to_hex(&counts))
     })?;

@@ -148,6 +148,21 @@ impl ChunkSelector {
             || self.normal_priority.has(index)
     }
 
+    /// Collects up to `limit` missing, wanted piece indices in ascending
+    /// order. Used by the WebSeed source, which can serve any piece.
+    pub fn collect_missing(&self, limit: usize) -> Vec<u32> {
+        let mut out = Vec::new();
+        for idx in 0..self.size {
+            if out.len() >= limit {
+                break;
+            }
+            if self.is_wanted(idx as u32) {
+                out.push(idx as u32);
+            }
+        }
+        out
+    }
+
     pub fn received_have_chunk(
         &mut self,
         cache: &mut PartialQueue,
@@ -315,7 +330,7 @@ impl ChunkSelector {
                     common ^= 1u64 << (63 - lz);
 
                     if idx < self.size {
-                        let r = stats.rarity(idx) as u16;
+                        let r = stats.rarity(idx);
                         if r < min_rarity {
                             min_rarity = r;
                             candidates.clear();

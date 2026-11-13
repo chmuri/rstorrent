@@ -106,6 +106,15 @@ impl DownloadFactory {
                 .map_err(|e| Error::new(ErrorKind::InvalidData, format!("magnet error: {}", e)))?;
             let mut download = Download::from_metadata(metadata);
             download.set_magnet_uri(uri.clone());
+            for url in DownloadConstructor::magnet_web_seeds(uri) {
+                download.add_web_seed(url);
+            }
+            if let Some(hash) = DownloadConstructor::magnet_metadata_hash(uri) {
+                download.set_expected_metadata_hash(Some(hash));
+            }
+            if let Some(v2_hash) = DownloadConstructor::magnet_v2_hash(uri) {
+                download.set_expected_v2_hash(Some(v2_hash));
+            }
             return Ok(download);
         }
 

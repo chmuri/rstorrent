@@ -16,3 +16,4 @@ serde_json.workspace = true
 quick-xml.workspace = true
 base64.workspace = true
 mlua.workspace = true
+subtle = "2"

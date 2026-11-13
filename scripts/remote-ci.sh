@@ -21,17 +21,30 @@
 #   scripts/remote-ci.sh raw bash -lc '...'   # any command inside the container
 #
 # Environment overrides:
-#   RSTORRENT_CI_HOST   (default: root@192.0.2.1)
+#   RSTORRENT_CI_HOST   (default: root@builder.example.com)
 #   RSTORRENT_CI_BASE   (default: /opt/rstorrent-ci)
 #   RSTORRENT_CI_IMAGE  (default: rtorrent-ci:bookworm)
 #   RSTORRENT_CI_JOBS   (default: auto — uses all available CPUs)
-#   RSTORRENT_CI_MEMORY (default: 4g — 4 GB RAM container limit)
+#   RSTORRENT_CI_MEMORY (default: 6g — 6 GB RAM container limit)
 #
-# Escape hatch for a genuinely local run: `command cargo test` (the OpenCode
-# plugin only rewrites commands that start with `cargo`).
+# The builder host and sccache S3 credentials (AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY) come from the environment or the gitignored local
+# config scripts/remote-ci.local.env (copy scripts/remote-ci.local.env.example).
+# No credentials are stored in this repository.
+#
+# Escape hatch for a genuinely local run: `command cargo test`.
 set -euo pipefail
 
-HOST="${RSTORRENT_CI_HOST:-root@192.0.2.1}"
+# Local-only configuration (gitignored, never committed): copy
+# scripts/remote-ci.local.env.example to scripts/remote-ci.local.env and fill in
+# your builder host and sccache credentials.
+_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -f "$_repo_root/scripts/remote-ci.local.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$_repo_root/scripts/remote-ci.local.env"
+fi
+
+HOST="${RSTORRENT_CI_HOST:-root@builder.example.com}"
 BASE="${RSTORRENT_CI_BASE:-/opt/rstorrent-ci}"
 IMAGE="${RSTORRENT_CI_IMAGE:-rstorrent-ci:bookworm}"
 JOBS="${RSTORRENT_CI_JOBS:-auto}"
@@ -63,7 +76,11 @@ sync_tree() {
         --exclude='/docs/knowledge-base/' \
         --exclude='/repomix-output.xml' \
         --exclude='/cookies.txt' \
+        --exclude='/scripts/remote-ci.local.env' \
         --exclude='*.iso' \
+        --exclude='/fuzz/target/' \
+        --exclude='/fuzz/corpus/' \
+        --exclude='/fuzz/artifacts/' \
         ./ "$HOST:$SRC/"
 }
 
@@ -92,10 +109,10 @@ docker_prefix() {
         -e "CARGO_PROFILE_TEST_DEBUG=0"
         -e "RUSTC_WRAPPER=sccache"
         -e "SCCACHE_BUCKET=${SCCACHE_BUCKET:-sccache}"
-        -e "SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT:-http://192.0.2.1:9000}"
+        -e "SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT:-http://cache.example.com:9000}"
         -e "SCCACHE_S3_USE_SSL=false"
-        -e "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-***REMOVED***}"
-        -e "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-***REMOVED***}"
+        -e "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}"
+        -e "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}"
         -e "SCCACHE_REGION=${SCCACHE_REGION:-us-east-1}"
         -w /work
         "$IMAGE"
@@ -116,7 +133,17 @@ run_in_container() {
     done
     "${SSH[@]}" "mkdir -p '$SRC' '$BASE/rustup'"
     sync_tree
-    "${SSH[@]}" "$(docker_prefix)${quoted}"
+    # --rm (in docker_prefix) already removes the container on exit. After it
+    # finishes, prune only regenerable garbage so the docker loop device does
+    # not fill up: dangling (untagged) images and the build cache. Never use
+    # `image prune -a`/`system prune -a` (they delete the tagged builder image,
+    # which is idle between runs) or `volume prune` (warm cargo/target caches).
+    # The container's exit code is preserved across the cleanup.
+    "${SSH[@]}" "$(docker_prefix)${quoted}
+rc=\$?
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
+exit \$rc"
 }
 
 fetch_binaries() {
@@ -151,17 +178,17 @@ case "${1:-}" in
         if ! "${SSH[@]}" true 2>/dev/null; then
             echo "Remote builder ($HOST) is offline/unreachable." >&2
             echo "Local cargo: $(command -v cargo 2>/dev/null || echo 'not found') ($(cargo --version 2>/dev/null || echo 'n/a'))" >&2
-            if curl -s -m 2 -o /dev/null "http://builder.example.com:9000" 2>/dev/null; then
-                echo "Remote cache: reachable at builder.example.com:9000" >&2
+            if curl -s -m 2 -o /dev/null "${SCCACHE_ENDPOINT:-http://cache.example.com:9000}" 2>/dev/null; then
+                echo "Remote cache: reachable at ${SCCACHE_ENDPOINT:-http://cache.example.com:9000}" >&2
             else
-                echo "Remote cache: unreachable at builder.example.com:9000" >&2
+                echo "Remote cache: unreachable at ${SCCACHE_ENDPOINT:-http://cache.example.com:9000}" >&2
             fi
             exit 1
         fi
         "${SSH[@]}" "uname -sr; echo \"CPUs: \$(nproc)\"; free -h; df -h $(printf '%q' "$BASE") | tail -1; docker images $(printf '%q' "$IMAGE") --format '{{.Repository}}:{{.Tag}} {{.Size}}'"
         echo "Builder configuration: JOBS=$JOBS, MEMORY=$MEMORY"
-        echo "Checking RustFS S3 backend on builder.example.com:9000..."
-        "${SSH[@]}" "curl -s -o /dev/null -w 'RustFS port 9000 reachable (HTTP %{http_code})\n' http://builder.example.com:9000 || echo 'RustFS unreachable'"
+        echo "Checking RustFS S3 backend on ${SCCACHE_ENDPOINT:-http://cache.example.com:9000}..."
+        "${SSH[@]}" "curl -s -o /dev/null -w 'RustFS port 9000 reachable (HTTP %{http_code})\n' ${SCCACHE_ENDPOINT:-http://cache.example.com:9000} || echo 'RustFS unreachable'"
         exit 0
         ;;
     image)
@@ -170,7 +197,7 @@ case "${1:-}" in
             "${SSH[@]}" "mkdir -p $(printf '%q' "$BASE")"
             rsync -az "scripts/Dockerfile.builder" "$HOST:$BASE/Dockerfile"
         fi
-        "${SSH[@]}" "cd $(printf '%q' "$BASE") && docker build -t $(printf '%q' "$IMAGE") ."
+        "${SSH[@]}" "cd $(printf '%q' "$BASE") && docker build --build-arg AWS_ACCESS_KEY_ID=$(printf '%q' "${AWS_ACCESS_KEY_ID:-}") --build-arg AWS_SECRET_ACCESS_KEY=$(printf '%q' "${AWS_SECRET_ACCESS_KEY:-}") --build-arg SCCACHE_ENDPOINT=$(printf '%q' "${SCCACHE_ENDPOINT:-http://cache.example.com:9000}") -t $(printf '%q' "$IMAGE") ."
         exit 0
         ;;
     sync)
@@ -226,7 +253,7 @@ echo "==> cargo $* on $HOST ($IMAGE, jobs=${JOBS}, mem=${MEMORY})" >&2
 # Fallback: if remote builder is unreachable, run locally
 if ! "${SSH[@]}" true 2>/dev/null; then
     echo "==> Remote builder ($HOST) is unreachable. Falling back to local: cargo $*" >&2
-    if ! curl -s -m 2 -o /dev/null "http://builder.example.com:9000" 2>/dev/null; then
+    if ! curl -s -m 2 -o /dev/null "${SCCACHE_ENDPOINT:-http://cache.example.com:9000}" 2>/dev/null; then
         export RUSTC_WRAPPER=""
         export CARGO_BUILD_RUSTC_WRAPPER=""
     fi

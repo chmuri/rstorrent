@@ -14,9 +14,13 @@ pub mod proxy;
 pub mod resolver;
 pub mod socket_manager;
 pub mod throttle;
+pub mod throttle_async;
 pub mod utp;
 
-pub use addr::{AddressFamily, AddressList, SocketAddress, SocketAddressKey};
+pub use addr::{
+    learned_external_address, report_external_address, AddressFamily, AddressList, SocketAddress,
+    SocketAddressKey,
+};
 pub use config::{AddressDevice, EncryptionMode, ListenAddresses, NetworkConfig};
 pub use error::NetError;
 pub use fd::{fd_valid_flags, fd_valid_flags_raw, FdFlags};
@@ -25,12 +29,22 @@ pub use lsd::{
     create_lsd_socket, format_lsd_packet, parse_lsd_packet, LsdPacket, LSD_MULTICAST_IPV4, LSD_PORT,
 };
 pub use port_mapper::{
-    format_nat_pmp_request, format_upnp_soap_add_port_mapping,
-    format_upnp_soap_delete_port_mapping, format_upnp_ssdp_search, parse_nat_pmp_response,
-    try_map_nat_pmp, try_map_upnp, PortMappingProtocol, NAT_PMP_PORT,
+    discover_default_gateway, format_nat_pmp_request, format_upnp_soap_add_port_mapping,
+    format_upnp_soap_delete_port_mapping, format_upnp_ssdp_search, parse_default_gateway,
+    parse_nat_pmp_response, try_delete_nat_pmp, try_delete_upnp, try_map_nat_pmp, try_map_upnp,
+    PortMappingProtocol, NAT_PMP_PORT,
 };
-pub use proxy::{HttpProxy, Socks5Proxy};
-pub use resolver::{DnsCache, DnsResolver};
-pub use socket_manager::{SocketCategory, SocketInfo, SocketManager};
+pub use proxy::{
+    current_proxy, set_shared_proxy, shared_proxy_config, HttpProxy, ProxyConfig, ProxyKind,
+    Socks5Proxy,
+};
+pub use resolver::{shared_dns_resolver, DnsCache, DnsResolver};
+pub use socket_manager::{
+    shared_socket_manager, SocketCategory, SocketGuard, SocketInfo, SocketManager,
+};
 pub use throttle::{Throttle, ThrottleNode};
+pub use throttle_async::{
+    throttle_registry, NamedThrottle, SharedThrottle, ThrottleRegistry, ThrottledReader,
+    ThrottledWriter,
+};
 pub use utp::{LedbatCongestion, PacketType, UtpPacket, UtpSocket, UtpStream};

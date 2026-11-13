@@ -46,6 +46,7 @@ fn recheck_rebuilds_bitfield_from_disk() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let root = std::env::temp_dir().join(format!("rtorrent_engine_recheck_{}", std::process::id()));
@@ -118,6 +119,7 @@ fn three_piece_metadata() -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 

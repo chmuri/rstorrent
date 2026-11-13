@@ -1187,6 +1187,7 @@ fn test_sample_torrent_details_does_not_deadlock() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
     let dl = Arc::new(RwLock::new(Download::new(
         lt_engine::download::Download::new(metadata),

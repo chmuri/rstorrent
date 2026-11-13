@@ -34,6 +34,7 @@ fn make_multi_file_download() -> Arc<RwLock<Download>> {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let engine = lt_engine::download::Download::new(metadata);
@@ -187,6 +188,7 @@ fn test_zero_length_file_is_not_prioritizable() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
     let download = Arc::new(RwLock::new(Download::new(
         lt_engine::download::Download::new(metadata),

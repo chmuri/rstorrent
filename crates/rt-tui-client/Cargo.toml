@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 description = "Standalone gRPC TUI client for rstorrent (ratatui + tonic)"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rstorrent-tui"
 path = "src/main.rs"

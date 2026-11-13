@@ -92,3 +92,108 @@ jobs:
         run: brew install protobuf
       - name: Build release binary
         run: cargo build --release -p rstorrent
+
+  bench:
+    name: criterion benches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-bench"
+          cache-all-crates: "true"
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Restore criterion baseline
+        uses: actions/cache@v4
+        with:
+          path: target/criterion
+          key: criterion-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            criterion-${{ runner.os }}-
+      - name: Smoke-test benches (must execute)
+        run: cargo bench -p lt-engine --bench hot_paths -- --test
+      - name: Measure benches (regression vs cached baseline)
+        run: cargo bench -p lt-engine --bench hot_paths -- --save-baseline ci
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: target/criterion
+          if-no-files-found: ignore
+
+  coverage:
+    name: coverage (rt-grpc + lt-crypto)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-coverage"
+          cache-all-crates: "true"
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # Generated protobuf code (rt-grpc/src/proto.rs) is excluded: it is not
+      # hand-written and its ~1371 lines would otherwise mask real coverage.
+      # The 75% line floor is a regression guard set just below the measured
+      # baseline (~79%) for the hand-written rt-grpc + lt-crypto surface.
+      - name: Generate coverage (threshold gate)
+        run: >
+          cargo llvm-cov -p rt-grpc -p lt-crypto
+          --ignore-filename-regex 'proto\.rs'
+          --fail-under-lines 75
+          --lcov --output-path lcov.info
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-report
+          path: lcov.info
+          if-no-files-found: ignore
+      - name: Upload to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  fuzz:
+    name: fuzz (cargo-fuzz, nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-fuzz"
+          cache-all-crates: "true"
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Build fuzz targets (AddressSanitizer)
+        run: cargo +nightly fuzz build
+      # Short budget: 20 s per target, 10 s per-input timeout. A crash fails CI
+      # (the parsers must never panic on malformed input). Longer runs live in
+      # the nightly fuzz-nightly.yml workflow.
+      - name: Smoke-fuzz each target
+        run: |
+          for target in bencode message magnet dht_krpc utp_packet torrent_resume; do
+            cargo +nightly fuzz run "$target" -- -max_total_time=20 -timeout=10
+          done

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use ratatui::style::Color;
+use rt_tui::theme::ThemeId;
 use serde::Deserialize;
 
 /// Directory the config file lives in, relative to the config root.
@@ -21,6 +22,8 @@ pub struct TuiConfig {
     pub refresh_ms: u64,
     /// Throttle key layout: `qwerty`, `azerty`, `qwertz` or `dvorak`.
     pub keys_layout: String,
+    /// Named palette applied before the colour overrides below.
+    pub theme_name: Option<String>,
     /// Colour overrides.
     pub theme: ThemeConfig,
 }
@@ -31,6 +34,7 @@ impl Default for TuiConfig {
             endpoint: None,
             refresh_ms: crate::cli::DEFAULT_REFRESH_MS,
             keys_layout: "qwerty".to_string(),
+            theme_name: None,
             theme: ThemeConfig::default(),
         }
     }
@@ -51,8 +55,22 @@ impl TuiConfig {
     }
 
     /// Resolves the configured colours into a [`Theme`].
+    ///
+    /// A named [`theme_name`](Self::theme_name) supplies the base palette; the
+    /// `[theme]` overrides are applied on top of it.
     pub fn theme(&self) -> Theme {
-        Theme::from_config(&self.theme)
+        let base = self
+            .theme_name
+            .as_deref()
+            .and_then(theme_id_from_name)
+            .map(Theme::from_theme_id)
+            .unwrap_or_default();
+        Theme::from_config_with_base(&self.theme, base)
+    }
+
+    /// Resolves the colour overrides on top of an explicit palette.
+    pub fn theme_with_id(&self, id: ThemeId) -> Theme {
+        Theme::from_config_with_base(&self.theme, Theme::from_theme_id(id))
     }
 }
 
@@ -102,15 +120,50 @@ impl Default for Theme {
 impl Theme {
     /// Resolves the configured colours, keeping the defaults for unset entries.
     pub fn from_config(config: &ThemeConfig) -> Self {
-        let default = Self::default();
+        Self::from_config_with_base(config, Self::default())
+    }
 
+    /// Resolves the configured colours on top of `base`.
+    pub fn from_config_with_base(config: &ThemeConfig, base: Self) -> Self {
         Self {
-            background: resolve(&config.background, default.background),
-            foreground: resolve(&config.foreground, default.foreground),
-            highlight: resolve(&config.highlight, default.highlight),
-            progress_bar: resolve(&config.progress_bar, default.progress_bar),
-            error: resolve(&config.error, default.error),
+            background: resolve(&config.background, base.background),
+            foreground: resolve(&config.foreground, base.foreground),
+            highlight: resolve(&config.highlight, base.highlight),
+            progress_bar: resolve(&config.progress_bar, base.progress_bar),
+            error: resolve(&config.error, base.error),
         }
+    }
+
+    /// Maps a named `rt-tui` palette onto the client's five colours.
+    pub fn from_theme_id(id: ThemeId) -> Self {
+        let palette = rt_tui::theme::Theme::by_id(id);
+        Self {
+            background: palette.background,
+            foreground: palette.foreground,
+            highlight: palette.accent,
+            progress_bar: palette.download,
+            error: palette.error,
+        }
+    }
+}
+
+/// Parses a palette name (case-insensitive, ignoring spaces and dashes).
+pub fn theme_id_from_name(name: &str) -> Option<ThemeId> {
+    let normalized: String = name
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+
+    match normalized.as_str() {
+        "tokyonight" | "tokyo" | "default" => Some(ThemeId::TokyoNight),
+        "catppuccinmocha" | "catppuccin" | "mocha" => Some(ThemeId::CatppuccinMocha),
+        "dracula" => Some(ThemeId::Dracula),
+        "nord" => Some(ThemeId::Nord),
+        "monokaipro" | "monokai" => Some(ThemeId::MonokaiPro),
+        "asciiplain" | "ascii" | "plain" => Some(ThemeId::AsciiPlain),
+        _ => None,
     }
 }
 

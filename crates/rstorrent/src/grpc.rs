@@ -35,10 +35,13 @@ pub fn register_grpc_commands(
             let addr_input = extract_string_param(obj)
                 .map_err(|_| RpcError::InputError("Invalid gRPC port parameter".into()))?;
 
+            // Default to loopback so a bare port does not expose the
+            // unauthenticated gRPC API on every interface. Callers can still
+            // request a wildcard bind explicitly with `0.0.0.0:<port>`.
             let addr_str = if addr_input.starts_with(':') {
-                format!("0.0.0.0{}", addr_input)
+                format!("127.0.0.1{}", addr_input)
             } else if addr_input.parse::<u16>().is_ok() {
-                format!("0.0.0.0:{}", addr_input)
+                format!("127.0.0.1:{}", addr_input)
             } else {
                 addr_input
             };

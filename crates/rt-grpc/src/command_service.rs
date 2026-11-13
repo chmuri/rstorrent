@@ -3,6 +3,7 @@ use crate::proto::command_service_server::CommandService;
 use crate::proto::*;
 use crate::server::GrpcContext;
 use rt_rpc::Target;
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct CommandServiceImpl {
@@ -21,6 +22,11 @@ impl CommandService for CommandServiceImpl {
         &self,
         request: Request<CommandRequest>,
     ) -> Result<Response<CommandResponse>, Status> {
+        let trusted = request
+            .extensions()
+            .get::<crate::security::CallerTrusted>()
+            .map(|t| t.0)
+            .unwrap_or(false);
         let req = request.into_inner();
         let target = if req.target_hash.is_empty() {
             Target::None
@@ -46,25 +52,41 @@ impl CommandService for CommandServiceImpl {
             lt_common::Object::create_list_with(list)
         };
 
-        let map = self.ctx.command_map.read().unwrap();
-        match map.call_command(&req.command, &arg, &target, req.trusted) {
-            Ok(result_obj) => Ok(Response::new(CommandResponse {
-                success: true,
-                result: Some(object_to_proto(&result_obj)),
-                error_message: String::new(),
-            })),
-            Err(e) => Ok(Response::new(CommandResponse {
-                success: false,
-                result: None,
-                error_message: e.to_string(),
-            })),
-        }
+        // Command execution can block (fsync on pause/close, file I/O), so run
+        // it on a blocking worker instead of the Tokio reactor.
+        let map = Arc::clone(&self.ctx.command_map);
+        let command = req.command;
+        let response = tokio::task::spawn_blocking(move || {
+            let map = map.read().unwrap();
+            // Trust is the server-decided connection level (local Unix socket or
+            // an authenticated TCP peer); never taken from the client payload.
+            match map.call_command(&command, &arg, &target, trusted) {
+                Ok(result_obj) => CommandResponse {
+                    success: true,
+                    result: Some(object_to_proto(&result_obj)),
+                    error_message: String::new(),
+                },
+                Err(e) => CommandResponse {
+                    success: false,
+                    result: None,
+                    error_message: e.to_string(),
+                },
+            }
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Command task failed: {}", e)))?;
+        Ok(Response::new(response))
     }
 
     async fn multicall(
         &self,
         request: Request<MulticallRequest>,
     ) -> Result<Response<MulticallResponse>, Status> {
+        let trusted = request
+            .extensions()
+            .get::<crate::security::CallerTrusted>()
+            .map(|t| t.0)
+            .unwrap_or(false);
         let req = request.into_inner();
         let mut results = Vec::with_capacity(req.calls.len());
         for call in req.calls {
@@ -96,23 +118,26 @@ impl CommandService for CommandServiceImpl {
                 lt_common::Object::create_list_with(list)
             };
 
-            let map = self.ctx.command_map.read().unwrap();
-            match map.call_command(&call.command, &arg, &target, call.trusted) {
-                Ok(res) => {
-                    results.push(CommandResponse {
+            let map = Arc::clone(&self.ctx.command_map);
+            let command = call.command;
+            let response = tokio::task::spawn_blocking(move || {
+                let map = map.read().unwrap();
+                match map.call_command(&command, &arg, &target, trusted) {
+                    Ok(res) => CommandResponse {
                         success: true,
                         result: Some(object_to_proto(&res)),
                         error_message: String::new(),
-                    });
-                }
-                Err(e) => {
-                    results.push(CommandResponse {
+                    },
+                    Err(e) => CommandResponse {
                         success: false,
                         result: None,
                         error_message: e.to_string(),
-                    });
+                    },
                 }
-            }
+            })
+            .await
+            .map_err(|e| Status::internal(format!("Command task failed: {}", e)))?;
+            results.push(response);
         }
 
         Ok(Response::new(MulticallResponse { results }))

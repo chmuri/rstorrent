@@ -14,7 +14,6 @@ pub mod connection;
 pub mod encryption;
 pub mod extensions;
 pub mod handshake;
-pub mod handshake_manager;
 pub mod initial_seed;
 pub mod message;
 pub mod metadata;
@@ -35,7 +34,6 @@ pub use extensions::{
 pub use handshake::{
     HandshakeError, HandshakeMessage, BT_HANDSHAKE_SIZE, BT_PROTOCOL_LEN, BT_PROTOCOL_STR,
 };
-pub use handshake_manager::{HandshakeManager, HandshakePhase, HandshakeSession};
 pub use initial_seed::InitialSeeding;
 pub use message::{MessageError, PeerMessage};
 pub use metadata::{MetadataDownload, MetadataError, MAX_METADATA_SIZE, METADATA_PIECE_SIZE};

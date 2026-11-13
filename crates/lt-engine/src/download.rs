@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
+use bytes::{Bytes, BytesMut};
 use lt_common::bitfield::Bitfield;
 use lt_common::collections::PartialQueue;
-use lt_common::hash_string::HashString;
+use lt_common::hash_string::{Hash256, HashString};
 use lt_common::rate::Rate;
 use lt_crypto::sha1::sha1_hash;
 use lt_protocol::connection::PeerConnection;
@@ -29,7 +30,9 @@ use lt_storage::piece::Piece;
 use lt_storage::resume::{
     ResumeData, MTIME_DOWNLOADING, MTIME_RECHECK, MTIME_SKIPPED, MTIME_UNCHECKED,
 };
-use lt_storage::{StorageError, TargetFileInfo};
+use lt_storage::{
+    hash_v2_files, v2_expected_piece_root, StorageError, TargetFileInfo, V2FileHash, V2Layout,
+};
 use lt_tracker::controller::TrackerController;
 use lt_tracker::list::TrackerList;
 use thiserror::Error;
@@ -37,8 +40,100 @@ use thiserror::Error;
 use crate::chunk_selector::ChunkSelector;
 use crate::chunk_statistics::ChunkStatistics;
 use crate::client_config::ClientConfig;
-use crate::constructor::{DownloadConstructor, TorrentMetadata};
+use crate::constructor::{DownloadConstructor, TorrentMetadata, TorrentV2};
 use crate::delegator::Delegator;
+use crate::web_seed::{WebSeedFile, WebSeedPlan};
+
+/// Build the per-file piece-aligned layout for a v2-only torrent, if any.
+///
+/// v1 and hybrid torrents keep the contiguous v1 byte layout and return `None`.
+fn v2_layout_for(metadata: &TorrentMetadata) -> Option<V2Layout> {
+    let v2 = metadata.v2.as_ref()?;
+    if v2.is_hybrid {
+        return None;
+    }
+    let files: Vec<(std::path::PathBuf, u64)> = v2
+        .files
+        .iter()
+        .map(|f| {
+            (
+                std::path::PathBuf::from(f.path.as_string().trim_start_matches('/')),
+                f.length,
+            )
+        })
+        .collect();
+    V2Layout::new(&files, metadata.piece_length).ok()
+}
+
+/// Per-file expected merkle data, parallel to [`V2Layout::files`].
+fn v2_file_hashes(v2: &TorrentV2) -> Vec<V2FileHash<'_>> {
+    v2.files
+        .iter()
+        .map(|f| {
+            let layers = v2
+                .piece_layers
+                .iter()
+                .find(|pl| Some(pl.pieces_root) == f.pieces_root)
+                .map(|pl| pl.layers.as_slice())
+                .unwrap_or(&[]);
+            V2FileHash {
+                pieces_root: f.pieces_root,
+                piece_layers: layers,
+            }
+        })
+        .collect()
+}
+
+/// Parameters needed to verify a v2 piece off the reactor thread.
+///
+/// Collected under the download lock so the merkle hashing can run on a
+/// blocking pool without holding the lock.
+#[derive(Clone, Debug)]
+pub struct V2PieceCheck {
+    pub piece_length: usize,
+    pub single_piece_file: bool,
+    pub expected_root: Option<[u8; 32]>,
+}
+
+/// Parameters needed to fsync a download's target files off the reactor.
+///
+/// Collected under the download lock so the (potentially slow) `sync_files`
+/// can run on a blocking pool without holding the lock.
+#[derive(Clone, Debug)]
+pub struct FileSync {
+    pub save_directory: PathBuf,
+    pub target_files: Arc<Vec<TargetFileInfo>>,
+}
+
+impl FileSync {
+    /// Best-effort fsync of every target file; errors are ignored.
+    pub fn run(&self) {
+        let _ = lt_storage::writer::sync_files(&self.save_directory, &self.target_files);
+    }
+}
+
+/// Build the storage target files for a torrent.
+///
+/// v2-only torrents use the per-file piece-aligned layout (BEP52); v1 and
+/// hybrid torrents keep the contiguous byte offsets parsed from the info
+/// dictionary. The piece-aligned offsets let the v1 piece-segment storage
+/// machinery be reused unchanged for v2.
+fn build_target_files(metadata: &TorrentMetadata) -> Vec<TargetFileInfo> {
+    if let Some(layout) = v2_layout_for(metadata) {
+        return layout.target_files();
+    }
+    metadata
+        .files
+        .iter()
+        .map(|f| TargetFileInfo {
+            // Torrent paths are stored as "/dir/file"; strip the leading
+            // slash so they remain relative to the save directory.
+            path: std::path::PathBuf::from(f.path.as_string().trim_start_matches('/')),
+            length: f.length,
+            offset: f.offset,
+        })
+        .collect()
+}
 
 /// Lifecycle state of an engine download.
 ///
@@ -212,7 +307,9 @@ pub struct Download {
     connection_list: ConnectionList,
     tracker_controller: TrackerController,
     peer_caches: HashMap<usize, PartialQueue>,
-    piece_data_cache: HashMap<u32, Vec<u8>>,
+    piece_data_cache: lru::LruCache<u32, BytesMut>,
+    /// Running total of the logical bytes (`len()`) held in `piece_data_cache`.
+    piece_data_cache_bytes: usize,
     peer_rate_ewma: rustc_hash::FxHashMap<HashString, f64>,
 
     rate_up: Rate,
@@ -253,6 +350,9 @@ pub struct Download {
     pending_hash_pieces: Vec<u32>,
     chunks_hashed: Arc<AtomicU32>,
     web_seeds: Vec<String>,
+    expected_metadata_hash: Option<HashString>,
+    expected_v2_hash: Option<Hash256>,
+    throttle_name: String,
 }
 
 struct PendingDiskWrite {
@@ -262,7 +362,16 @@ struct PendingDiskWrite {
 
 struct QueuedDiskWrite {
     piece_index: u32,
-    data: Vec<u8>,
+    data: Bytes,
+}
+
+/// Returns a partially assembled piece buffer to the global block pool when it
+/// is a pooled-size allocation. Oversized piece buffers are dropped instead so
+/// the 16 KiB pool is not polluted with large allocations.
+fn release_piece_buffer(buf: BytesMut) {
+    if buf.capacity() <= lt_protocol::DEFAULT_BLOCK_CAPACITY {
+        lt_protocol::BlockPool::global().release(buf);
+    }
 }
 
 struct PendingDiskHash {
@@ -320,19 +429,8 @@ impl Download {
         let metadata_is_metadata = metadata.is_meta_download;
         let metadata_info_hash = metadata.info_hash;
 
-        let target_files: Arc<Vec<lt_storage::TargetFileInfo>> = Arc::new(
-            metadata
-                .files
-                .iter()
-                .map(|f| lt_storage::TargetFileInfo {
-                    // Torrent paths are stored as "/dir/file"; strip the leading
-                    // slash so they remain relative to the save directory.
-                    path: std::path::PathBuf::from(f.path.as_string().trim_start_matches('/')),
-                    length: f.length,
-                    offset: f.offset,
-                })
-                .collect(),
-        );
+        let target_files: Arc<Vec<lt_storage::TargetFileInfo>> =
+            Arc::new(build_target_files(&metadata));
 
         let now = unix_now();
         Self {
@@ -355,7 +453,8 @@ impl Download {
             connection_list,
             tracker_controller,
             peer_caches: HashMap::new(),
-            piece_data_cache: HashMap::new(),
+            piece_data_cache: lru::LruCache::unbounded(),
+            piece_data_cache_bytes: 0,
             peer_rate_ewma: rustc_hash::FxHashMap::default(),
 
             rate_up: Rate::new(20),
@@ -390,6 +489,9 @@ impl Download {
             pending_hash_pieces: Vec::new(),
             chunks_hashed: Arc::new(AtomicU32::new(0)),
             web_seeds: Vec::new(),
+            expected_metadata_hash: None,
+            expected_v2_hash: None,
+            throttle_name: String::new(),
         }
     }
 
@@ -419,6 +521,126 @@ impl Download {
     /// Adds a WebSeed mirror URL.
     pub fn add_web_seed(&mut self, url: impl Into<String>) {
         self.web_seeds.push(url.into());
+    }
+
+    /// Reserves up to `limit` missing pieces for HTTP seeding (BEP 19/17) and
+    /// returns the mirror plan needed to fetch them.
+    ///
+    /// WebSeeds act as a fallback source: they are only used while no peers are
+    /// connected, the download is actively downloading, and no hash check owns
+    /// the files. Reserved pieces are marked in-use so peers that connect later
+    /// do not double-request them; release them with [`release_web_seed_piece`]
+    /// if a fetch fails.
+    pub fn reserve_web_seed_pieces(&mut self, limit: usize) -> Option<(WebSeedPlan, Vec<u32>)> {
+        if self.web_seeds.is_empty()
+            || !self.is_active()
+            || self.is_done()
+            || self.is_initial_seeding()
+            || self.verification_owns_data()
+            || self.connection_list().iter().count() > 0
+        {
+            return None;
+        }
+        let meta = &self.metadata;
+        if meta.is_meta_download || meta.num_pieces == 0 || meta.piece_length < 1024 {
+            return None;
+        }
+        if meta.is_multi_file && meta.files.is_empty() {
+            return None;
+        }
+        let plan = WebSeedPlan {
+            seeds: self.web_seeds.clone(),
+            piece_length: meta.piece_length as u64,
+            num_pieces: meta.num_pieces as u32,
+            total_size: meta.total_size,
+            is_multi_file: meta.is_multi_file,
+            files: meta
+                .files
+                .iter()
+                .map(|f| WebSeedFile {
+                    url_path: f.path.as_string(),
+                    offset: f.offset,
+                    length: f.length,
+                })
+                .collect(),
+        };
+        let pieces = self.chunk_selector.collect_missing(limit);
+        if pieces.is_empty() {
+            return None;
+        }
+        for &piece in &pieces {
+            self.chunk_selector.using_index(piece);
+        }
+        Some((plan, pieces))
+    }
+
+    /// Returns a reserved WebSeed piece to the missing pool after a failed fetch.
+    pub fn release_web_seed_piece(&mut self, piece_index: u32) {
+        self.chunk_selector.not_using_index(piece_index);
+    }
+
+    /// Verifies and persists a piece fetched from a WebSeed mirror.
+    ///
+    /// Synchronous convenience wrapper for tests and sync callers: it hashes
+    /// inline under the download lock. The reactor path uses
+    /// [`Download::receive_web_seed_piece_prehashed`] so the hashing runs off
+    /// the reactor thread.
+    pub fn receive_web_seed_piece(
+        &mut self,
+        piece_index: u32,
+        data: Vec<u8>,
+    ) -> Result<bool, String> {
+        if self.verification_owns_data() {
+            self.chunk_selector.not_using_index(piece_index);
+            return Ok(false);
+        }
+        let computed_hash = sha1_hash(&data);
+        let computed_v2_root = self.v2_piece_check(piece_index)?.map(|check| {
+            lt_crypto::merkle::piece_root(&data, check.piece_length, check.single_piece_file)
+        });
+        self.complete_pending_piece(
+            piece_index,
+            Bytes::from(data),
+            computed_hash,
+            computed_v2_root,
+        )
+    }
+
+    /// Completes a WebSeed piece whose hashes were computed off the reactor
+    /// thread. Same ownership guard as [`Download::receive_web_seed_piece`].
+    pub fn receive_web_seed_piece_prehashed(
+        &mut self,
+        piece_index: u32,
+        data: Vec<u8>,
+        computed_hash: [u8; 20],
+        computed_v2_root: Option<[u8; 32]>,
+    ) -> Result<bool, String> {
+        if self.verification_owns_data() {
+            self.chunk_selector.not_using_index(piece_index);
+            return Ok(false);
+        }
+        self.complete_pending_piece(
+            piece_index,
+            Bytes::from(data),
+            computed_hash,
+            computed_v2_root,
+        )
+    }
+
+    /// Sets the expected SHA-1 of the bencoded info dictionary (magnet `btms`).
+    /// When set, [`Download::apply_metadata_bytes`] rejects metadata whose hash
+    /// does not match.
+    pub fn set_expected_metadata_hash(&mut self, hash: Option<HashString>) {
+        self.expected_metadata_hash = hash;
+    }
+
+    /// Sets the full BEP52 v2 info-hash (magnet `btmh`) used to verify metadata
+    /// received over `ut_metadata` with SHA-256 instead of SHA-1.
+    pub fn set_expected_v2_hash(&mut self, hash: Option<Hash256>) {
+        self.expected_v2_hash = hash;
+        if let Some(metadata) = &mut self.metadata_download {
+            metadata.set_v2_hash(hash);
+        }
     }
 
     /// Number of pieces verified but not yet durably written by the worker.
@@ -1213,6 +1435,17 @@ impl Download {
         &mut self.client_config
     }
 
+    /// Name of the per-torrent throttle group this download belongs to. Empty
+    /// means only the global limits apply. Peer streams read this to pick the
+    /// shared throttle levels they are paced against.
+    pub fn throttle_name(&self) -> &str {
+        &self.throttle_name
+    }
+
+    pub fn set_throttle_name(&mut self, name: String) {
+        self.throttle_name = name;
+    }
+
     pub fn is_metadata_download(&self) -> bool {
         self.metadata.is_meta_download
     }
@@ -1286,17 +1519,8 @@ impl Download {
         chunk_list.set_manager(chunk_manager);
         chunk_list.resize(num_pieces);
 
-        let target_files: Arc<Vec<lt_storage::TargetFileInfo>> = Arc::new(
-            metadata
-                .files
-                .iter()
-                .map(|file| lt_storage::TargetFileInfo {
-                    path: std::path::PathBuf::from(file.path.as_string().trim_start_matches('/')),
-                    length: file.length,
-                    offset: file.offset,
-                })
-                .collect(),
-        );
+        let target_files: Arc<Vec<lt_storage::TargetFileInfo>> =
+            Arc::new(build_target_files(&metadata));
 
         let mut tracker_list = TrackerList::new();
         for (group_index, group) in metadata.announce_list.iter().enumerate() {
@@ -1353,6 +1577,7 @@ impl Download {
         }
 
         self.piece_data_cache.clear();
+        self.piece_data_cache_bytes = 0;
         self.pending_writes.clear();
         self.queued_writes.clear();
         self.peer_caches.clear();
@@ -1393,6 +1618,12 @@ impl Download {
         announce: Option<String>,
         announce_list: Vec<Vec<String>>,
     ) -> Result<(), String> {
+        if let Some(expected) = self.expected_metadata_hash {
+            if HashString::new(sha1_hash(info_bytes)) != expected {
+                return Err("metadata hash does not match magnet btms".into());
+            }
+        }
+
         let metadata =
             DownloadConstructor::from_info_bytes(info_bytes, info_hash, announce, announce_list)
                 .map_err(|err| err.to_string())?;
@@ -1713,7 +1944,9 @@ impl Download {
             return Err("download has no save directory".to_string());
         }
 
-        if let Some(cached) = self.piece_data_cache.get(&index) {
+        // `peek` instead of `get`: this read path is `&self`, so serving an
+        // upload does not refresh the piece's LRU recency.
+        if let Some(cached) = self.piece_data_cache.peek(&index) {
             if cached.len() >= end as usize {
                 let mut out = vec![0u8; length as usize];
                 out.copy_from_slice(&cached[begin as usize..end as usize]);
@@ -1990,21 +2223,45 @@ impl Download {
         Ok(())
     }
 
-    /// Pauses an active download. Idempotent.
+    /// Pauses an active download, syncing target files inline. Idempotent.
+    ///
+    /// Callers sharing the download lock with the network reactor should use
+    /// [`Self::pause_deferred`] and run the returned [`FileSync`] outside the
+    /// lock instead.
     pub fn pause(&mut self) {
+        if let Some(sync) = self.pause_deferred() {
+            sync.run();
+        }
+    }
+
+    /// Pauses an active download, returning the file-sync work instead of
+    /// running it inline. Idempotent.
+    ///
+    /// The pause sync is best-effort: its result is ignored and it does not
+    /// clear `unsynced_pieces`, so nothing observable depends on it finishing
+    /// before the pause transition. Callers may therefore run the returned
+    /// [`FileSync`] after releasing the download lock (resume rechecks and
+    /// close/shutdown flushes still guarantee durability).
+    pub fn pause_deferred(&mut self) -> Option<FileSync> {
         if !self.state.is_active() {
-            return;
+            return None;
         }
         self.initial_seeding = None;
 
-        if !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty() {
-            let _ = lt_storage::writer::sync_files(&self.save_directory, &self.target_files);
-        }
+        let sync = if !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty() {
+            Some(FileSync {
+                save_directory: self.save_directory.clone(),
+                target_files: Arc::clone(&self.target_files),
+            })
+        } else {
+            None
+        };
 
         self.tracker_controller.send_stop_event();
         self.tracker_controller.disable();
         self.clear_peers();
         self.transition_to(DownloadState::Paused);
+        sync
     }
 
     /// Resumes a paused download. Idempotent.
@@ -2030,6 +2287,11 @@ impl Download {
         }
         self.tracker_controller.disable();
 
+        // Unlike pause, close must finish flushing before it returns, and the
+        // drain needs exclusive engine state: the write path has no state
+        // guard, so live peer sessions can still submit writes until the lock
+        // is released. Moving this off-lock requires a write-quiesce protocol
+        // first; until then the blocking flush/sync stays under the lock.
         if !self.pending_writes.is_empty() || !self.queued_writes.is_empty() {
             let _ = self.flush_disk();
         }
@@ -2038,6 +2300,7 @@ impl Download {
         }
         self.clear_hash_check_queue();
         self.piece_data_cache.clear();
+        self.piece_data_cache_bytes = 0;
         self.initial_seeding = None;
         self.clear_peers();
 
@@ -2055,6 +2318,8 @@ impl Download {
     pub fn close_directly(&mut self) -> Result<(), String> {
         self.tracker_controller.disable();
 
+        // Same durability constraint as `close`: the flush/sync must complete
+        // under the lock before return (see the comment there).
         if !self.pending_writes.is_empty() || !self.queued_writes.is_empty() {
             let _ = self.flush_disk();
         }
@@ -2063,6 +2328,7 @@ impl Download {
         }
         self.clear_hash_check_queue();
         self.piece_data_cache.clear();
+        self.piece_data_cache_bytes = 0;
         self.clear_peers();
 
         if !self.state.is_closed() {
@@ -2081,6 +2347,7 @@ impl Download {
 
         self.clear_peers();
         self.piece_data_cache.clear();
+        self.piece_data_cache_bytes = 0;
         self.initial_seeding = None;
         self.discovered_peers.clear();
         self.pending_writes.clear();
@@ -2620,8 +2887,14 @@ impl Download {
         let piece_len = self.metadata.piece_length;
         let total_size = self.metadata.total_size;
         let num_pieces = self.metadata.num_pieces;
+        let v2_layout = v2_layout_for(&self.metadata);
 
         let chunk_size_fn = move |idx: u32| -> u32 {
+            if let Some(layout) = &v2_layout {
+                if let Some(segment) = layout.piece_segment(idx as u64) {
+                    return segment.data_len as u32;
+                }
+            }
             if (idx as usize) + 1 == num_pieces && total_size > 0 {
                 let rem = total_size % (piece_len as u64);
                 if rem != 0 {
@@ -2883,37 +3156,88 @@ impl Download {
         self.finish_recheck(prepared, result)
     }
 
+    /// Synchronous convenience wrapper: buffer the block, hash a completed
+    /// piece inline and persist it. Used by tests and sync callers; the
+    /// reactor path uses [`receive_block_buffered`] + [`complete_pending_piece`]
+    /// so the SHA-1 work runs off the reactor thread.
     pub fn receive_block(
         &mut self,
         piece_index: u32,
         block_offset: u32,
         data: &[u8],
     ) -> Result<bool, String> {
+        if let Some((index, completed)) =
+            self.receive_block_buffered(piece_index, block_offset, data)?
+        {
+            let computed_hash = sha1_hash(&completed);
+            let computed_v2_root = self.v2_piece_check(index)?.map(|check| {
+                lt_crypto::merkle::piece_root(
+                    &completed,
+                    check.piece_length,
+                    check.single_piece_file,
+                )
+            });
+            self.complete_pending_piece(index, completed, computed_hash, computed_v2_root)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Buffer a received block without hashing. Returns the assembled piece
+    /// once every block arrived, leaving the SHA-1 verification to the caller
+    /// so it can run on a blocking pool instead of stalling the reactor under
+    /// the download mutex.
+    pub fn receive_block_buffered(
+        &mut self,
+        piece_index: u32,
+        block_offset: u32,
+        data: &[u8],
+    ) -> Result<Option<(u32, Bytes)>, String> {
         // Blocks that were already in flight can arrive after metadata queued
         // a recheck or after the pass switched the download to `Checking`.
         // Never write them while the files are being verified; drop the
         // partial transfer so it is requested again once the pass is over.
         if self.verification_owns_data() {
-            self.piece_data_cache.remove(&piece_index);
+            if let Some(buf) = self.piece_data_cache.pop(&piece_index) {
+                self.piece_data_cache_bytes -= buf.len();
+                release_piece_buffer(buf);
+            }
             let _ = self.delegator.erase_transfer(piece_index);
-            return Ok(false);
+            return Ok(None);
         }
 
         self.downloaded_bytes = self.downloaded_bytes.saturating_add(data.len() as u64);
         self.rate_down.insert(data.len() as u64);
 
+        // Bound the memory held by partially assembled pieces with a byte
+        // budget. When it would be exceeded, evict the least-recently-used
+        // pending pieces and release their transfers so their blocks are
+        // requested again instead of growing memory without limit.
+        const MAX_PENDING_PIECE_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
         let piece_len = self.chunk_size(piece_index) as usize;
-        let piece_buf = self.piece_data_cache.entry(piece_index).or_insert_with(|| {
-            if piece_len <= lt_protocol::DEFAULT_BLOCK_CAPACITY {
+        if !self.piece_data_cache.contains(&piece_index) {
+            while self.piece_data_cache_bytes + piece_len > MAX_PENDING_PIECE_BYTES {
+                match self.piece_data_cache.pop_lru() {
+                    Some((victim, buf)) => {
+                        self.piece_data_cache_bytes -= buf.len();
+                        release_piece_buffer(buf);
+                        let _ = self.delegator.erase_transfer(victim);
+                        self.chunk_selector.not_using_index(victim);
+                    }
+                    None => break,
+                }
+            }
+            let buf = if piece_len <= lt_protocol::DEFAULT_BLOCK_CAPACITY {
                 let mut b = lt_protocol::BlockPool::global().acquire();
                 b.resize(piece_len, 0);
-                let v = b.to_vec();
-                lt_protocol::BlockPool::global().release(b);
-                v
+                b
             } else {
-                vec![0u8; piece_len]
-            }
-        });
+                BytesMut::zeroed(piece_len)
+            };
+            self.piece_data_cache_bytes += buf.len();
+            self.piece_data_cache.put(piece_index, buf);
+        }
+        let piece_buf = self.piece_data_cache.get_mut(&piece_index).unwrap();
 
         let start = block_offset as usize;
         let end = (start + data.len()).min(piece_buf.len());
@@ -2937,32 +3261,74 @@ impl Download {
         };
 
         if is_complete {
-            let completed_piece = self.piece_data_cache.remove(&piece_index).unwrap();
-            let computed_hash = if completed_piece.len() > 64 * 1024 {
-                let mut hash = [0u8; 20];
-                rayon::scope(|s| {
-                    s.spawn(|_| {
-                        hash = sha1_hash(&completed_piece);
-                    });
-                });
-                hash
-            } else {
-                sha1_hash(&completed_piece)
-            };
-
-            if let Some(expected_hash) = self.metadata.piece_hash(piece_index as usize) {
-                if computed_hash != expected_hash {
-                    self.chunk_selector.not_using_index(piece_index);
-                    let _ = self.delegator.erase_transfer(piece_index);
-                    return Err(format!("Hash check failed for piece {}", piece_index));
-                }
-            }
-
-            self.persist_or_complete_piece(piece_index, completed_piece)?;
-            return Ok(true);
+            let buf = self.piece_data_cache.pop(&piece_index).unwrap();
+            self.piece_data_cache_bytes -= buf.len();
+            let completed_piece = buf.freeze();
+            return Ok(Some((piece_index, completed_piece)));
         }
 
-        Ok(false)
+        Ok(None)
+    }
+
+    /// Verify a fully assembled piece against its metadata hash and persist
+    /// it. Called after the hashing completed off the reactor thread; the
+    /// caller passes the precomputed SHA-1 and (for v2) merkle piece root.
+    pub fn complete_pending_piece(
+        &mut self,
+        piece_index: u32,
+        completed_piece: Bytes,
+        computed_hash: [u8; 20],
+        computed_v2_root: Option<[u8; 32]>,
+    ) -> Result<bool, String> {
+        let verified = if self.is_v2_only() {
+            let expected_root = self
+                .v2_piece_check(piece_index)?
+                .and_then(|check| check.expected_root);
+            match (computed_v2_root, expected_root) {
+                (Some(computed), Some(expected)) => computed == expected,
+                _ => false,
+            }
+        } else if let Some(expected_hash) = self.metadata.piece_hash(piece_index as usize) {
+            computed_hash == expected_hash
+        } else {
+            true
+        };
+        if !verified {
+            self.chunk_selector.not_using_index(piece_index);
+            let _ = self.delegator.erase_transfer(piece_index);
+            return Err(format!("Hash check failed for piece {}", piece_index));
+        }
+
+        self.persist_or_complete_piece(piece_index, completed_piece)?;
+        Ok(true)
+    }
+
+    /// True for a v2-only torrent (no v1 SHA-1 pieces to verify against).
+    fn is_v2_only(&self) -> bool {
+        self.metadata.v2.as_ref().is_some_and(|v2| !v2.is_hybrid) && self.metadata.pieces.is_empty()
+    }
+
+    /// Collect the BEP52 verification parameters for a piece without hashing.
+    ///
+    /// Returns `None` for v1 and hybrid torrents. The merkle root is computed
+    /// by the caller off the reactor thread via `lt_crypto::merkle::piece_root`
+    /// so no hashing happens under the download lock.
+    pub fn v2_piece_check(&self, piece_index: u32) -> Result<Option<V2PieceCheck>, String> {
+        if !self.is_v2_only() {
+            return Ok(None);
+        }
+        let v2 = self.metadata.v2.as_ref().ok_or("missing v2 metadata")?;
+        let layout = v2_layout_for(&self.metadata).ok_or("invalid v2 piece layout")?;
+        let expected_files = v2_file_hashes(v2);
+        let expected_root = v2_expected_piece_root(&layout, &expected_files, piece_index as u64);
+        let single_piece_file = layout
+            .file_for_piece(piece_index as u64)
+            .is_some_and(|file| file.num_pieces == 1);
+        Ok(Some(V2PieceCheck {
+            piece_length: self.metadata.piece_length as usize,
+            single_piece_file,
+            expected_root,
+        }))
     }
 
     /// Persists a verified piece and marks it complete.
@@ -2974,7 +3340,7 @@ impl Download {
     /// immediately. With no configured worker the piece is written through
     /// the process-wide worker and awaited by the caller; file I/O is never
     /// performed inline on the reactor thread.
-    fn persist_or_complete_piece(&mut self, piece_index: u32, data: Vec<u8>) -> Result<(), String> {
+    fn persist_or_complete_piece(&mut self, piece_index: u32, data: Bytes) -> Result<(), String> {
         let needs_disk_write =
             !self.save_directory.as_os_str().is_empty() && !self.target_files.is_empty();
 
@@ -3056,6 +3422,13 @@ impl Download {
     }
 
     pub fn chunk_size(&self, piece_index: u32) -> u32 {
+        // In v2 every file's last piece may be partial, not just the torrent's
+        // final piece; the per-file layout gives the exact data length.
+        if let Some(layout) = v2_layout_for(&self.metadata) {
+            if let Some(segment) = layout.piece_segment(piece_index as u64) {
+                return segment.data_len as u32;
+            }
+        }
         let num_pieces = self.metadata.num_pieces;
         let piece_len = self.metadata.piece_length;
         let total_size = self.metadata.total_size;
@@ -3096,6 +3469,14 @@ pub struct RecheckContext {
 
 impl RecheckContext {
     pub fn execute(&self) -> Result<HashResult, String> {
+        // Pure v2 torrents carry no v1 SHA-1 pieces; recheck them with per-file
+        // BEP52 merkle verification instead of the v1 hashing pass.
+        if let Some(v2) = &self.metadata.v2 {
+            if !v2.is_hybrid && self.metadata.pieces.is_empty() {
+                return self.execute_v2(v2);
+            }
+        }
+
         let hashes: Vec<[u8; 20]> = self
             .metadata
             .pieces
@@ -3131,6 +3512,25 @@ impl RecheckContext {
                 chunks_hashed.store(chk, Ordering::Relaxed);
             })
             .map_err(|err| err.to_string())
+    }
+
+    /// Per-file BEP52 merkle recheck for a v2-only torrent.
+    fn execute_v2(&self, v2: &TorrentV2) -> Result<HashResult, String> {
+        if let Some(thread) = &self.disk_thread {
+            let _ = thread.sync_all();
+        }
+        let layout = v2_layout_for(&self.metadata).ok_or("invalid v2 piece layout")?;
+        let expected = v2_file_hashes(v2);
+        let result = hash_v2_files(
+            &self.save_directory,
+            &layout,
+            &expected,
+            &self.initial,
+            &self.cancel,
+        )
+        .map_err(|err| err.to_string())?;
+        self.chunks_hashed.store(result.checked, Ordering::Relaxed);
+        Ok(result)
     }
 }
 
@@ -3172,6 +3572,7 @@ mod tests {
             announce_list: Vec::new(),
             is_private: false,
             is_meta_download: false,
+            v2: None,
         }
     }
 
@@ -3266,6 +3667,7 @@ mod tests {
             announce_list: Vec::new(),
             is_private: false,
             is_meta_download: false,
+            v2: None,
         };
 
         let dir = std::env::temp_dir().join(format!(
@@ -3335,6 +3737,7 @@ mod tests {
             announce_list: vec![vec!["http://tracker/announce".into()]],
             is_private: false,
             is_meta_download: false,
+            v2: None,
         };
 
         let mut download = Download::new(meta);
@@ -3349,6 +3752,200 @@ mod tests {
         assert!(completed);
         assert!(download.is_seeder());
         assert_eq!(download.state(), &DownloadState::Seeding);
+    }
+
+    #[test]
+    fn apply_metadata_bytes_enforces_magnet_btms() {
+        let build_info = |name: &str| {
+            let mut info = lt_common::object::Object::create_map();
+            info.insert_key("name", lt_common::object::Object::from(name))
+                .unwrap();
+            info.insert_key("piece length", lt_common::object::Object::from(16384i64))
+                .unwrap();
+            info.insert_key(
+                "pieces",
+                lt_common::object::Object::create_string(vec![0u8; 20]),
+            )
+            .unwrap();
+            info.insert_key("length", lt_common::object::Object::from(16384i64))
+                .unwrap();
+            lt_common::object::bencode::encode(&info).unwrap()
+        };
+
+        let info_bytes = build_info("btms.iso");
+        let info_hash = HashString::new(sha1_hash(&info_bytes));
+        let wrong_bytes = build_info("different.iso");
+
+        let magnet = format!(
+            "magnet:?xt=urn:btih:{}&btms={}",
+            info_hash.to_hex(),
+            info_hash.to_hex()
+        );
+        let meta = crate::constructor::DownloadConstructor::from_magnet_uri(&magnet).unwrap();
+        let mut download = Download::new(meta);
+        download.set_expected_metadata_hash(Some(info_hash));
+
+        // Valid bencode with a different hash must be rejected by the btms check.
+        assert!(download
+            .apply_metadata_bytes(&wrong_bytes, info_hash, None, Vec::new())
+            .is_err());
+        assert!(download.metadata().is_meta_download);
+
+        // The matching metadata applies cleanly.
+        download
+            .apply_metadata_bytes(&info_bytes, info_hash, None, Vec::new())
+            .unwrap();
+        assert!(!download.metadata().is_meta_download);
+    }
+
+    #[test]
+    fn web_seed_reserve_receive_and_release() {
+        let piece_length = 16384u32;
+        let piece0 = vec![7u8; piece_length as usize];
+        let piece1 = vec![9u8; piece_length as usize];
+        let mut pieces = sha1_hash(&piece0).to_vec();
+        pieces.extend_from_slice(&sha1_hash(&piece1));
+        let meta = TorrentMetadata {
+            info_hash: HashString::new([1u8; 20]),
+            name: "webseed.bin".into(),
+            piece_length,
+            pieces,
+            num_pieces: 2,
+            total_size: (piece_length as u64) * 2,
+            is_multi_file: false,
+            files: Vec::new(),
+            announce: None,
+            announce_list: Vec::new(),
+            is_private: false,
+            is_meta_download: false,
+            v2: None,
+        };
+        let mut download = Download::new(meta);
+        download.add_web_seed("https://mirror.example.org/webseed.bin");
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        // No peers connected: WebSeed reserves both missing pieces.
+        let (plan, reserved) = download.reserve_web_seed_pieces(8).unwrap();
+        assert_eq!(reserved, vec![0, 1]);
+        assert_eq!(plan.seeds.len(), 1);
+        assert_eq!(plan.piece_length, piece_length as u64);
+        // Reserved pieces are no longer offered.
+        assert!(download.reserve_web_seed_pieces(8).is_none());
+
+        // A correct piece verifies and completes.
+        assert!(download.receive_web_seed_piece(0, piece0.clone()).unwrap());
+        assert!(download.chunk_selector().completed().get(0));
+
+        // A bad hash is rejected and the piece returns to the missing pool.
+        assert!(download
+            .receive_web_seed_piece(1, vec![0u8; piece_length as usize])
+            .is_err());
+        assert!(!download.chunk_selector().completed().get(1));
+        let (_, again) = download.reserve_web_seed_pieces(8).unwrap();
+        assert_eq!(again, vec![1]);
+
+        // A failed fetch releases the reservation explicitly.
+        download.release_web_seed_piece(1);
+        let (_, released) = download.reserve_web_seed_pieces(8).unwrap();
+        assert_eq!(released, vec![1]);
+    }
+
+    /// v2-only metadata for a single file spanning one piece per payload.
+    fn v2_web_seed_metadata(piece_length: u32, payloads: &[Vec<u8>]) -> TorrentMetadata {
+        let mut data = Vec::new();
+        for payload in payloads {
+            data.extend_from_slice(payload);
+        }
+        let tree = lt_crypto::merkle::compute_merkle_tree(&data, piece_length as usize);
+        let mut file_path = lt_common::path::Path::new();
+        file_path.push("v2-webseed.bin");
+        TorrentMetadata {
+            info_hash: HashString::new([0x7Eu8; 20]),
+            name: "v2-webseed".into(),
+            piece_length,
+            pieces: Vec::new(),
+            num_pieces: payloads.len(),
+            total_size: data.len() as u64,
+            is_multi_file: false,
+            files: Vec::new(),
+            announce: None,
+            announce_list: Vec::new(),
+            is_private: false,
+            is_meta_download: false,
+            v2: Some(TorrentV2 {
+                info_hash: Hash256::new([0x7Eu8; 32]),
+                is_hybrid: false,
+                files: vec![crate::constructor::V2FileEntry {
+                    path: file_path,
+                    length: data.len() as u64,
+                    pieces_root: Some(tree.piece_root),
+                }],
+                piece_layers: vec![crate::constructor::PieceLayer {
+                    pieces_root: tree.piece_root,
+                    layers: tree.piece_layers.clone(),
+                }],
+            }),
+        }
+    }
+
+    #[test]
+    fn web_seed_v2_prehashed_completion_and_tamper_rejection() {
+        let piece_length = 16384u32;
+        let piece0 = vec![0xA5u8; piece_length as usize];
+        let piece1 = vec![0x5Au8; piece_length as usize];
+        let meta = v2_web_seed_metadata(piece_length, &[piece0.clone(), piece1.clone()]);
+        let mut download = Download::new(meta);
+        download.add_web_seed("https://mirror.example.org/v2-webseed.bin");
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        let (plan, reserved) = download.reserve_web_seed_pieces(8).unwrap();
+        assert_eq!(reserved, vec![0, 1]);
+        assert_eq!(plan.seeds.len(), 1);
+
+        // Params are collected under the lock; the caller hashes off-reactor.
+        let check0 = download.v2_piece_check(0).unwrap().expect("v2 piece check");
+        assert_eq!(check0.piece_length, piece_length as usize);
+        assert!(!check0.single_piece_file);
+        let root0 =
+            lt_crypto::merkle::piece_root(&piece0, check0.piece_length, check0.single_piece_file);
+        assert_eq!(Some(root0), check0.expected_root);
+
+        // A correct prehashed piece verifies and completes.
+        assert!(download
+            .receive_web_seed_piece_prehashed(0, piece0.clone(), [0u8; 20], Some(root0))
+            .unwrap());
+        assert!(download.chunk_selector().completed().get(0));
+
+        // Tampered data fails the merkle check and returns to the missing pool.
+        let check1 = download.v2_piece_check(1).unwrap().expect("v2 piece check");
+        let root1 =
+            lt_crypto::merkle::piece_root(&piece1, check1.piece_length, check1.single_piece_file);
+        let mut tampered = piece1.clone();
+        tampered[0] ^= 0xFF;
+        // The caller hashes the received bytes off-reactor, so a tampered piece
+        // yields a root that differs from the expected layer hash.
+        let tampered_root =
+            lt_crypto::merkle::piece_root(&tampered, check1.piece_length, check1.single_piece_file);
+        assert_ne!(tampered_root, root1);
+        assert!(download
+            .receive_web_seed_piece_prehashed(1, tampered, [0u8; 20], Some(tampered_root))
+            .is_err());
+        assert!(!download.chunk_selector().completed().get(1));
+        let (_, again) = download.reserve_web_seed_pieces(8).unwrap();
+        assert_eq!(again, vec![1]);
+
+        // The sync wrapper hashes inline and verifies the same way.
+        download.release_web_seed_piece(1);
+        assert!(download.receive_web_seed_piece(1, piece1).unwrap());
+        assert!(download.is_seeder());
+    }
+
+    #[test]
+    fn v2_piece_check_is_none_for_v1_metadata() {
+        let download = Download::new(multi_piece_metadata(16384, 1));
+        assert!(download.v2_piece_check(0).unwrap().is_none());
     }
 
     fn lifecycle_metadata() -> TorrentMetadata {
@@ -3367,6 +3964,7 @@ mod tests {
             announce_list: Vec::new(),
             is_private: false,
             is_meta_download: false,
+            v2: None,
         }
     }
 
@@ -3448,5 +4046,125 @@ mod tests {
         download.resume();
         assert_eq!(download.state(), &DownloadState::Downloading);
         assert_eq!(counter + 2, download.state_counter());
+    }
+
+    #[test]
+    fn pause_deferred_returns_file_sync_snapshot() {
+        let dir = std::env::temp_dir().join(format!(
+            "rtorrent-pause-deferred-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut metadata = lifecycle_metadata();
+        let mut path = lt_common::path::Path::new();
+        path.push("payload.bin");
+        metadata.files = vec![crate::constructor::TorrentFileEntry {
+            path,
+            length: metadata.total_size,
+            offset: 0,
+        }];
+
+        let mut download = Download::new(metadata);
+        download.set_save_directory(&dir);
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        let sync = download
+            .pause_deferred()
+            .expect("active pause yields a sync");
+        assert_eq!(download.state(), &DownloadState::Paused);
+        assert_eq!(sync.save_directory, dir);
+        assert_eq!(sync.target_files.len(), 1);
+
+        // Idempotent: pausing again has nothing left to sync.
+        assert!(download.pause_deferred().is_none());
+
+        // The snapshot runs standalone, off any lock; missing files are
+        // skipped best-effort.
+        sync.run();
+
+        // The inline wrapper still pauses and syncs in one call.
+        download.resume();
+        download.pause();
+        assert_eq!(download.state(), &DownloadState::Paused);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pause_deferred_is_none_when_inactive_or_without_files() {
+        let mut download = Download::new(lifecycle_metadata());
+        // Inactive: nothing to pause.
+        assert!(download.pause_deferred().is_none());
+
+        download.open().unwrap();
+        download.try_start().unwrap();
+        // Active but no save directory or target files: no sync work.
+        assert!(download.pause_deferred().is_none());
+        assert_eq!(download.state(), &DownloadState::Paused);
+    }
+
+    #[test]
+    fn piece_cache_evicts_lru_piece_when_byte_budget_exceeded() {
+        // Four 16 MiB pieces fill the 64 MiB budget exactly; a fifth pending
+        // piece must evict the least-recently-used one.
+        let piece_length = 16 * 1024 * 1024u32;
+        let mut download = Download::new(multi_piece_metadata(piece_length, 5));
+        download.set_disk_thread(None);
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        let block = [0xABu8; 16];
+        for index in 0..4u32 {
+            assert!(download
+                .receive_block_buffered(index, 0, &block)
+                .unwrap()
+                .is_none());
+        }
+        assert_eq!(download.piece_data_cache_bytes, 4 * piece_length as usize);
+
+        // Writing to piece 0 again refreshes its recency, making piece 1 the
+        // least-recently-used entry when piece 4 pushes past the budget.
+        assert!(download
+            .receive_block_buffered(0, block.len() as u32, &block)
+            .unwrap()
+            .is_none());
+        assert!(download
+            .receive_block_buffered(4, 0, &block)
+            .unwrap()
+            .is_none());
+
+        assert!(!download.piece_data_cache.contains(&1));
+        for index in [0u32, 2, 3, 4] {
+            assert!(download.piece_data_cache.contains(&index));
+        }
+        assert!(download.piece_data_cache_bytes <= 64 * 1024 * 1024);
+        let cached_bytes: usize = download
+            .piece_data_cache
+            .iter()
+            .map(|(_, buf)| buf.len())
+            .sum();
+        assert_eq!(download.piece_data_cache_bytes, cached_bytes);
+    }
+
+    #[test]
+    fn piece_cache_accepts_single_piece_larger_than_budget() {
+        let piece_length = 65 * 1024 * 1024u32;
+        let mut download = Download::new(multi_piece_metadata(piece_length, 1));
+        download.set_disk_thread(None);
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        assert!(download
+            .receive_block_buffered(0, 0, &[0xCDu8; 16])
+            .unwrap()
+            .is_none());
+        assert!(download.piece_data_cache.contains(&0));
+        assert_eq!(download.piece_data_cache_bytes, piece_length as usize);
     }
 }

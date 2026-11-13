@@ -1,0 +1,63 @@
+[package]
+name = "rstorrent-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+lt-common = { path = "../crates/lt-common" }
+lt-protocol = { path = "../crates/lt-protocol" }
+lt-engine = { path = "../crates/lt-engine" }
+lt-dht = { path = "../crates/lt-dht" }
+lt-net = { path = "../crates/lt-net" }
+lt-storage = { path = "../crates/lt-storage" }
+
+# Prevent the fuzz crate from being pulled into the stable workspace gate; it is
+# built only by the nightly cargo-fuzz CI job (see .github/workflows/ci.yml).
+
+[[bin]]
+name = "bencode"
+path = "fuzz_targets/bencode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "message"
+path = "fuzz_targets/message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "magnet"
+path = "fuzz_targets/magnet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dht_krpc"
+path = "fuzz_targets/dht_krpc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "utp_packet"
+path = "fuzz_targets/utp_packet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "torrent_resume"
+path = "fuzz_targets/torrent_resume.rs"
+test = false
+doc = false
+bench = false

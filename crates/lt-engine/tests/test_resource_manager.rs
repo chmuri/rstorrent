@@ -2,9 +2,11 @@ use lt_common::hash_string::HashString;
 use lt_crypto::sha1::sha1_hash;
 use lt_engine::choke_queue::{ChokeEntry, WeightedPeer};
 use lt_engine::constructor::{TorrentFileEntry, TorrentMetadata};
-use lt_engine::engine::EngineManager;
+use lt_engine::download::Download;
 use lt_engine::network::{apply_choke_changes_to_download, peer_number};
-use lt_engine::resource_manager::{allocate_quotas, allocate_quotas_with_min, GroupChokeChanges};
+use lt_engine::resource_manager::{
+    allocate_quotas, allocate_quotas_with_min, GroupChokeChanges, ResourceManager,
+};
 use lt_net::addr::SocketAddress;
 use lt_protocol::connection::PeerConnection;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -31,39 +33,44 @@ fn metadata() -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 
 #[test]
-fn engine_registers_downloads_in_the_resource_manager() {
-    let mut engine = EngineManager::new(6881);
+fn resource_manager_registers_downloads() {
+    let mut rm = ResourceManager::new();
 
-    assert_eq!(engine.resource_manager().group_count(), 1);
-    assert_eq!(engine.choke_group().name(), "global");
+    assert_eq!(rm.group_count(), 1);
+    assert_eq!(rm.group_at(0).unwrap().name(), "global");
 
-    let hash = engine.add_metadata(metadata());
-    let entry = engine
-        .resource_manager()
+    let meta = metadata();
+    let hash = meta.info_hash;
+    let mut download = Download::new(meta);
+    assert!(rm.insert_entry(hash, 0, 0));
+
+    let entry = rm
         .entry(&hash)
         .expect("download should have a resource entry");
     assert_eq!(entry.group, 0);
 
-    assert!(engine.remove_torrent(&hash));
-    assert!(engine.resource_manager().entry(&hash).is_none());
+    download.stop();
+    assert!(rm.erase_entry(&hash));
+    assert!(rm.entry(&hash).is_none());
 }
 
 #[test]
 fn tick_keeps_global_quota_within_limits() {
-    let mut engine = EngineManager::new(6881);
-    engine.resource_manager_mut().set_max_upload_unchoked(10);
-    engine.resource_manager_mut().set_max_download_unchoked(5);
+    let mut rm = ResourceManager::new();
+    rm.set_max_upload_unchoked(10);
+    rm.set_max_download_unchoked(5);
 
-    engine.receive_tick();
+    rm.receive_tick();
 
-    assert_eq!(engine.resource_manager().max_upload_unchoked(), 10);
-    assert_eq!(engine.resource_manager().max_download_unchoked(), 5);
-    assert!(engine.resource_manager().currently_upload_unchoked() <= 10);
-    assert!(engine.resource_manager().currently_download_unchoked() <= 5);
+    assert_eq!(rm.max_upload_unchoked(), 10);
+    assert_eq!(rm.max_download_unchoked(), 5);
+    assert!(rm.currently_upload_unchoked() <= 10);
+    assert!(rm.currently_download_unchoked() <= 5);
 }
 
 #[test]
@@ -91,103 +98,105 @@ fn allocation_handles_min_max_unlimited_weights_and_empty_groups() {
 }
 
 #[test]
-fn engine_tick_drives_group_balance_and_rotation() {
-    let mut engine = EngineManager::new(6881);
-    engine.choke_group_mut().set_up_max(2);
-    engine.choke_group_mut().set_down_max(2);
-    engine
-        .choke_group_mut()
-        .up_queue_mut()
-        .add_entry(ChokeEntry::new());
-    engine
-        .choke_group_mut()
-        .down_queue_mut()
-        .add_entry(ChokeEntry::new());
+fn tick_drives_group_balance_and_rotation() {
+    let mut rm = ResourceManager::new();
+    {
+        let group = rm.group_at_mut(0).unwrap();
+        group.set_up_max(2);
+        group.set_down_max(2);
+        group.up_queue_mut().add_entry(ChokeEntry::new());
+        group.down_queue_mut().add_entry(ChokeEntry::new());
 
-    for peer in 0..4 {
-        engine
-            .choke_group_mut()
-            .up_queue_mut()
-            .set_queued(0, WeightedPeer::new(peer));
-        engine
-            .choke_group_mut()
-            .down_queue_mut()
-            .set_queued(0, WeightedPeer::new(peer));
+        for peer in 0..4 {
+            group.up_queue_mut().set_queued(0, WeightedPeer::new(peer));
+            group
+                .down_queue_mut()
+                .set_queued(0, WeightedPeer::new(peer));
+        }
     }
 
-    engine.resource_manager_mut().set_max_upload_unchoked(2);
-    engine.resource_manager_mut().set_max_download_unchoked(2);
-    engine.tick(1);
+    rm.set_max_upload_unchoked(2);
+    rm.set_max_download_unchoked(2);
+    rm.receive_tick();
 
-    assert_eq!(engine.choke_group().up_unchoked(), 2);
-    assert_eq!(engine.choke_group().down_unchoked(), 2);
-    assert!(engine.resource_manager().tick_count() >= 1);
+    assert_eq!(rm.group_at(0).unwrap().up_unchoked(), 2);
+    assert_eq!(rm.group_at(0).unwrap().down_unchoked(), 2);
+    assert!(rm.tick_count() >= 1);
 
     // Lowering the global limit must choke slots immediately rather than
     // leaving the group over quota.
-    engine.resource_manager_mut().set_max_upload_unchoked(0);
-    engine.receive_tick();
-    assert_eq!(engine.choke_group().up_unchoked(), 0);
+    rm.set_max_upload_unchoked(0);
+    rm.receive_tick();
+    assert_eq!(rm.group_at(0).unwrap().up_unchoked(), 0);
 
     // Restoring the quota refills from the queued peers.
-    engine.resource_manager_mut().set_max_upload_unchoked(1);
-    engine.receive_tick();
-    assert_eq!(engine.choke_group().up_unchoked(), 1);
+    rm.set_max_upload_unchoked(1);
+    rm.receive_tick();
+    assert_eq!(rm.group_at(0).unwrap().up_unchoked(), 1);
 }
 
 #[test]
-fn engine_tracks_start_stop_and_group_membership() {
-    let mut engine = EngineManager::new(6881);
-    let hash = engine.add_metadata(metadata());
+fn resource_manager_tracks_start_stop_and_group_membership() {
+    let mut rm = ResourceManager::new();
+    let meta = metadata();
+    let hash = meta.info_hash;
+    let mut download = Download::new(meta);
+    rm.insert_entry(hash, 0, 0);
 
-    assert!(!engine.resource_manager().is_entry_active(&hash));
-    assert!(engine.start_torrent(&hash));
-    assert!(engine.resource_manager().is_entry_active(&hash));
-    assert!(engine.stop_torrent(&hash));
-    assert!(!engine.resource_manager().is_entry_active(&hash));
+    assert!(!rm.is_entry_active(&hash));
+    download.start();
+    assert!(rm.set_entry_active(&hash, true));
+    assert!(rm.is_entry_active(&hash));
+    download.stop();
+    assert!(rm.set_entry_active(&hash, false));
+    assert!(!rm.is_entry_active(&hash));
 
-    let group = engine.add_choke_group("fast");
-    assert!(engine.set_torrent_group(&hash, group as u16));
-    assert_eq!(engine.torrent_group(&hash), Some(group as u16));
-    assert_eq!(engine.resource_manager().group_entry_count(group), 1);
-    assert_eq!(engine.resource_manager().group_entry_count(0), 0);
+    let group = rm.push_group("fast");
+    assert!(rm.set_group(&hash, group as u16));
+    assert_eq!(rm.entry(&hash).map(|entry| entry.group), Some(group as u16));
+    assert_eq!(rm.group_entry_count(group), 1);
+    assert_eq!(rm.group_entry_count(0), 0);
 
-    engine.remove_choke_group(group).unwrap();
-    assert_eq!(engine.torrent_group(&hash), Some(0));
-    assert_eq!(engine.resource_manager().group_entry_count(0), 1);
+    rm.remove_group(group).unwrap();
+    assert_eq!(rm.entry(&hash).map(|entry| entry.group), Some(0));
+    assert_eq!(rm.group_entry_count(0), 1);
 }
 
 #[test]
-fn engine_tick_synchronises_active_downloads() {
-    let mut engine = EngineManager::new(6881);
-    let hash = engine.add_metadata(metadata());
+fn tick_synchronises_active_downloads() {
+    let mut rm = ResourceManager::new();
+    let meta = metadata();
+    let hash = meta.info_hash;
+    let mut download = Download::new(meta);
+    rm.insert_entry(hash, 0, 0);
 
-    engine.start_all();
-    engine.tick(0);
-    assert!(engine.resource_manager().is_entry_active(&hash));
+    download.start();
+    rm.set_entry_active(&hash, true);
+    download.tick(0);
+    rm.set_entry_active(&hash, download.is_active());
+    rm.receive_tick();
+    assert!(rm.is_entry_active(&hash));
 
-    engine.stop_all();
-    engine.tick(1);
-    assert!(!engine.resource_manager().is_entry_active(&hash));
+    download.stop();
+    rm.set_entry_active(&hash, false);
+    download.tick(1);
+    rm.set_entry_active(&hash, download.is_active());
+    rm.receive_tick();
+    assert!(!rm.is_entry_active(&hash));
 }
 
 #[test]
 fn choke_decisions_update_peer_state_without_panicking() {
-    let mut engine = EngineManager::new(6881);
-    let hash = engine.add_metadata(metadata());
+    let mut download = Download::new(metadata());
     let peer_id = HashString::new([0x41; 20]);
     let number = peer_number(&peer_id);
 
-    {
-        let download = engine.get_download(&hash).unwrap();
-        let mut download = download.lock().unwrap();
-        let peer = PeerConnection::new(
-            peer_id,
-            SocketAddress::from(SocketAddr::from((Ipv4Addr::LOCALHOST, 51413))),
-            1,
-        );
-        assert!(download.add_peer(peer));
-    }
+    let peer = PeerConnection::new(
+        peer_id,
+        SocketAddress::from(SocketAddr::from((Ipv4Addr::LOCALHOST, 51413))),
+        1,
+    );
+    assert!(download.add_peer(peer));
 
     let change = GroupChokeChanges {
         group: 0,
@@ -197,19 +206,15 @@ fn choke_decisions_update_peer_state_without_panicking() {
         down_choked: Vec::new(),
     };
 
-    {
-        let download = engine.get_download(&hash).unwrap();
-        let mut download = download.lock().unwrap();
-        let (changed, _) = apply_choke_changes_to_download(&mut download, &change);
-        assert_eq!(changed, 1);
-        assert!(
-            !download
-                .connection_list()
-                .find_by_id(&peer_id)
-                .unwrap()
-                .is_choked
-        );
-    }
+    let (changed, _) = apply_choke_changes_to_download(&mut download, &change);
+    assert_eq!(changed, 1);
+    assert!(
+        !download
+            .connection_list()
+            .find_by_id(&peer_id)
+            .unwrap()
+            .is_choked
+    );
 
     let change = GroupChokeChanges {
         group: 0,
@@ -219,20 +224,16 @@ fn choke_decisions_update_peer_state_without_panicking() {
         down_choked: vec![number],
     };
 
-    {
-        let download = engine.get_download(&hash).unwrap();
-        let mut download = download.lock().unwrap();
-        let (changed, cancelled) = apply_choke_changes_to_download(&mut download, &change);
-        assert_eq!(changed, 1);
-        assert_eq!(cancelled, 1);
-        assert!(
-            download
-                .connection_list()
-                .find_by_id(&peer_id)
-                .unwrap()
-                .is_choked
-        );
-    }
+    let (changed, cancelled) = apply_choke_changes_to_download(&mut download, &change);
+    assert_eq!(changed, 1);
+    assert_eq!(cancelled, 1);
+    assert!(
+        download
+            .connection_list()
+            .find_by_id(&peer_id)
+            .unwrap()
+            .is_choked
+    );
 
     // Stale peer ids are ignored.
     let stale = GroupChokeChanges {
@@ -242,8 +243,6 @@ fn choke_decisions_update_peer_state_without_panicking() {
         down_unchoked: vec![usize::MAX],
         down_choked: vec![usize::MAX],
     };
-    let download = engine.get_download(&hash).unwrap();
-    let mut download = download.lock().unwrap();
     assert_eq!(
         apply_choke_changes_to_download(&mut download, &stale),
         (0, 0)

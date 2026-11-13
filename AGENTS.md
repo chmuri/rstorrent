@@ -2,9 +2,10 @@
 
 ## Builds and tests run on the remote builder
 
-This project compiles and tests on a Docker builder on `root@192.0.2.1` so the
-laptop stays free. The wrapper is `scripts/remote-ci.sh`; the builder lives at
-`/opt/rstorrent-ci` (image `rstorrent-ci:bookworm`, cargo and target
+This project compiles and tests on a Docker builder on `root@builder.example.com`
+(the real host is supplied via `RSTORRENT_CI_HOST`) so the laptop stays free.
+The wrapper is `scripts/remote-ci.sh`; the builder lives at
+`/opt/rstorrent-ci` (image `rtorrent-ci:bookworm`, cargo and target
 caches in sibling directories).
 
 Rules:
@@ -18,8 +19,9 @@ Rules:
   - `scripts/remote-ci.sh clippy --workspace --all-targets -- -D warnings`
   - `scripts/remote-ci.sh fmt --check`
   - `scripts/remote-ci.sh test -p rt-core --test test_view`
-- The plugin `.opencode/plugins/remote-ci/index.ts` rewrites bare `cargo ...`
-  shell calls to the wrapper automatically, in every session.
+- The auto-rewrite plugin (`.opencode/plugins/remote-ci/index.ts`) is local-only
+  agent tooling and is not part of the repository, so bare `cargo ...` calls are
+  not rewritten automatically; invoke `scripts/remote-ci.sh` explicitly.
 - `command cargo ...` is the escape hatch for an intentional local run.
 - `scripts/remote-ci.sh doctor` reports builder health; `image` rebuilds the
   builder; `sync` only copies the working tree; `raw <cmd...>` runs any command

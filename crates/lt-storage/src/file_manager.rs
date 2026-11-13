@@ -164,6 +164,20 @@ fn log_fallocate_unsupported_once_with(flag: &AtomicBool, errno: i32) -> bool {
     first
 }
 
+// SAFETY: `FileManager` stores `*mut File` pointers (hence the manual impls),
+// but it does not own the `File` allocations — it only owns the responsibility
+// to `close(2)` their descriptors. The invariants that make the impls sound:
+//
+// * Send: moving the manager to another thread transfers that tracking
+//   responsibility. The pointed-to `File`s must outlive their registration and
+//   are kept at stable addresses by the owner (the disk worker holds them in
+//   `Box`/`Vec` storage); `close()` removes a pointer before the owner drops the
+//   `File`. The shared `counters` are `Arc<atomic>` and already `Send + Sync`.
+// * Sync: every method that dereferences a tracked pointer takes `&mut self`,
+//   so a shared `&FileManager` can never reach the raw pointers. The only `&self`
+//   methods read the lock-free atomic counters (`stats_handle`, `open_files`,
+//   ...), which is race-free. Callers that need concurrent mutation wrap the
+//   manager in a `Mutex` (see the type-level "Thread safety" note).
 unsafe impl Send for FileManager {}
 unsafe impl Sync for FileManager {}
 
@@ -312,6 +326,10 @@ impl FileManager {
 
         let mut to_close = Vec::new();
         for &ptr in &self.open_file_ptrs {
+            // SAFETY: every pointer in `open_file_ptrs` was registered by
+            // `open()` from a live `File` and is removed by `close()` before the
+            // owner drops it (see the `Send`/`Sync` invariant). `&mut self`
+            // guarantees no other reference to these `File`s exists right now.
             let file = unsafe { &*ptr };
             if !file.is_open() || file.is_padding() {
                 continue;
@@ -473,6 +491,8 @@ impl FileManager {
                 if self.in_flight.contains(&ptr) {
                     return false;
                 }
+                // SAFETY: tracked pointers refer to live, solely-owned `File`s
+                // (see `close_idle` and the `Send`/`Sync` invariant).
                 let file = unsafe { &*ptr };
                 file.is_open() && !file.is_padding()
             })
@@ -518,6 +538,9 @@ impl FileManager {
                 continue;
             }
 
+            // SAFETY: the candidate is still in `open_file_ptrs` (checked above),
+            // so it refers to a live, solely-owned `File`; `&mut self` excludes
+            // aliasing. The `last_touched` guard below skips stale candidates.
             let file = unsafe { &mut *ptr };
             if !file.is_open() || file.is_padding() || file.last_touched() != touched {
                 continue;
@@ -988,5 +1011,50 @@ mod tests {
 
         let _ = fs::remove_file(&busy_path);
         let _ = fs::remove_file(&idle_path);
+    }
+
+    #[test]
+    fn manager_is_send_with_tracked_file() {
+        let path = temp_path("send");
+        let _ = fs::remove_file(&path);
+
+        let mut manager = FileManager::new();
+        // `open_file` returns a `Box<File>` so the tracked address stays stable
+        // when both the manager and the file are moved to another thread.
+        let mut file = open_file(&mut manager, &path, false);
+        assert!(file.is_open());
+
+        let open_after = std::thread::spawn(move || {
+            assert!(file.is_open());
+            manager.close(&mut file);
+            assert!(!file.is_open());
+            manager.stats().open_files
+        })
+        .join()
+        .unwrap();
+        assert_eq!(open_after, 0);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn stats_handle_is_sync_across_threads() {
+        let path = temp_path("sync");
+        let _ = fs::remove_file(&path);
+
+        let mut manager = FileManager::new();
+        let mut file = open_file(&mut manager, &path, false);
+
+        // The lock-free counter handle is shareable while the manager itself
+        // stays owned by this thread (the `Sync` invariant).
+        let handle = manager.stats_handle();
+        let observed = std::thread::spawn(move || handle.stats().open_files)
+            .join()
+            .unwrap();
+        assert_eq!(observed, 1);
+
+        manager.close(&mut file);
+        assert_eq!(manager.stats().open_files, 0);
+        let _ = fs::remove_file(&path);
     }
 }

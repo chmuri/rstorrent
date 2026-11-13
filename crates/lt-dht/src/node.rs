@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use lt_common::hash_string::HashString;
 use lt_common::object::Object;
@@ -29,12 +29,6 @@ impl DhtNode {
     }
 
     pub fn from_cache(id: HashString, cache: &Object) -> Result<Self, DhtError> {
-        let ip_val = cache
-            .get_key("i")
-            .map_err(|_| DhtError::Input("Cache missing 'i' key".into()))?
-            .as_value()
-            .map_err(|_| DhtError::Input("'i' key must be integer".into()))?;
-
         let port_val = cache
             .get_key("p")
             .map_err(|_| DhtError::Input("Cache missing 'p' key".into()))?
@@ -47,13 +41,33 @@ impl DhtNode {
             .as_value()
             .map_err(|_| DhtError::Input("'t' key must be integer".into()))?;
 
-        let ip = Ipv4Addr::from(ip_val as u32);
         let port = port_val as u16;
         let last_seen = last_seen_val as u32;
 
+        // BEP 32: IPv6 nodes cache the 16 address octets under `i6`; IPv4
+        // nodes keep the legacy `i` integer. `i6` takes precedence.
+        let address = if let Ok(i6_obj) = cache.get_key("i6") {
+            let octets = i6_obj
+                .as_string()
+                .map_err(|_| DhtError::Input("'i6' must be string".into()))?;
+            if octets.len() != 16 {
+                return Err(DhtError::Input("'i6' must be 16 bytes".into()));
+            }
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(octets);
+            SocketAddress::new_inet6(Ipv6Addr::from(arr), port)
+        } else {
+            let ip_val = cache
+                .get_key("i")
+                .map_err(|_| DhtError::Input("Cache missing 'i' key".into()))?
+                .as_value()
+                .map_err(|_| DhtError::Input("'i' key must be integer".into()))?;
+            SocketAddress::new_inet(Ipv4Addr::from(ip_val as u32), port)
+        };
+
         Ok(Self {
             id,
-            address: SocketAddress::new_inet(ip, port),
+            address,
             last_seen,
             recently_active: last_seen > 0,
             recently_inactive: 0,
@@ -103,23 +117,33 @@ impl DhtNode {
         }
     }
 
+    /// Appends the compact node form: 20-byte id + address + port. IPv4
+    /// nodes are 26 bytes (`nodes`), IPv6 nodes 38 bytes (`nodes6`, BEP 32).
     pub fn store_compact(&self, buffer: &mut Vec<u8>) {
         buffer.extend_from_slice(self.id.as_slice());
         match self.address.ip() {
             Some(IpAddr::V4(v4)) => buffer.extend_from_slice(&v4.octets()),
-            _ => buffer.extend_from_slice(&[0, 0, 0, 0]),
+            Some(IpAddr::V6(v6)) => buffer.extend_from_slice(&v6.octets()),
+            None => buffer.extend_from_slice(&[0, 0, 0, 0]),
         }
         buffer.extend_from_slice(&self.address.port().to_be_bytes());
     }
 
     pub fn store_cache(&self) -> Object {
         let mut map = Object::create_map();
-        let ip_u32 = match self.address.ip() {
-            Some(IpAddr::V4(v4)) => u32::from(v4),
-            _ => 0,
-        };
-        map.insert_key("i", Object::create_value(ip_u32 as i64))
-            .unwrap();
+        match self.address.ip() {
+            Some(IpAddr::V4(v4)) => {
+                map.insert_key("i", Object::create_value(u32::from(v4) as i64))
+                    .unwrap();
+            }
+            Some(IpAddr::V6(v6)) => {
+                map.insert_key("i6", Object::create_string(v6.octets().to_vec()))
+                    .unwrap();
+            }
+            None => {
+                map.insert_key("i", Object::create_value(0)).unwrap();
+            }
+        }
         map.insert_key("p", Object::create_value(self.address.port() as i64))
             .unwrap();
         map.insert_key("t", Object::create_value(self.last_seen as i64))
@@ -164,4 +188,38 @@ fn is_public_v4(v4: Ipv4Addr) -> bool {
         || v4.is_multicast()
         || octets[0] == 0
         || carrier_grade_nat)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipv6_node_compact_is_38_bytes_and_cache_round_trips() {
+        let id = HashString::new([5u8; 20]);
+        let addr = SocketAddress::new_inet6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1), 6881);
+        let node = DhtNode::new(id, addr);
+        let mut buf = Vec::new();
+        node.store_compact(&mut buf);
+        assert_eq!(buf.len(), 38);
+
+        let cache = node.store_cache();
+        assert!(cache.get_key("i6").is_ok());
+        let restored = DhtNode::from_cache(id, &cache).expect("from_cache");
+        assert!(restored.address.is_inet6());
+        assert_eq!(restored.address.port(), 6881);
+    }
+
+    #[test]
+    fn ipv4_node_compact_is_26_bytes() {
+        let id = HashString::new([6u8; 20]);
+        let node = DhtNode::new(id, SocketAddress::new_inet(Ipv4Addr::new(1, 2, 3, 4), 6881));
+        let mut buf = Vec::new();
+        node.store_compact(&mut buf);
+        assert_eq!(buf.len(), 26);
+        let cache = node.store_cache();
+        assert!(cache.get_key("i").is_ok());
+        let restored = DhtNode::from_cache(id, &cache).expect("from_cache");
+        assert!(restored.address.is_inet());
+    }
 }

@@ -135,9 +135,13 @@ impl DhtBucket {
         other
     }
 
-    pub fn full_bucket(&self, buffer: &mut Vec<u8>) {
+    pub fn full_bucket(&self, nodes: &mut Vec<u8>, nodes6: &mut Vec<u8>) {
         for node in &self.nodes {
-            node.store_compact(buffer);
+            if node.address.ip().map(|ip| ip.is_ipv6()).unwrap_or(false) {
+                node.store_compact(nodes6);
+            } else {
+                node.store_compact(nodes);
+            }
         }
     }
 }

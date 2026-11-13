@@ -255,7 +255,7 @@ impl PartialQueue {
         self.layers = [(0, 0); Self::NUM_LAYERS];
     }
 
-    pub fn insert(&mut self, key: u8, value: u32) -> bool {
+    pub fn insert(&mut self, key: u16, value: u32) -> bool {
         let key_sz = key as usize;
         if key_sz >= self.ceiling {
             return false;

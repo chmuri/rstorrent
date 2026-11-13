@@ -6,7 +6,7 @@
 //! stops when the candidate set is exhausted or `max_queries` is reached.
 
 use std::collections::{HashMap, HashSet};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -43,15 +43,58 @@ fn now_seconds() -> u32 {
         .unwrap_or(0)
 }
 
-fn decode_peer(compact: &[u8; 6]) -> Option<SocketAddress> {
-    let ip = Ipv4Addr::new(compact[0], compact[1], compact[2], compact[3]);
-    let port = u16::from_be_bytes([compact[4], compact[5]]);
+/// Decodes a compact peer: 6 bytes for IPv4 (`values`), 18 for IPv6
+/// (`values6`, BEP 32).
+fn decode_peer(compact: &[u8]) -> Option<SocketAddress> {
+    let (ip, port_bytes) = match compact.len() {
+        6 => (
+            IpAddr::V4(Ipv4Addr::new(
+                compact[0], compact[1], compact[2], compact[3],
+            )),
+            [compact[4], compact[5]],
+        ),
+        18 => {
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&compact[0..16]);
+            (
+                IpAddr::V6(Ipv6Addr::from(octets)),
+                [compact[16], compact[17]],
+            )
+        }
+        _ => return None,
+    };
+    let port = u16::from_be_bytes(port_bytes);
     if port == 0 {
         return None;
     }
-    Some(SocketAddress::from(SocketAddr::V4(SocketAddrV4::new(
-        ip, port,
-    ))))
+    let addr = match ip {
+        IpAddr::V4(v4) => SocketAddr::V4(SocketAddrV4::new(v4, port)),
+        IpAddr::V6(v6) => SocketAddr::V6(SocketAddrV6::new(v6, port, 0, 0)),
+    };
+    Some(SocketAddress::from(addr))
+}
+
+/// Decodes the compact IPv6 node list (`nodes6`, BEP 32): 38 bytes each.
+pub(crate) fn decode_nodes6(bytes: &[u8]) -> Vec<DhtNode> {
+    bytes
+        .as_chunks::<38>()
+        .0
+        .iter()
+        .filter_map(|chunk| {
+            let id = HashString::from_slice(&chunk[0..20])?;
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&chunk[20..36]);
+            let ip = Ipv6Addr::from(octets);
+            let port = u16::from_be_bytes([chunk[36], chunk[37]]);
+            if port == 0 {
+                return None;
+            }
+            Some(DhtNode::new(
+                id,
+                SocketAddress::from(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0))),
+            ))
+        })
+        .collect()
 }
 
 /// Decodes the compact node list used by `find_node` and `get_peers`.
@@ -158,19 +201,29 @@ async fn lookup(
                 Ok(KrpcResponse::GetPeers {
                     token,
                     values,
+                    values6,
                     nodes: new_nodes,
+                    nodes6: new_nodes6,
                     ..
                 }) => {
                     router.lock().await.mark_replied(&node.id, now_seconds());
 
-                    for compact in values {
-                        if let Some(peer) = decode_peer(&compact) {
+                    for compact in values.iter().chain(values6.iter()) {
+                        if let Some(peer) = decode_peer(compact) {
                             peers.insert(peer);
                         }
                     }
 
                     if let Some(bytes) = new_nodes {
                         for discovered in decode_nodes(&bytes) {
+                            if known.insert(discovered.id) {
+                                router.lock().await.add_node(discovered.clone());
+                                candidates.push(discovered);
+                            }
+                        }
+                    }
+                    if let Some(bytes) = new_nodes6 {
+                        for discovered in decode_nodes6(&bytes) {
                             if known.insert(discovered.id) {
                                 router.lock().await.add_node(discovered.clone());
                                 candidates.push(discovered);
@@ -237,6 +290,7 @@ pub async fn announce_peer(
                             info_hash,
                             port,
                             token,
+                            implied_port: false,
                         },
                     )
                     .await
@@ -265,4 +319,39 @@ pub async fn lookup_query_count(
 ) -> Result<usize, DhtError> {
     let outcome = lookup(server, router, target, max_queries).await;
     Ok(outcome.queries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_peer_handles_ipv4_and_ipv6() {
+        let v4 = decode_peer(&[1, 2, 3, 4, 0x1a, 0xe1]).expect("v4 peer");
+        assert_eq!(v4.ip(), Some(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))));
+        assert_eq!(v4.port(), 6881);
+
+        let mut compact = vec![0x20u8; 16];
+        compact.extend_from_slice(&6881u16.to_be_bytes());
+        let v6 = decode_peer(&compact).expect("v6 peer");
+        assert!(v6.is_inet6());
+        assert_eq!(v6.port(), 6881);
+
+        assert!(decode_peer(&[1, 2, 3]).is_none());
+        assert!(decode_peer(&[1, 2, 3, 4, 0, 0]).is_none());
+    }
+
+    #[test]
+    fn decode_nodes6_parses_38_byte_entries() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&[9u8; 20]);
+        buf.extend_from_slice(&[0x20u8; 16]);
+        buf.extend_from_slice(&6881u16.to_be_bytes());
+        let nodes = decode_nodes6(&buf);
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].id, HashString::new([9u8; 20]));
+        assert!(nodes[0].address.is_inet6());
+        assert_eq!(nodes[0].address.port(), 6881);
+        assert!(decode_nodes6(&[0u8; 37]).is_empty());
+    }
 }

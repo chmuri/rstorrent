@@ -53,6 +53,8 @@ pub struct UtpStream {
     // Timestamps
     last_received_micros: u32,
     last_received_at: Instant,
+    // Monotonic epoch for the local microsecond clock; never reset per packet.
+    created_at: Instant,
 
     // Congestion and window
     congestion: LedbatCongestion,
@@ -98,6 +100,7 @@ impl UtpStream {
             last_acked_seq: initial_seq_nr.wrapping_sub(1),
             last_received_micros: 0,
             last_received_at: Instant::now(),
+            created_at: Instant::now(),
             congestion: LedbatCongestion::new(),
             remote_wnd: DEFAULT_RCV_WND,
             in_flight: VecDeque::new(),
@@ -128,7 +131,7 @@ impl UtpStream {
     }
 
     fn now_micros(&self) -> u32 {
-        let elapsed = self.last_received_at.elapsed().as_micros();
+        let elapsed = self.created_at.elapsed().as_micros();
         (elapsed & 0xFFFF_FFFF) as u32
     }
 

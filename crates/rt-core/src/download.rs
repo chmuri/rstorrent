@@ -1,9 +1,10 @@
-use lt_common::hash_string::HashString;
+use lt_common::hash_string::{Hash256, HashString};
 use lt_common::option_strings::{option_find_string, OptionEnum};
 use lt_common::Object;
 use lt_engine::constructor::TorrentMetadata;
 use lt_engine::download::{Download as EngineDownload, DownloadState};
 use lt_storage::resume::ResumeData;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -37,6 +38,10 @@ pub struct Download {
     /// They live on the download (not in a command-map side table) so the
     /// session writer can persist them and restore them after a restart.
     custom_fields: [String; 5],
+    /// Generic custom variables (`d.custom`/`d.custom.set`). Kept on the
+    /// download so the session writer persists arbitrary keys, not just the
+    /// five numbered slots.
+    custom: HashMap<String, String>,
     throttle_name: String,
     hash_failed: bool,
     hash_checked: bool,
@@ -69,6 +74,7 @@ impl Download {
             group: 0,
             directory: String::new(),
             custom_fields: Default::default(),
+            custom: HashMap::new(),
             throttle_name: String::new(),
             hash_failed: false,
             hash_checked: false,
@@ -93,11 +99,11 @@ impl Download {
     }
 
     pub fn download(&self) -> MutexGuard<'_, EngineDownload> {
-        self.download.lock().unwrap()
+        self.download.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn download_mut(&mut self) -> MutexGuard<'_, EngineDownload> {
-        self.download.lock().unwrap()
+        self.download.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn metadata(&self) -> &TorrentMetadata {
@@ -136,6 +142,22 @@ impl Download {
         }
     }
 
+    /// Returns a generic custom variable (`d.custom`) for this download.
+    pub fn custom_get(&self, key: &str) -> Option<&str> {
+        self.custom.get(key).map(String::as_str)
+    }
+
+    /// Sets a generic custom variable (`d.custom.set`).
+    pub fn custom_set(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.custom.insert(key.into(), value.into());
+    }
+
+    /// All generic custom variables, used by `d.custom.keys`/`d.custom.items`
+    /// and the session writer.
+    pub fn custom_map(&self) -> &HashMap<String, String> {
+        &self.custom
+    }
+
     pub fn is_metadata_download(&self) -> bool {
         self.metadata.is_meta_download
     }
@@ -153,7 +175,7 @@ impl Download {
         }
 
         let (metadata, info_bytes, recheck_pending) = {
-            let mut engine = self.download.lock().unwrap();
+            let mut engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
             if engine.is_metadata_download() {
                 return false;
             }
@@ -220,11 +242,17 @@ impl Download {
     }
 
     pub fn is_sequential(&self) -> bool {
-        self.download.lock().unwrap().is_sequential()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_sequential()
     }
 
     pub fn set_sequential(&mut self, value: bool) {
-        self.download.lock().unwrap().set_sequential(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_sequential(value);
     }
 
     pub fn last_active(&self) -> u64 {
@@ -263,7 +291,11 @@ impl Download {
         if self.is_hash_checking() {
             return DownloadState::Checking;
         }
-        self.download.lock().unwrap().state().clone()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state()
+            .clone()
     }
 
     /// Human-readable state name (used by `d.state`/`d.connection_current`).
@@ -303,7 +335,10 @@ impl Download {
         if self.is_hash_checking() {
             return false;
         }
-        self.download.lock().unwrap().is_done()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_done()
     }
 
     pub fn is_downloading(&self) -> bool {
@@ -318,7 +353,10 @@ impl Download {
         if self.is_hash_checking() {
             return false;
         }
-        self.download.lock().unwrap().is_initial_seeding()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_initial_seeding()
     }
 
     /// Preferred connection type while leeching: `leech`, `seed`,
@@ -353,7 +391,7 @@ impl Download {
 
         self.connection_seed = value;
         let active = self.is_active();
-        let mut engine = self.download.lock().unwrap();
+        let mut engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
         if self.connection_seed == "initial_seed" {
             if active {
                 engine.start_initial_seeding();
@@ -370,17 +408,45 @@ impl Download {
 
     pub fn set_accepting_seeders(&mut self, value: bool) {
         self.accepting_seeders = value;
-        self.download.lock().unwrap().set_accepting_seeders(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_accepting_seeders(value);
     }
 
     /// List of configured WebSeed (BEP 19 / BEP 17) URLs.
     pub fn web_seeds(&self) -> Vec<String> {
-        self.download.lock().unwrap().web_seeds().to_vec()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .web_seeds()
+            .to_vec()
     }
 
     /// Adds a WebSeed mirror URL.
     pub fn add_web_seed(&mut self, url: impl Into<String>) {
-        self.download.lock().unwrap().add_web_seed(url);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .add_web_seed(url);
+    }
+
+    /// Sets the expected metadata SHA-1 (magnet `btms`) used to verify
+    /// downloaded `ut_metadata` bytes.
+    pub fn set_expected_metadata_hash(&mut self, hash: Option<HashString>) {
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_expected_metadata_hash(hash);
+    }
+
+    /// Sets the full v2 info-hash (magnet `btmh`) used to verify downloaded
+    /// `ut_metadata` bytes with SHA-256.
+    pub fn set_expected_v2_hash(&mut self, hash: Option<Hash256>) {
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_expected_v2_hash(hash);
     }
 
     pub fn is_hash_checked(&self) -> bool {
@@ -390,7 +456,7 @@ impl Download {
 
         // A resume validation may have queued a partial recheck. Until it
         // completes the persisted bits are not trustworthy.
-        let engine = self.download.lock().unwrap();
+        let engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
         !engine.is_checking() && !engine.has_pending_hash_pieces()
     }
 
@@ -411,11 +477,17 @@ impl Download {
     }
 
     pub fn flush_disk(&mut self) -> Result<(), lt_storage::StorageError> {
-        self.download.lock().unwrap().flush_disk()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .flush_disk()
     }
 
     pub fn to_resume_data(&self) -> ResumeData {
-        self.download.lock().unwrap().to_resume_data()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_resume_data()
     }
 
     pub fn apply_resume(&mut self, resume: &ResumeData) -> Result<usize, String> {
@@ -429,7 +501,7 @@ impl Download {
         resume: &ResumeData,
         uncertain: &[u32],
     ) -> Result<usize, String> {
-        let mut engine = self.download.lock().unwrap();
+        let mut engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
         let result = engine.apply_resume_with_uncertain(resume, uncertain);
         match &result {
             Ok(_) => {
@@ -449,7 +521,10 @@ impl Download {
 
     /// Pieces completed from writes that have not been fsynced yet.
     pub fn uncertain_pieces(&self) -> Vec<u32> {
-        self.download.lock().unwrap().uncertain_pieces()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .uncertain_pieces()
     }
 
     /// Rehashes the download, returning a diagnostic when it is not legal.
@@ -475,13 +550,13 @@ impl Download {
         }
 
         let result = {
-            let mut engine = self.download.lock().unwrap();
+            let mut engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
             engine.recheck()
         };
 
         match result {
             Ok(result) => {
-                let engine = self.download.lock().unwrap();
+                let engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
                 self.hash_checked = engine.is_hash_checked() && !result.cancelled;
                 self.hash_failed = engine.is_hash_failed() || result.cancelled;
                 Ok(())
@@ -512,7 +587,11 @@ impl Download {
 
     /// Pieces that resume validation queued for a partial recheck.
     pub fn pending_hash_pieces(&self) -> Vec<u32> {
-        self.download.lock().unwrap().pending_hash_pieces().to_vec()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pending_hash_pieces()
+            .to_vec()
     }
 
     /// True while a resume-triggered recheck has not completed.
@@ -520,7 +599,10 @@ impl Download {
         if self.is_hash_checking() {
             return false;
         }
-        self.download.lock().unwrap().has_pending_hash_pieces()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_pending_hash_pieces()
     }
 
     /// Takes the pending flag set when magnet metadata revealed an existing
@@ -536,27 +618,30 @@ impl Download {
 
     /// Takes the pieces queued by resume validation for an explicit recheck.
     pub fn take_pending_hash_pieces(&mut self) -> Vec<u32> {
-        self.download.lock().unwrap().take_pending_hash_pieces()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take_pending_hash_pieces()
     }
 
     /// Rechecks only the pieces selected by resume validation.
     pub fn recheck_pending_pieces(&mut self) -> Result<(), String> {
         let pending = self.take_pending_hash_pieces();
         if pending.is_empty() {
-            let engine = self.download.lock().unwrap();
+            let engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
             self.hash_checked = engine.is_hash_checked();
             self.hash_failed = engine.is_hash_failed();
             return Ok(());
         }
 
         let result = {
-            let mut engine = self.download.lock().unwrap();
+            let mut engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
             engine.recheck_pieces(&pending)
         };
 
         match result {
             Ok(result) => {
-                let engine = self.download.lock().unwrap();
+                let engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
                 self.hash_checked = engine.is_hash_checked() && !result.cancelled;
                 self.hash_failed = engine.is_hash_failed() || result.cancelled;
                 Ok(())
@@ -573,55 +658,85 @@ impl Download {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().state_changed()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state_changed()
     }
 
     pub fn set_state_changed(&mut self, value: u64) {
-        self.download.lock().unwrap().set_state_changed(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_state_changed(value);
     }
 
     pub fn state_counter(&self) -> u64 {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().state_counter()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .state_counter()
     }
 
     pub fn set_state_counter(&mut self, value: u64) {
-        self.download.lock().unwrap().set_state_counter(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_state_counter(value);
     }
 
     pub fn timestamp_started(&self) -> u64 {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().timestamp_started()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .timestamp_started()
     }
 
     pub fn set_timestamp_started(&mut self, value: u64) {
-        self.download.lock().unwrap().set_timestamp_started(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_timestamp_started(value);
     }
 
     pub fn timestamp_finished(&self) -> u64 {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().timestamp_finished()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .timestamp_finished()
     }
 
     pub fn set_timestamp_finished(&mut self, value: u64) {
-        self.download.lock().unwrap().set_timestamp_finished(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_timestamp_finished(value);
     }
 
     pub fn load_date(&self) -> u64 {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().load_date()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .load_date()
     }
 
     pub fn set_load_date(&mut self, value: u64) {
-        self.download.lock().unwrap().set_load_date(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_load_date(value);
     }
 
     pub fn is_erasing(&self) -> bool {
@@ -689,11 +804,17 @@ impl Download {
     }
 
     pub fn has_existing_files(&self) -> bool {
-        self.download.lock().unwrap().has_existing_files()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_existing_files()
     }
 
     pub fn queue_recheck_if_files_exist(&mut self) -> bool {
-        self.download.lock().unwrap().queue_recheck_if_files_exist()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .queue_recheck_if_files_exist()
     }
 
     pub fn throttle_name(&self) -> &str {
@@ -702,37 +823,59 @@ impl Download {
 
     pub fn set_throttle_name(&mut self, name: impl Into<String>) {
         self.throttle_name = name.into();
+        self.download
+            .lock()
+            .unwrap()
+            .set_throttle_name(self.throttle_name.clone());
     }
 
     pub fn rate_up(&self) -> u64 {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().rate_up()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .rate_up()
     }
 
     pub fn rate_down(&self) -> u64 {
         if self.is_hash_checking() {
             return 0;
         }
-        self.download.lock().unwrap().rate_down()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .rate_down()
     }
 
     pub fn uploaded_bytes(&self) -> u64 {
-        self.download.lock().unwrap().uploaded_bytes()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .uploaded_bytes()
     }
 
     pub fn downloaded_bytes(&self) -> u64 {
-        self.download.lock().unwrap().downloaded_bytes()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .downloaded_bytes()
     }
 
     /// Restores the persisted session transfer counters.
     pub fn set_downloaded_bytes(&mut self, value: u64) {
-        self.download.lock().unwrap().set_downloaded_bytes(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_downloaded_bytes(value);
     }
 
     pub fn set_uploaded_bytes(&mut self, value: u64) {
-        self.download.lock().unwrap().set_uploaded_bytes(value);
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_uploaded_bytes(value);
     }
 
     /// Payload bytes covered by verified pieces.
@@ -751,7 +894,10 @@ impl Download {
                 .min(total_size);
         }
 
-        self.download.lock().unwrap().completed_bytes()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .completed_bytes()
     }
 
     /// Opens the download. Idempotent; emits no events itself.
@@ -760,7 +906,10 @@ impl Download {
             return Ok(());
         }
 
-        self.download.lock().unwrap().open()?;
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .open()?;
         self.is_open = true;
         Ok(())
     }
@@ -791,7 +940,7 @@ impl Download {
             return Err("download is being erased".into());
         }
 
-        let mut engine = self.download.lock().unwrap();
+        let mut engine = self.download.lock().unwrap_or_else(|e| e.into_inner());
         let had_pending_recheck = engine.has_pending_hash_pieces();
         match engine.try_start() {
             Ok(()) => {
@@ -825,27 +974,57 @@ impl Download {
     }
 
     pub fn try_stop(&mut self) -> Result<(), String> {
-        self.download.lock().unwrap().try_stop()
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .try_stop()
     }
 
     pub fn pause(&mut self) {
-        self.download.lock().unwrap().pause();
+        let sync = self
+            .download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pause_deferred();
+        // The guard is dropped before the fsync runs: sync_files can block
+        // for seconds and must not stall the network reactor holding the
+        // engine lock. Without a tokio runtime (sync callers, tests) fall
+        // back to inline.
+        if let Some(sync) = sync {
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    handle.spawn_blocking(move || sync.run());
+                }
+                Err(_) => sync.run(),
+            }
+        }
     }
 
     pub fn resume(&mut self) {
-        self.download.lock().unwrap().resume();
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .resume();
     }
 
     /// Stops and closes the download. Idempotent.
     pub fn close(&mut self) {
-        let _ = self.download.lock().unwrap().close();
+        let _ = self
+            .download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .close();
         self.is_open = false;
         self.hash_checked = false;
     }
 
     /// Closes files/network state directly without a tracker stop announce.
     pub fn close_directly(&mut self) {
-        let _ = self.download.lock().unwrap().close_directly();
+        let _ = self
+            .download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .close_directly();
         self.is_open = false;
         self.hash_checked = false;
     }
@@ -853,7 +1032,10 @@ impl Download {
     /// Releases runtime state while the download is being erased.
     pub fn erase(&mut self) {
         self.erasing = true;
-        self.download.lock().unwrap().erase();
+        self.download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .erase();
         self.is_open = false;
         self.hash_checked = false;
     }
@@ -877,6 +1059,7 @@ mod tests {
             announce_list: Vec::new(),
             is_private: false,
             is_meta_download: false,
+            v2: None,
         }
     }
 
@@ -932,6 +1115,64 @@ mod tests {
 
         assert_eq!(counter, download.state_counter());
         assert!(download.is_stopped());
+    }
+
+    fn file_metadata(name: &str) -> TorrentMetadata {
+        let mut meta = metadata(name);
+        let mut path = lt_common::path::Path::new();
+        path.push("payload.bin");
+        meta.files = vec![lt_engine::constructor::TorrentFileEntry {
+            path,
+            length: meta.total_size,
+            offset: 0,
+        }];
+        meta
+    }
+
+    fn pause_temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "rtorrent-core-pause-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn pause_in_runtime_transitions_and_frees_engine_lock() {
+        let dir = pause_temp_dir("runtime");
+        let mut download = Download::from_metadata(file_metadata("pause-runtime"));
+        download.set_directory(dir.to_str().unwrap());
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        download.pause();
+        assert!(download.is_paused());
+        // The fsync snapshot is dispatched to the blocking pool, so the
+        // engine mutex must be free once pause returns.
+        assert!(download.download.try_lock().is_ok());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pause_without_runtime_syncs_inline() {
+        let dir = pause_temp_dir("inline");
+        let mut download = Download::from_metadata(file_metadata("pause-inline"));
+        download.set_directory(dir.to_str().unwrap());
+        download.open().unwrap();
+        download.try_start().unwrap();
+
+        // No tokio runtime: the snapshot falls back to an inline sync.
+        download.pause();
+        assert!(download.is_paused());
+        assert!(download.download.try_lock().is_ok());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1066,7 +1307,12 @@ mod tests {
 
         // Closing the engine behind the wrapper makes the hash pass fail and
         // records the failure instead of panicking.
-        download.engine_download().lock().unwrap().close().unwrap();
+        download
+            .engine_download()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .close()
+            .unwrap();
         assert!(download.try_check_hash().is_err());
         assert!(download.is_hash_failed());
         download.open().unwrap();

@@ -4,17 +4,20 @@ use std::collections::HashSet;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Layout};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::Frame;
 use rt_grpc::{object_value, CommandResponse, ObjectValue};
 
-use crate::actions::{PromptKind, TuiAction};
+use crate::actions::{PromptKind, TorrentAction, TuiAction};
 use crate::bridge::{BridgeError, GrpcBridge, DEFAULT_RPC_TIMEOUT};
 use crate::config::Theme;
 use crate::connection::ConnectionManager;
 use crate::events::{AppEvent, EventQueue, EventQueueConfig};
 use crate::key_handler::{self, global_action, torrent_action};
+use crate::palette::PaletteState;
 use crate::state::{
     ActiveView, AppState, ConnectionStatus, DetailTab, DetailsState, FileListState, MenuEntry,
     MenuResult, MenuState,
@@ -22,12 +25,15 @@ use crate::state::{
 use crate::stream::{StreamUpdate, Streams};
 use crate::terminal::ClientTerminal;
 use crate::throttle::{ThrottleAction, ThrottleKeyMap};
-use crate::widgets::download_list::visible_rows;
+use crate::widgets::download_list::{viewport, visible_rows, HEADER_ROWS};
 use crate::widgets::input::{InputResult, InputState, PromptMode};
 use crate::widgets::InputWidget;
 use crate::widgets::{
-    DetailsWidget, DownloadListWidget, LogWidget, MenuWidget, StatusBarWidget, TitleBarWidget,
+    DetailsWidget, DownloadListWidget, LogWidget, MenuWidget, PaletteWidget, StatusBarWidget,
+    TitleBarWidget,
 };
+use rt_tui::theme::ThemeId;
+use rt_tui::widgets::ThemePickerModal;
 
 /// Tick used when the caller does not configure one.
 pub const DEFAULT_TICK: Duration = Duration::from_millis(500);
@@ -149,6 +155,12 @@ impl App {
         self
     }
 
+    /// Records the active theme id so the picker can highlight it.
+    pub fn with_theme_id(mut self, id: ThemeId) -> Self {
+        self.state.theme_id = id;
+        self
+    }
+
     /// Overrides the per-RPC timeout used for lazy reconnects.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -226,6 +238,12 @@ impl App {
                 self.handle_resize(cols, rows);
                 None
             }
+            AppEvent::Mouse {
+                kind,
+                column,
+                row,
+                modifiers,
+            } => self.handle_mouse(kind, column, row, modifiers),
         }
     }
 
@@ -249,6 +267,14 @@ impl App {
 
         if self.prompt.is_some() {
             return self.handle_prompt_key(code, modifiers);
+        }
+
+        if self.state.theme_picker.is_some() {
+            return self.handle_picker_key(code, modifiers);
+        }
+
+        if self.state.palette.is_some() {
+            return self.handle_palette_key(code, modifiers);
         }
 
         if self.state.menu.is_some() {
@@ -407,6 +433,399 @@ impl App {
         }
     }
 
+    /// Opens the theme picker over the current palette.
+    fn open_theme_picker(&mut self) {
+        self.state.theme_picker = Some(self.state.theme_id);
+    }
+
+    /// Keys active while the theme picker is open.
+    fn handle_picker_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
+        let selected = self.state.theme_picker?;
+        match (code, modifiers) {
+            (KeyCode::Down, _) => self.state.theme_picker = Some(selected.next()),
+            (KeyCode::Up, _) => self.state.theme_picker = Some(selected.prev()),
+            (KeyCode::Enter, _) => {
+                self.state.set_theme_id(selected);
+                self.state.theme_picker = None;
+                self.state.notice = Some(format!("theme updated to {}", selected.display_name()));
+                self.log(&format!("theme changed to {}", selected.display_name()));
+            }
+            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                self.state.theme_picker = None;
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Opens the command palette.
+    fn open_palette(&mut self) {
+        self.state.palette = Some(PaletteState::new());
+    }
+
+    /// Keys active while the command palette is open.
+    fn handle_palette_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<TuiAction> {
+        match (code, modifiers) {
+            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                self.state.palette = None;
+            }
+            (KeyCode::Enter, _) => {
+                let command = self
+                    .state
+                    .palette
+                    .as_ref()
+                    .and_then(|palette| palette.selected_command());
+                self.state.palette = None;
+                if let Some(command) = command {
+                    return self.activate_command(command.id);
+                }
+            }
+            (KeyCode::Up, _) => {
+                if let Some(palette) = self.state.palette.as_mut() {
+                    palette.move_up();
+                }
+            }
+            (KeyCode::Down, _) => {
+                if let Some(palette) = self.state.palette.as_mut() {
+                    palette.move_down();
+                }
+            }
+            (KeyCode::Backspace, _) => {
+                if let Some(palette) = self.state.palette.as_mut() {
+                    palette.backspace();
+                }
+            }
+            (KeyCode::Char(ch), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                if let Some(palette) = self.state.palette.as_mut() {
+                    palette.insert(ch);
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Runs the palette command identified by `id`.
+    fn activate_command(&mut self, id: &str) -> Option<TuiAction> {
+        match id {
+            "torrent.start" => self.control_focused(TorrentAction::Start),
+            "torrent.stop" => self.control_focused(TorrentAction::Stop),
+            "torrent.recheck" => self.control_focused(TorrentAction::CheckHash),
+            "torrent.remove" => self.remove_focused(),
+            "torrent.add" => Some(TuiAction::OpenPrompt(PromptKind::Load)),
+            "torrent.command" => Some(TuiAction::OpenPrompt(PromptKind::Command)),
+            "filter" => Some(TuiAction::OpenPrompt(PromptKind::Filter)),
+            "view.main" => {
+                self.switch_view(ActiveView::Main);
+                None
+            }
+            "view.name" => {
+                self.switch_view(ActiveView::Name);
+                None
+            }
+            "view.started" => {
+                self.switch_view(ActiveView::Started);
+                None
+            }
+            "view.stopped" => {
+                self.switch_view(ActiveView::Stopped);
+                None
+            }
+            "view.complete" => {
+                self.switch_view(ActiveView::Complete);
+                None
+            }
+            "view.incomplete" => {
+                self.switch_view(ActiveView::Incomplete);
+                None
+            }
+            "view.hashing" => {
+                self.switch_view(ActiveView::Hashing);
+                None
+            }
+            "view.seeding" => {
+                self.switch_view(ActiveView::Seeding);
+                None
+            }
+            "view.leeching" => {
+                self.switch_view(ActiveView::Leeching);
+                None
+            }
+            "view.active" => {
+                self.switch_view(ActiveView::Active);
+                None
+            }
+            "theme.select" => {
+                self.open_theme_picker();
+                None
+            }
+            "log.toggle" => {
+                self.state.show_log = !self.state.show_log;
+                None
+            }
+            "session.quit" => {
+                self.should_quit = true;
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Controls the focused torrent, or every selected one when a selection exists.
+    fn control_focused(&mut self, action: TorrentAction) -> Option<TuiAction> {
+        if self.state.selection_count() > 0 {
+            Some(TuiAction::BulkControlTorrents {
+                hashes: self.state.target_hashes(),
+                action,
+            })
+        } else {
+            self.state
+                .selected()
+                .map(|torrent| TuiAction::ControlTorrent {
+                    hash: torrent.hash.clone(),
+                    action,
+                })
+        }
+    }
+
+    /// Removes the focused torrent, or every selected one when a selection exists.
+    fn remove_focused(&mut self) -> Option<TuiAction> {
+        if self.state.selection_count() > 0 {
+            Some(TuiAction::BulkRemoveTorrents {
+                hashes: self.state.target_hashes(),
+            })
+        } else {
+            self.state
+                .selected()
+                .map(|torrent| TuiAction::RemoveTorrent {
+                    hash: torrent.hash.clone(),
+                })
+        }
+    }
+
+    /// The body rectangle the list/details widgets occupy, mirroring `draw`.
+    fn body_rect(&self) -> Rect {
+        let prompt_rows = if self.prompt.is_some() { 1 } else { 0 };
+        let height = self.state.terminal_rows.saturating_sub(2 + prompt_rows);
+        Rect::new(0, 1, self.state.terminal_cols, height)
+    }
+
+    /// Routes a mouse event to whichever pane is open.
+    fn handle_mouse(
+        &mut self,
+        kind: MouseEventKind,
+        column: u16,
+        row: u16,
+        modifiers: KeyModifiers,
+    ) -> Option<TuiAction> {
+        if self.prompt.is_some() {
+            return None;
+        }
+        if self.state.theme_picker.is_some() {
+            match kind {
+                MouseEventKind::ScrollDown => {
+                    if let Some(id) = self.state.theme_picker {
+                        self.state.theme_picker = Some(id.next());
+                    }
+                }
+                MouseEventKind::ScrollUp => {
+                    if let Some(id) = self.state.theme_picker {
+                        self.state.theme_picker = Some(id.prev());
+                    }
+                }
+                _ => {}
+            }
+            return None;
+        }
+        if self.state.palette.is_some() {
+            match kind {
+                MouseEventKind::ScrollDown => {
+                    if let Some(palette) = self.state.palette.as_mut() {
+                        palette.move_down();
+                    }
+                }
+                MouseEventKind::ScrollUp => {
+                    if let Some(palette) = self.state.palette.as_mut() {
+                        palette.move_up();
+                    }
+                }
+                _ => {}
+            }
+            return None;
+        }
+
+        let body = self.body_rect();
+        if column < body.x || column >= body.right() || row < body.y || row >= body.bottom() {
+            return None;
+        }
+
+        if self.state.show_log {
+            match kind {
+                MouseEventKind::ScrollDown => self.state.log.scroll_down(),
+                MouseEventKind::ScrollUp => self.state.log.scroll_up(),
+                _ => {}
+            }
+            return None;
+        }
+
+        if self.state.menu.is_some() {
+            return self.mouse_menu(kind, column, row, body);
+        }
+        if self.state.details.is_some() {
+            self.mouse_details(kind, column, row, body);
+            return None;
+        }
+        self.mouse_list(kind, column, row, modifiers, body)
+    }
+
+    /// Mouse handling while the context menu is open.
+    fn mouse_menu(
+        &mut self,
+        kind: MouseEventKind,
+        column: u16,
+        row: u16,
+        body: Rect,
+    ) -> Option<TuiAction> {
+        match kind {
+            MouseEventKind::ScrollDown => {
+                if let Some(menu) = self.state.menu.as_mut() {
+                    menu.handle_key(KeyCode::Down, KeyModifiers::NONE);
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                if let Some(menu) = self.state.menu.as_mut() {
+                    menu.handle_key(KeyCode::Up, KeyModifiers::NONE);
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let index = self
+                    .state
+                    .menu
+                    .as_ref()
+                    .and_then(|menu| menu_entry_at(menu, column, row, body));
+                if let Some(index) = index {
+                    let action = self.state.menu.as_mut().and_then(|menu| {
+                        menu.select(index);
+                        menu.activate()
+                    });
+                    self.state.menu = None;
+                    return action;
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Mouse handling for the torrent list.
+    fn mouse_list(
+        &mut self,
+        kind: MouseEventKind,
+        _column: u16,
+        row: u16,
+        modifiers: KeyModifiers,
+        body: Rect,
+    ) -> Option<TuiAction> {
+        match kind {
+            MouseEventKind::ScrollDown => {
+                self.state.focus_down();
+                return None;
+            }
+            MouseEventKind::ScrollUp => {
+                self.state.focus_up();
+                return None;
+            }
+            MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Down(MouseButton::Right) => {}
+            _ => return None,
+        }
+
+        let visible = self.state.visible_torrents();
+        let rows = visible_rows(body.height);
+        let range = viewport(self.state.focus_index, visible.len(), rows);
+        let offset = row.saturating_sub(body.y + HEADER_ROWS) as usize;
+        let index = range.start + offset;
+        if offset >= rows || index >= visible.len() {
+            return None;
+        }
+
+        let hash = visible[index].hash.clone();
+        let was_focused = self.state.focus_index == index;
+        self.state.focus_index = index;
+
+        match kind {
+            MouseEventKind::Down(MouseButton::Right) => self.open_menu(),
+            MouseEventKind::Down(MouseButton::Left)
+                if modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                self.state.toggle_select_focused();
+            }
+            MouseEventKind::Down(MouseButton::Left) if was_focused => {
+                self.details_request = Some(hash);
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Mouse handling for the details pane: tab-bar clicks and list scrolling.
+    fn mouse_details(&mut self, kind: MouseEventKind, column: u16, row: u16, body: Rect) {
+        if row == body.y {
+            if let MouseEventKind::Down(MouseButton::Left) = kind {
+                let offset = column.saturating_sub(body.x) as usize;
+                if let Some(tab) = tab_at_offset(offset) {
+                    if let Some(details) = self.state.details.as_mut() {
+                        details.active_tab = tab;
+                    }
+                }
+            }
+            return;
+        }
+
+        let active_tab = match self.state.details.as_ref() {
+            Some(details) => details.active_tab,
+            None => return,
+        };
+        let down = matches!(kind, MouseEventKind::ScrollDown);
+        let up = matches!(kind, MouseEventKind::ScrollUp);
+        if !down && !up {
+            return;
+        }
+        if active_tab == DetailTab::Logs {
+            if down {
+                self.state.log.scroll_down();
+            } else {
+                self.state.log.scroll_up();
+            }
+            return;
+        }
+        if let Some(details) = self.state.details.as_mut() {
+            match active_tab {
+                DetailTab::Files => {
+                    if down {
+                        details.files.focus_down();
+                    } else {
+                        details.files.focus_up();
+                    }
+                }
+                DetailTab::Peers => {
+                    if down {
+                        details.peers.focus_down();
+                    } else {
+                        details.peers.focus_up();
+                    }
+                }
+                DetailTab::Trackers => {
+                    if down {
+                        details.trackers.focus_down();
+                    } else {
+                        details.trackers.focus_up();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Opens the context menu for the focused torrent, or bulk menu if multiple selected.
     fn open_menu(&mut self) {
         let entries = if self.state.selection_count() > 0 {
@@ -518,6 +937,15 @@ impl App {
                 self.state.deselect_all();
                 return None;
             }
+            (KeyCode::Char('t'), KeyModifiers::NONE) => {
+                self.open_theme_picker();
+                return None;
+            }
+            (KeyCode::Char(':'), KeyModifiers::NONE)
+            | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.open_palette();
+                return None;
+            }
             _ => {}
         }
 
@@ -595,7 +1023,7 @@ impl App {
     /// Keys active while the details pane is shown.
     ///
     /// `h`, `^B` and Left on the first tab return to the list; Left/Right (and
-    /// `h`'s counterpart `l`) move between tabs; `1`–`5` select a tab directly.
+    /// `h`'s counterpart `l`) move between tabs; `1`–`6` select a tab directly.
     fn handle_details_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         let active_tab = match self.state.details.as_ref() {
             Some(details) => details.active_tab,
@@ -652,10 +1080,16 @@ impl App {
                     details.next_tab();
                 }
             }
-            (KeyCode::Char(number @ '1'..='5'), _) => {
+            (KeyCode::Char(number @ '1'..='6'), _) => {
                 if let Some(details) = self.state.details.as_mut() {
                     details.select_tab(number as u8 - b'0');
                 }
+            }
+            (KeyCode::Down, _) if active_tab == DetailTab::Logs => {
+                self.state.log.scroll_down();
+            }
+            (KeyCode::Up, _) if active_tab == DetailTab::Logs => {
+                self.state.log.scroll_up();
             }
             (KeyCode::Down, _) => {
                 if let Some(details) = self.state.details.as_mut() {
@@ -968,15 +1402,27 @@ impl App {
             frame.render_widget(LogWidget::new(&self.state.log), body_area);
         } else {
             match self.state.details.as_ref() {
-                Some(details) => {
-                    frame.render_widget(DetailsWidget::new(details, details.active_tab), body_area)
-                }
+                Some(details) => frame.render_widget(
+                    DetailsWidget::new(details, details.active_tab, &self.state.log),
+                    body_area,
+                ),
                 None => frame.render_widget(DownloadListWidget::new(&self.state), body_area),
             }
         }
 
         if let Some(menu) = self.state.menu.as_ref() {
             frame.render_widget(MenuWidget::new(menu), body_area);
+        }
+
+        if let Some(selected) = self.state.theme_picker {
+            frame.render_widget(
+                ThemePickerModal::new(self.state.theme_id, selected),
+                body_area,
+            );
+        }
+
+        if let Some(palette) = self.state.palette.as_ref() {
+            frame.render_widget(PaletteWidget::new(palette), body_area);
         }
 
         if let Some(prompt) = self.prompt.as_ref() {
@@ -1072,7 +1518,15 @@ fn poll_input(queue: &mut EventQueue, timeout: Duration) -> io::Result<()> {
             Event::Resize(cols, rows) => {
                 queue.push(AppEvent::resize(cols, rows));
             }
-            // Mouse, paste and focus reporting are not bound yet (TASK-10).
+            Event::Mouse(mouse) => {
+                queue.push(AppEvent::mouse(
+                    mouse.kind,
+                    mouse.column,
+                    mouse.row,
+                    mouse.modifiers,
+                ));
+            }
+            // Paste and focus reporting are not bound yet.
             _ => {}
         }
 
@@ -1245,4 +1699,56 @@ fn bulk_menu_entries(hashes: Vec<String>, count: usize) -> Vec<MenuEntry> {
             true,
         ),
     ]
+}
+
+/// Maps a tab-bar column offset to the tab it falls on, mirroring `render_tab_bar`.
+fn tab_at_offset(offset: usize) -> Option<DetailTab> {
+    let mut cursor = 0;
+    for tab in DetailTab::ALL {
+        let width = 4 + tab.title().chars().count();
+        if offset < cursor + width {
+            return Some(tab);
+        }
+        cursor += width + 1;
+    }
+    None
+}
+
+/// Maps a menu click to the entry index, mirroring `MenuWidget` geometry.
+fn menu_entry_at(menu: &MenuState, column: u16, row: u16, area: Rect) -> Option<usize> {
+    if menu.is_empty() || area.width < 6 || area.height < 3 {
+        return None;
+    }
+    let label_width = menu
+        .entries()
+        .iter()
+        .map(|entry| entry.label.chars().count())
+        .max()
+        .unwrap_or(8) as u16;
+    let width = (label_width + 4).min(area.width);
+    let height = (menu.len() as u16 + 2).min(area.height);
+    let popup = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+    let inner_x = popup.x + 1;
+    let inner_y = popup.y + 1;
+    let inner_width = popup.width.saturating_sub(2);
+    let inner_height = popup.height.saturating_sub(2);
+    if column < inner_x
+        || column >= inner_x + inner_width
+        || row < inner_y
+        || row >= inner_y + inner_height
+    {
+        return None;
+    }
+    let range = viewport(menu.selected(), menu.len(), inner_height as usize);
+    let index = range.start + (row - inner_y) as usize;
+    if index < menu.len() {
+        Some(index)
+    } else {
+        None
+    }
 }

@@ -18,6 +18,11 @@ use crate::transaction::{KrpcMessage, KrpcQuery, KrpcResponse};
 /// Timeout for a single KRPC query.
 pub const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// BEP 51: maximum number of info-hash samples returned per query.
+pub const SAMPLE_LIMIT: usize = 20;
+/// BEP 51: minimum seconds a client should wait before sampling again.
+pub const SAMPLE_INTERVAL: i64 = 60;
+
 /// Counters maintained by the server. The controller reports these through
 /// `dht.statistics`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -120,22 +125,26 @@ impl DhtServer {
             drop(stale);
         }
 
-        let addr = format!("0.0.0.0:{port}");
+        // Prefer a dual-stack socket so the DHT serves both IPv4 and IPv6
+        // (BEP 32); fall back to IPv4-only where IPv6 is unavailable.
+        let candidates = [format!("[::]:{port}"), format!("0.0.0.0:{port}")];
         let mut last_error = None;
 
-        for attempt in 0..10 {
-            match UdpSocket::bind(&addr).await {
-                Ok(socket) => {
-                    let actual_port = socket.local_addr()?.port();
-                    self.port.store(actual_port, Ordering::Relaxed);
-                    *self.socket.write().unwrap() = Some(Arc::new(socket));
-                    self.socket_changed.notify_one();
-                    return Ok(());
-                }
-                Err(err) => {
-                    last_error = Some(err);
-                    if attempt < 9 {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+        for addr in &candidates {
+            for attempt in 0..10 {
+                match UdpSocket::bind(addr).await {
+                    Ok(socket) => {
+                        let actual_port = socket.local_addr()?.port();
+                        self.port.store(actual_port, Ordering::Relaxed);
+                        *self.socket.write().unwrap() = Some(Arc::new(socket));
+                        self.socket_changed.notify_one();
+                        return Ok(());
+                    }
+                    Err(err) => {
+                        last_error = Some(err);
+                        if attempt < 9 {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
                     }
                 }
             }
@@ -323,6 +332,9 @@ impl DhtServer {
         match msg {
             KrpcMessage::Query(query) => {
                 let from_sa = SocketAddress::from(from_addr);
+                // A dual-stack socket delivers IPv4 peers as v4-mapped IPv6;
+                // canonicalize so storage, compact encoding and tokens agree.
+                let from_sa = from_sa.from_v4mapped().unwrap_or(from_sa);
                 let response = self.process_query(query, &from_sa).await;
                 let reply_msg = KrpcMessage::Response(response);
                 let reply_bytes = reply_msg.encode(&tid)?;
@@ -346,7 +358,8 @@ impl DhtServer {
             KrpcQuery::Ping { id }
             | KrpcQuery::FindNode { id, .. }
             | KrpcQuery::GetPeers { id, .. }
-            | KrpcQuery::AnnouncePeer { id, .. } => *id,
+            | KrpcQuery::AnnouncePeer { id, .. }
+            | KrpcQuery::SampleInfohashes { id, .. } => *id,
         };
 
         let mut router = self.router.lock().await;
@@ -364,45 +377,91 @@ impl DhtServer {
         match query {
             KrpcQuery::Ping { .. } => KrpcResponse::Ping { id: own_id },
             KrpcQuery::FindNode { target, .. } => {
-                let nodes = router.get_closest_nodes(&target);
-                KrpcResponse::FindNode { id: own_id, nodes }
+                let (nodes, nodes6) = router.get_closest_nodes(&target);
+                KrpcResponse::FindNode {
+                    id: own_id,
+                    nodes,
+                    nodes6,
+                }
             }
             KrpcQuery::GetPeers { info_hash, .. } => {
                 let token = router.make_token(from_sa).to_vec();
                 if let Some(tracker) = router.get_tracker(&info_hash, false) {
                     let peers = tracker.get_peers(32);
                     if !peers.is_empty() {
+                        let mut values = Vec::new();
+                        let mut values6 = Vec::new();
+                        for compact in peers {
+                            if compact.len() == 18 {
+                                values6.push(compact);
+                            } else {
+                                values.push(compact);
+                            }
+                        }
                         return KrpcResponse::GetPeers {
                             id: own_id,
                             token,
-                            values: peers,
+                            values,
+                            values6,
                             nodes: None,
+                            nodes6: None,
                         };
                     }
                 }
-                let nodes = Some(router.get_closest_nodes(&info_hash));
+                let (nodes, nodes6) = router.get_closest_nodes(&info_hash);
                 KrpcResponse::GetPeers {
                     id: own_id,
                     token,
                     values: Vec::new(),
-                    nodes,
+                    values6: Vec::new(),
+                    nodes: Some(nodes),
+                    nodes6: if nodes6.is_empty() {
+                        None
+                    } else {
+                        Some(nodes6)
+                    },
                 }
             }
             KrpcQuery::AnnouncePeer {
                 info_hash,
                 port,
                 token,
+                implied_port,
                 ..
             } => {
                 if router.token_valid(&token, from_sa) {
-                    if let Some(std::net::IpAddr::V4(v4)) = from_sa.ip() {
-                        let tracker = router.get_tracker(&info_hash, true);
-                        if let Some(t) = tracker {
-                            t.add_peer(u32::from(v4), port, 0);
+                    // BEP 5 implied_port: the source UDP port is authoritative.
+                    let peer_port = if implied_port { from_sa.port() } else { port };
+                    let tracker = router.get_tracker(&info_hash, true);
+                    if let Some(t) = tracker {
+                        match from_sa.ip() {
+                            Some(std::net::IpAddr::V4(v4)) => {
+                                t.add_peer(u32::from(v4), peer_port, 0);
+                            }
+                            Some(std::net::IpAddr::V6(v6)) => {
+                                t.add_peer6(v6.octets(), peer_port, 0);
+                            }
+                            None => {}
                         }
                     }
                 }
                 KrpcResponse::AnnouncePeer { id: own_id }
+            }
+            KrpcQuery::SampleInfohashes { target, .. } => {
+                let (samples, num) = router.sample_infohashes(SAMPLE_LIMIT);
+                let (nodes, nodes6) = router.get_closest_nodes(&target);
+                KrpcResponse::SampleInfohashes {
+                    id: own_id,
+                    interval: SAMPLE_INTERVAL,
+                    num: num as i64,
+                    nodes: if nodes.is_empty() { None } else { Some(nodes) },
+                    nodes6: if nodes6.is_empty() {
+                        None
+                    } else {
+                        Some(nodes6)
+                    },
+                    samples,
+                }
             }
         }
     }

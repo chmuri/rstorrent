@@ -115,7 +115,7 @@ pub fn register_scgi_commands(
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
             }
 
             let handler = Arc::new(ScgiHandler::new(

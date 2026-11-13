@@ -1,7 +1,7 @@
 # Remote build/test runner
 
 Compilation and tests for this repo run on a Docker builder on
-`root@192.0.2.1` (Unraid), so the laptop only syncs the tree and streams output.
+`root@builder.example.com` (Unraid), so the laptop only syncs the tree and streams output.
 
 ## Layout on the server
 
@@ -17,7 +17,7 @@ Docker volumes (native filesystem, NOT shfs):
   rstorrent-cargo-git         -> /usr/local/cargo/git
 
 Shared S3 Build Cache:
-  RustFS on root@192.0.2.1:9000 (bucket: `sccache`)
+  RustFS on root@builder.example.com:9000 (bucket: `sccache`)
   Used by both the remote builder and local development builds
 ```
 
@@ -42,7 +42,7 @@ scripts/remote-ci.sh raw bash -lc 'cargo tree -d'     # anything in the containe
 
 Environment overrides: `RSTORRENT_CI_HOST`, `RSTORRENT_CI_BASE`,
 `RSTORRENT_CI_IMAGE`, `RSTORRENT_CI_JOBS` (default `auto` — uses all available CPUs),
-`RSTORRENT_CI_MEMORY` (default `4g` — limits Docker container to 4 GB RAM).
+`RSTORRENT_CI_MEMORY` (default `6g` — limits Docker container to 6 GB RAM).
 
 The script takes an exclusive lock (`/tmp/rstorrent-remote-ci.lock`), so
 concurrent agent runs queue instead of copying the tree under each other.
@@ -52,7 +52,7 @@ concurrent agent runs queue instead of copying the tree under each other.
 The remote server runs other background containers and has 16 GB physical RAM.
 To maximize build performance while preserving host stability:
 
-- **Memory limit**: Container RAM is capped at **4 GB** (`--memory=4g` /
+- **Memory limit**: Container RAM is capped at **6 GB** (`--memory=6g` /
   `RSTORRENT_CI_MEMORY`), preventing cargo/rustc memory spikes from impacting host services;
 - **CPU parallelism**: `RSTORRENT_CI_JOBS` defaults to **auto** (all logical
   cores on the Xeon host, e.g. 36 threads), maximizing compilation speed across crates;
@@ -84,19 +84,19 @@ Or invoke the wrapper directly:
 
 ## Shared S3 Cache (sccache & RustFS)
 
-The setup uses `sccache` backed by RustFS (high-performance S3-compatible object storage) running on `192.0.2.1:9000`:
+The setup uses `sccache` backed by RustFS (high-performance S3-compatible object storage) running on `builder.example.com:9000`:
 - **Bucket**: `sccache`
 - **Config**: `.cargo/config.toml` configures `rustc-wrapper = "sccache"`, sets `[profile.dev] incremental = false`, and injects S3 endpoint/credentials into compiler processes.
 - **Local config**: Local user configuration is also stored in `~/.config/sccache/config` and `~/.aws/credentials`.
-- **Remote CI**: The remote container image includes `sccache` with S3 support enabled and connects to `http://192.0.2.1:9000`. Cache statistics are reported after remote cargo runs.
+- **Remote CI**: The remote container image includes `sccache` with S3 support enabled and connects to `http://builder.example.com:9000`. Cache statistics are reported after remote cargo runs.
 
-## OpenCode integration
+## Local agent tooling (optional, not part of the repository)
 
-`.opencode/plugins/remote-ci/index.ts` hooks `shell create.before` and rewrites
-any command starting with `cargo build|check|test|clippy|fmt|nextest` to
-`scripts/remote-ci.sh ...`, in every session, and raises the tool timeout to one
-hour. `command cargo test` (the bash builtin) bypasses the rewrite when a local
-run is genuinely wanted.
+A local-only OpenCode plugin can hook `shell create.before` and rewrite any
+command starting with `cargo build|check|test|clippy|fmt|nextest` to
+`scripts/remote-ci.sh ...`, raising the tool timeout to one hour. It is personal
+agent tooling kept outside the repository; `command cargo test` (the bash
+builtin) bypasses the rewrite when a local run is genuinely wanted.
 
 `AGENTS.md` states the same rule so the agent does not fight the hook.
 

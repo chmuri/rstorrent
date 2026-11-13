@@ -53,6 +53,7 @@ fn metadata() -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 
@@ -285,6 +286,7 @@ fn metadata_sized(payload: &[u8], piece_length: usize) -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 

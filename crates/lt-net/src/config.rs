@@ -34,6 +34,8 @@ struct Inner {
     prefer_ipv6: bool,
     block_udp: bool,
     block_incoming: bool,
+    enable_utp: bool,
+    enable_upnp: bool,
 
     priority: i32,
 
@@ -82,6 +84,8 @@ impl NetworkConfig {
                 prefer_ipv6: false,
                 block_udp: false,
                 block_incoming: false,
+                enable_utp: true,
+                enable_upnp: true,
                 priority: 0x08, // IPTOS_THROUGHPUT
                 bind_inet_address: SocketAddress::Unspec,
                 bind_inet_device_name: String::new(),
@@ -164,6 +168,26 @@ impl NetworkConfig {
 
     pub fn set_block_incoming(&self, v: bool) {
         self.inner.lock().unwrap().block_incoming = v;
+    }
+
+    /// Whether the inbound listener should also accept uTP connections. Read
+    /// once when the listener spawns; toggling it later does not rebind.
+    pub fn is_enable_utp(&self) -> bool {
+        self.inner.lock().unwrap().enable_utp
+    }
+
+    pub fn set_enable_utp(&self, v: bool) {
+        self.inner.lock().unwrap().enable_utp = v;
+    }
+
+    /// Whether the runtime should run the UPnP/NAT-PMP port-mapping loop. Read
+    /// once when the listener spawns; toggling it later has no effect.
+    pub fn is_enable_upnp(&self) -> bool {
+        self.inner.lock().unwrap().enable_upnp
+    }
+
+    pub fn set_enable_upnp(&self, v: bool) {
+        self.inner.lock().unwrap().enable_upnp = v;
     }
 
     pub fn priority(&self) -> i32 {
@@ -732,5 +756,28 @@ impl NetworkConfig {
     {
         let mut inner = self.inner.lock().unwrap();
         inner.subscribers.push(Box::new(callback));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utp_and_upnp_default_enabled_and_toggle() {
+        let config = NetworkConfig::new();
+        assert!(config.is_enable_utp());
+        assert!(config.is_enable_upnp());
+
+        config.set_enable_utp(false);
+        config.set_enable_upnp(false);
+        assert!(!config.is_enable_utp());
+        assert!(!config.is_enable_upnp());
+
+        // Clones share the same inner state, so the listener spawned from a
+        // clone observes the toggled values.
+        let clone = config.clone();
+        assert!(!clone.is_enable_utp());
+        assert!(!clone.is_enable_upnp());
     }
 }

@@ -23,6 +23,7 @@ fn metadata(announce_list: Vec<Vec<String>>, announce: Option<String>) -> Torren
         announce_list,
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 

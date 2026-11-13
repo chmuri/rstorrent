@@ -31,6 +31,7 @@ fn metadata() -> TorrentMetadata {
         announce_list: vec![vec!["http://tracker/announce".into()]],
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 
@@ -241,6 +242,7 @@ fn peer_accounting_commands_use_chunk_statistics() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let download = Arc::new(RwLock::new(Download::from_metadata(metadata)));

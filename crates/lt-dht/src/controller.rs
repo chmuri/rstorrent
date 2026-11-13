@@ -16,7 +16,7 @@ use lt_net::addr::SocketAddress;
 use crate::error::DhtError;
 use crate::node::DhtNode;
 use crate::router::{DhtRouter, TIMEOUT_PEER_ANNOUNCE, TIMEOUT_REMOVE_NODE};
-use crate::search::decode_nodes;
+use crate::search::{decode_nodes, decode_nodes6};
 use crate::server::{DhtServer, ServerStatistics};
 use crate::transaction::{KrpcQuery, KrpcResponse};
 
@@ -404,7 +404,9 @@ impl DhtController {
         }
 
         let own_id = self.router.lock().await.own_id;
-        let replied = query_find_node(self.server(), self.router(), targets, own_id, true).await;
+        let replied =
+            query_find_node(self.server(), self.router(), targets.clone(), own_id, true).await;
+        query_sample_infohashes(self.server(), self.router(), targets, own_id).await;
 
         self.update_population_state();
         Ok(replied)
@@ -997,7 +999,9 @@ async fn query_find_node(
             };
 
             match response {
-                Ok(KrpcResponse::FindNode { id, nodes }) => (address, Some((id, nodes))),
+                Ok(KrpcResponse::FindNode { id, nodes, nodes6 }) => {
+                    (address, Some((id, nodes, nodes6)))
+                }
                 _ => (address, None),
             }
         });
@@ -1010,7 +1014,7 @@ async fn query_find_node(
             Err(_) => continue,
         };
 
-        let Some((id, nodes)) = result else {
+        let Some((id, nodes, nodes6)) = result else {
             router.lock().await.mark_inactive_by_address(&address);
             continue;
         };
@@ -1021,6 +1025,70 @@ async fn query_find_node(
         router.add_node(DhtNode::new(id, address));
         for node in decode_nodes(&nodes) {
             router.add_node(node);
+        }
+        for node in decode_nodes6(&nodes6) {
+            router.add_node(node);
+        }
+    }
+
+    replied
+}
+
+/// BEP 51 sampling pass that enriches the routing table during bootstrap.
+/// Failures are ignored: a node may answer `find_node` yet not support BEP 51,
+/// so refusing `sample_infohashes` must not mark it inactive.
+async fn query_sample_infohashes(
+    server: Arc<DhtServer>,
+    router: Arc<Mutex<DhtRouter>>,
+    targets: Vec<SocketAddress>,
+    own_id: HashString,
+) -> usize {
+    let mut tasks = JoinSet::new();
+
+    for address in targets {
+        let server = Arc::clone(&server);
+        tasks.spawn(async move {
+            let Some(target) = address.as_socket_addr() else {
+                return (address, None);
+            };
+
+            let query = KrpcQuery::SampleInfohashes {
+                id: own_id,
+                target: own_id,
+            };
+            match server.send_query(target, query).await {
+                Ok(KrpcResponse::SampleInfohashes {
+                    id, nodes, nodes6, ..
+                }) => (address, Some((id, nodes, nodes6))),
+                _ => (address, None),
+            }
+        });
+    }
+
+    let mut replied = 0usize;
+    while let Some(joined) = tasks.join_next().await {
+        let (address, result) = match joined {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        let Some((id, nodes, nodes6)) = result else {
+            continue;
+        };
+
+        replied += 1;
+        let mut router = router.lock().await;
+        router.mark_replied(&id, now_seconds());
+        router.add_node(DhtNode::new(id, address));
+        if let Some(bytes) = nodes {
+            for node in decode_nodes(&bytes) {
+                router.add_node(node);
+            }
+        }
+        if let Some(bytes) = nodes6 {
+            for node in decode_nodes6(&bytes) {
+                router.add_node(node);
+            }
         }
     }
 

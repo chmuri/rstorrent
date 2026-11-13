@@ -6,8 +6,9 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use lt_common::hash_string::HashString;
+use lt_common::hash_string::{Hash256, HashString};
 use lt_crypto::sha1::sha1_hash;
+use lt_crypto::sha256::sha256_hash;
 use thiserror::Error;
 
 pub const METADATA_PIECE_SIZE: usize = 16384;
@@ -43,6 +44,10 @@ struct PendingRequest {
 #[derive(Debug)]
 pub struct MetadataDownload {
     info_hash: HashString,
+    /// Full BEP52 v2 info-hash (SHA-256) when known from a magnet's `btmh`.
+    /// A pure v2 torrent's wire identity is the truncated SHA-256, so SHA-1
+    /// verification would never match; this enables SHA-256 verification.
+    v2_hash: Option<Hash256>,
     total_size: usize,
     pieces: Vec<Option<Vec<u8>>>,
     /// Pieces currently in flight and the peer that owns each request.
@@ -57,6 +62,7 @@ impl MetadataDownload {
     pub fn new(info_hash: HashString) -> Self {
         Self {
             info_hash,
+            v2_hash: None,
             total_size: 0,
             pieces: Vec::new(),
             pending: HashMap::new(),
@@ -67,6 +73,13 @@ impl MetadataDownload {
 
     pub fn info_hash(&self) -> &HashString {
         &self.info_hash
+    }
+
+    /// Sets the full v2 info-hash (from a magnet `btmh`) so verification uses
+    /// SHA-256 instead of SHA-1. Required for pure v2 torrents, whose 20-byte
+    /// wire identity is a truncated SHA-256.
+    pub fn set_v2_hash(&mut self, hash: Option<Hash256>) {
+        self.v2_hash = hash;
     }
 
     pub fn total_size(&self) -> usize {
@@ -283,8 +296,12 @@ impl MetadataDownload {
             metadata.extend_from_slice(piece.as_ref().expect("complete checked above"));
         }
 
-        let digest = sha1_hash(&metadata);
-        if HashString::new(digest) != self.info_hash {
+        let verified = if let Some(v2) = self.v2_hash {
+            Hash256::new(sha256_hash(&metadata)) == v2
+        } else {
+            HashString::new(sha1_hash(&metadata)) == self.info_hash
+        };
+        if !verified {
             return Err(MetadataError::HashMismatch);
         }
 
@@ -462,5 +479,55 @@ mod tests {
         assert_eq!(total as usize, metadata.len());
         assert_eq!(last.len(), 7);
         assert!(metadata_piece(&metadata, 2).is_none());
+    }
+
+    fn deliver_all(download: &mut MetadataDownload, payload: &[u8]) {
+        download.set_size(payload.len()).unwrap();
+        for (index, data) in payload.chunks(METADATA_PIECE_SIZE).enumerate() {
+            download
+                .on_data(index as u32, payload.len() as u32, data)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn v2_metadata_verifies_with_sha256() {
+        // A pure v2 torrent's wire identity is the truncated SHA-256, so SHA-1
+        // verification cannot match; the full btmh hash enables SHA-256.
+        let payload: Vec<u8> = (0..50_000).map(|i| (i % 253) as u8).collect();
+        let full = Hash256::new(sha256_hash(&payload));
+        let mut download = MetadataDownload::new(full.truncate());
+        download.set_v2_hash(Some(full));
+        deliver_all(&mut download, &payload);
+        assert_eq!(download.verify_and_take().unwrap(), payload);
+    }
+
+    #[test]
+    fn v2_metadata_rejects_wrong_sha256() {
+        let payload = vec![0x77u8; METADATA_PIECE_SIZE + 5];
+        let full = Hash256::new(sha256_hash(&payload));
+        let mut download = MetadataDownload::new(full.truncate());
+        // Advertise a different full hash: verification must fail.
+        let wrong = Hash256::new(sha256_hash(b"not the metadata"));
+        download.set_v2_hash(Some(wrong));
+        deliver_all(&mut download, &payload);
+        assert!(matches!(
+            download.verify_and_take(),
+            Err(MetadataError::HashMismatch)
+        ));
+    }
+
+    #[test]
+    fn v2_identity_fails_without_full_hash() {
+        // Without the btmh hash the state machine falls back to SHA-1, which a
+        // truncated SHA-256 identity can never satisfy.
+        let payload = vec![0x12u8; 100];
+        let full = Hash256::new(sha256_hash(&payload));
+        let mut download = MetadataDownload::new(full.truncate());
+        deliver_all(&mut download, &payload);
+        assert!(matches!(
+            download.verify_and_take(),
+            Err(MetadataError::HashMismatch)
+        ));
     }
 }

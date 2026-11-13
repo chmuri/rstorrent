@@ -18,15 +18,32 @@ members = [
     "crates/rt-tui-client",
     "crates/rstorrent",
 ]
+# cargo-fuzz crate (plan.md :259) is built only by the nightly CI job; exclude it
+# from the stable workspace gate so `cargo test --workspace` never builds it.
+exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.20.1"
+version = "0.21.0"
 edition = "2021"
 rust-version = "1.99"
 authors = ["chmuri <chmuri@gmail.com>"]
 license = "GPL-2.0-or-later"
 repository = "https://github.com/chmuri/rstorrent"
 homepage = "https://github.com/chmuri/rstorrent"
+
+[workspace.lints.rust]
+# Inherited only by crates that opt in with `[lints] workspace = true` — the nine
+# unsafe-free crates (lt-common, lt-crypto, lt-dht, lt-engine, lt-protocol,
+# lt-tracker, rt-grpc, rt-tui, rt-tui-client). The crates with low-level `unsafe`
+# (lt-storage, lt-sys, lt-net, rt-core, rt-scgi, rstorrent) keep documented
+# invariants (plan.md :264) and do not inherit this table.
+unsafe_code = "deny"
+
+# Staged clippy migration (plan.md :263): `clippy::unwrap_used` / `expect_used`
+# are intentionally NOT enabled yet. `[lints] workspace = true` inherits the
+# whole table, so a `warn` would surface across the unwrap-heavy crates and fail
+# the `-D warnings` gate. Drive the unwrap count down per-crate, then enable
+# warn -> deny gradually.
 
 [workspace.dependencies]
 # Internal workspace crates
@@ -50,7 +67,7 @@ rt-tui-client = { path = "crates/rt-tui-client" }
 bytes = "1.10"
 thiserror = "2.0"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1"
 serde_json = "1.0"
@@ -63,11 +80,13 @@ num-traits = "0.2"
 flate2 = "1.0"
 base64 = "0.23"
 sha1 = "0.11"
+sha2 = "0.10"
 rc4 = "0.2"
 getrandom = "0.4.3"
 crossbeam-queue = "0.3"
 rayon = "1.10"
 rustc-hash = "2.1"
+lru = "0.18"
 hickory-resolver = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
@@ -83,6 +102,14 @@ prost-types = "0.14"
 tonic-build = "0.14"
 tonic-prost-build = "0.14"
 tokio-stream = "0.1"
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "json", "ws"] }
+# tls-rustls-ring (not tls-rustls): the latter pulls rustls/aws-lc-rs, which
+# clashes with tonic's ring provider and breaks rustls auto-determination.
+axum-server = { version = "0.9", default-features = false, features = ["tls-rustls-ring"] }
+tower = { version = "0.5", default-features = false, features = ["util"] }
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+proptest = "1"
+loom = "0.7"
 
 [profile.dev]
 # Use line-tables-only to preserve backtraces without generating tens of GBs of DWARF debug symbols

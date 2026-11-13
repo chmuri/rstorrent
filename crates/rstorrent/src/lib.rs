@@ -3,12 +3,15 @@
 pub mod cli;
 pub mod control;
 pub mod grpc;
+pub mod logging;
 pub mod metrics;
+pub mod prometheus;
 pub mod scgi;
 pub mod setup;
 pub mod signals;
 pub mod toml_config;
 pub mod ui_commands;
+pub mod webui;
 
 pub use cli::Cli;
 pub use control::Control;
@@ -35,9 +38,7 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let is_interactive =
         !cli.daemon && std::io::stdout().is_terminal() && std::io::stdin().is_terminal();
 
-    if !is_interactive {
-        tracing_subscriber::fmt::init();
-    }
+    logging::init_logging(&cli, is_interactive);
 
     let mut control = Control::new();
     let signal_task = spawn_signal_handlers(control.signals.clone());
@@ -48,6 +49,34 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
+    let metrics_task = prometheus::resolve_metrics_addr(&cli).map(|addr| {
+        let download_list = control.download_list.clone();
+        let throttle = control.throttle_manager.clone();
+        let shutdown = control.shutdown_tx.subscribe();
+        tracing::info!(%addr, "Prometheus /metrics server listening");
+        tokio::spawn(async move {
+            if let Err(err) = prometheus::serve(addr, download_list, throttle, shutdown).await {
+                tracing::warn!(error = %err, "Prometheus /metrics server stopped");
+            }
+        })
+    });
+
+    let webui_task = webui::resolve_webui_addr(&cli).map(|addr| {
+        let state = webui::WebuiState::new(
+            control.download_list.clone(),
+            control.command_map.clone(),
+            webui::resolve_webui_token(&cli),
+        );
+        let tls = webui::resolve_webui_tls(&cli);
+        let shutdown = control.shutdown_tx.subscribe();
+        tracing::info!(%addr, tls = tls.is_some(), "WebUI server listening");
+        tokio::spawn(async move {
+            if let Err(err) = webui::serve(addr, state, shutdown, tls).await {
+                tracing::warn!(error = %err, "WebUI server stopped");
+            }
+        })
+    });
+
     if !is_interactive {
         tracing::info!("rstorrent running in non-interactive (daemon) mode...");
         while !control.signals.is_shutdown() {
@@ -56,6 +85,12 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         }
         control.shutdown().await;
         signal_task.abort();
+        if let Some(task) = &metrics_task {
+            task.abort();
+        }
+        if let Some(task) = &webui_task {
+            task.abort();
+        }
         control.metrics.summary(
             "exit.summary",
             &[
@@ -430,6 +465,12 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     // Ordered shutdown: network -> disk/session commit/lock release.
     control.shutdown().await;
     signal_task.abort();
+    if let Some(task) = &metrics_task {
+        task.abort();
+    }
+    if let Some(task) = &webui_task {
+        task.abort();
+    }
     control.metrics.summary(
         "exit.summary",
         &[

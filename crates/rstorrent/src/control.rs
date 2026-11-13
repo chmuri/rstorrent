@@ -17,7 +17,10 @@ use rt_core::commands::{initialize_builtin_commands, CommandRegistry};
 use rt_core::network_runtime::{DhtLifecycleConfig, DhtMode};
 use rt_core::session::SessionManager;
 use rt_core::{DownloadFactory, DownloadList, Manager as CoreManager, ViewManager};
-use rt_rpc::{parse_command, CommandMap, CommandScheduler, ObjectStorage, Target};
+use rt_rpc::{
+    parse_command, register_lua_commands, CommandMap, CommandScheduler, LuaEngine, ObjectStorage,
+    Target,
+};
 use rt_tui::RootUI;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -135,15 +138,15 @@ impl Control {
         // 1. Setup default views
         let phase = Instant::now();
         {
-            let mut vm = self.view_manager.write().unwrap();
+            let mut vm = self.view_manager.write().unwrap_or_else(|e| e.into_inner());
             setup_default_views(&mut vm);
         }
         self.metrics.phase("startup.phase", "views", phase, None);
 
         // 2. Register all standard builtin commands into command_map
         let phase = Instant::now();
-        {
-            let mut map = self.command_map.write().unwrap();
+        let lua_engine = {
+            let mut map = self.command_map.write().unwrap_or_else(|e| e.into_inner());
 
             // Bind d.save_resume/d.save_full_session to the live session
             // manager before the builtin download registration. That
@@ -178,8 +181,12 @@ impl Control {
             )
             .map_err(|e| format!("Failed to register session commands: {}", e))?;
 
-            register_scheduler_commands(&mut map, Arc::clone(&self.command_scheduler))
-                .map_err(|e| format!("Failed to register scheduler commands: {}", e))?;
+            register_scheduler_commands(
+                &mut map,
+                Arc::clone(&self.command_scheduler),
+                self.download_list.read().unwrap().max_active_handle(),
+            )
+            .map_err(|e| format!("Failed to register scheduler commands: {}", e))?;
 
             crate::scgi::register_scgi_commands(&mut map, Arc::clone(&self.command_map))
                 .map_err(|e| format!("Failed to register SCGI commands: {}", e))?;
@@ -204,6 +211,16 @@ impl Control {
             )
             .map_err(|e| format!("Failed to register UI commands: {}", e))?;
 
+            // Wire the Lua engine before the `system.listMethods` snapshot so
+            // `lua.execute`/`lua.execute.str` are listed. `rtorrent.call` binds
+            // to the live command map, so Lua sees every registered command.
+            let engine = Arc::new(Mutex::new(
+                LuaEngine::new(Arc::clone(&self.command_map))
+                    .map_err(|e| format!("Failed to create Lua engine: {}", e))?,
+            ));
+            register_lua_commands(&mut map, Arc::clone(&engine))
+                .map_err(|e| format!("Failed to register Lua commands: {}", e))?;
+
             // `system.listMethods` is registered last so its snapshot contains
             // every command, including session/scheduler/SCGI/UI commands.
             let mut method_names: Vec<Object> = map
@@ -220,13 +237,18 @@ impl Control {
                 "List all registered methods.",
             )
             .map_err(|e| format!("Failed to register system.listMethods: {}", e))?;
-        }
+
+            engine
+        };
         self.metrics.phase("startup.phase", "commands", phase, None);
 
         // 3. Setup default schedule
         let phase = Instant::now();
         {
-            let mut sched = self.command_scheduler.lock().unwrap();
+            let mut sched = self
+                .command_scheduler
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default();
@@ -238,6 +260,8 @@ impl Control {
         // 4. Parse config files
         let phase = Instant::now();
         let mut watch_dir_from_toml: Option<String> = None;
+        let mut disk_threads_from_toml: Option<usize> = None;
+        let mut max_open_files_from_toml: Option<usize> = None;
         if !cli.ignore_rc_file() {
             let config_path = cli
                 .config_file
@@ -252,13 +276,35 @@ impl Control {
                     }
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         tracing::info!("Loaded configuration from {}", path_str);
-                        let map = self.command_map.read().unwrap();
+                        let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
                         if path_str.ends_with(".toml") {
                             match crate::toml_config::RtorrentTomlConfig::parse(&content) {
                                 Ok(cfg) => {
                                     cfg.apply(&map, &mut self.network_config, &self.dht_config);
                                     if let Some(wd) = cfg.storage.watch_directory {
                                         watch_dir_from_toml = Some(wd);
+                                    }
+                                    disk_threads_from_toml = cfg.storage.disk_threads;
+                                    max_open_files_from_toml = cfg.storage.max_open_files;
+                                    if let Some(pid) = &cfg.protocol.peer_id {
+                                        // A peer_id is 20 bytes: accept a 40-char
+                                        // hex string or a raw (ASCII) identifier,
+                                        // padded/truncated to 20 bytes.
+                                        let parsed = if pid.len() == 40 {
+                                            lt_common::hash_string::HashString::from_hex(pid)
+                                        } else {
+                                            None
+                                        };
+                                        self.our_peer_id = match parsed {
+                                            Some(h) => h,
+                                            None => {
+                                                let mut bytes = [0u8; 20];
+                                                let src = pid.as_bytes();
+                                                let n = src.len().min(20);
+                                                bytes[..n].copy_from_slice(&src[..n]);
+                                                lt_common::hash_string::HashString::new(bytes)
+                                            }
+                                        };
                                     }
                                 }
                                 Err(e) => {
@@ -283,12 +329,30 @@ impl Control {
                         path_str
                     );
                 }
+
+                // Load the Lua config script sitting next to the config file
+                // (e.g. `<config dir>/rtorrent.lua`), if present.
+                let lua_path = path.with_file_name("rtorrent.lua");
+                if lua_path.exists() {
+                    let eng = lua_engine.lock().unwrap_or_else(|e| e.into_inner());
+                    let args = Object::from(lua_path.to_string_lossy().to_string());
+                    match eng.execute(&Target::None, &args, 0) {
+                        Ok(_) => {
+                            tracing::info!("Loaded Lua configuration from {}", lua_path.display())
+                        }
+                        Err(e) => tracing::warn!(
+                            "Failed to load Lua config {}: {}",
+                            lua_path.display(),
+                            e
+                        ),
+                    }
+                }
             }
         }
 
         // 5. Apply CLI overrides
         {
-            let map = self.command_map.read().unwrap();
+            let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
             // CLI overrides are local, trusted configuration; some setters are
             // not marked untrusted-safe, so they must be called trusted or they
             // fail silently (e.g. used to lose `-d/--directory`).
@@ -316,6 +380,15 @@ impl Control {
                 let _ = map.call_command(
                     "network.port_range.set",
                     &Object::from(format!("{}-{}", port, port).as_str()),
+                    &Target::None,
+                    true,
+                );
+            }
+
+            if let Some(proxy) = &cli.proxy {
+                let _ = map.call_command(
+                    "network.proxy.global.set",
+                    &Object::from(proxy.as_str()),
                     &Target::None,
                     true,
                 );
@@ -379,9 +452,10 @@ impl Control {
         let phase = Instant::now();
         {
             let config = lt_storage::DiskPoolConfig {
-                threads: lt_storage::default_disk_threads(),
+                threads: disk_threads_from_toml.unwrap_or_else(lt_storage::default_disk_threads),
                 queue_capacity: lt_storage::DEFAULT_DISK_QUEUE,
-                max_open_files: lt_storage::default_max_open_files(),
+                max_open_files: max_open_files_from_toml
+                    .unwrap_or_else(lt_storage::default_max_open_files),
                 idle_timeout: lt_storage::DEFAULT_IDLE_TIMEOUT,
             };
             let threads = config.threads;
@@ -397,7 +471,7 @@ impl Control {
         // 6. Connect RootUI with view manager and download list
         let phase = Instant::now();
         {
-            let mut ui = self.root_ui.lock().unwrap();
+            let mut ui = self.root_ui.lock().unwrap_or_else(|e| e.into_inner());
             ui.set_view_manager(Arc::clone(&self.view_manager));
             ui.set_download_list(Arc::clone(&self.download_list));
             ui.set_command_map(Arc::clone(&self.command_map));
@@ -415,7 +489,10 @@ impl Control {
             let session_manager_batch = Arc::clone(&self.session_manager);
             let view_manager_batch = Arc::clone(&self.view_manager);
 
-            let mut dl_guard = self.download_list.write().unwrap();
+            let mut dl_guard = self
+                .download_list
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
             dl_guard.add_batch_event_listener(Arc::new(move |event, downloads| {
                 if event == "event.download.erased_batch" {
                     let mut hash_set = std::collections::HashSet::with_capacity(downloads.len());
@@ -466,7 +543,11 @@ impl Control {
                                 .unwrap()
                                 .erase_download_from_all(&parsed, None);
                         }
-                        match session_manager.lock().unwrap().erase_entry(&hash) {
+                        match session_manager
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .erase_entry(&hash)
+                        {
                             Ok(_) => {}
                             Err(err) => tracing::warn!(
                                 error = %err,
@@ -476,11 +557,11 @@ impl Control {
                         }
                     }
                     "event.download.finished" => {
-                        let session = session_manager.lock().unwrap();
+                        let session = session_manager.lock().unwrap_or_else(|e| e.into_inner());
                         if !session.on_completion() || !session.is_active() {
                             return;
                         }
-                        let guard = download.read().unwrap();
+                        let guard = download.read().unwrap_or_else(|e| e.into_inner());
                         match CoreManager::build_commit_entry(&guard) {
                             Ok(entry) => {
                                 if let Err(err) = session.commit(&[entry]) {
@@ -500,11 +581,11 @@ impl Control {
                         // Magnet metadata just arrived: write the missing
                         // `<info-hash>.torrent` immediately instead of
                         // waiting for the periodic session save.
-                        let session = session_manager.lock().unwrap();
+                        let session = session_manager.lock().unwrap_or_else(|e| e.into_inner());
                         if !session.is_active() {
                             return;
                         }
-                        let guard = download.read().unwrap();
+                        let guard = download.read().unwrap_or_else(|e| e.into_inner());
                         match CoreManager::build_commit_entry(&guard) {
                             Ok(entry) => {
                                 if let Err(err) = session.commit(&[entry]) {
@@ -529,11 +610,11 @@ impl Control {
                         // Persist immediately when a transfer stops or a
                         // verification pass completes instead of waiting
                         // for the periodic checkpoint.
-                        let session = session_manager.lock().unwrap();
+                        let session = session_manager.lock().unwrap_or_else(|e| e.into_inner());
                         if !session.is_active() {
                             return;
                         }
-                        let guard = download.read().unwrap();
+                        let guard = download.read().unwrap_or_else(|e| e.into_inner());
                         if guard.is_hash_checking() || guard.is_erasing() {
                             return;
                         }
@@ -564,7 +645,10 @@ impl Control {
             .phase("startup.phase", "ui_wiring", phase, None);
         let phase = Instant::now();
         {
-            let mut sm = self.session_manager.lock().unwrap();
+            let mut sm = self
+                .session_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             // Read the path from the manager directly. Calling the
             // `session.path` RPC here would re-lock the same manager and
             // deadlock while the mutex is held.
@@ -609,14 +693,20 @@ impl Control {
             .phase("startup.phase", "session_lock", phase, None);
         {
             let session_path = {
-                let session = self.session_manager.lock().unwrap();
+                let session = self
+                    .session_manager
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 session.path().to_string()
             };
 
             if !session_path.is_empty() {
                 let phase = Instant::now();
                 let entries = {
-                    let session = self.session_manager.lock().unwrap();
+                    let session = self
+                        .session_manager
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     // Restore every valid base, including magnet placeholders
                     // that never received metadata. Symlinks, temporary files
                     // and malformed names are ignored instead of aborting
@@ -682,7 +772,7 @@ impl Control {
                     let resume_accepted = restored.resume_error.is_none();
                     if download.directory().is_empty() {
                         let default_dir = {
-                            let map = self.command_map.read().unwrap();
+                            let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
                             map.call_command(
                                 "directory.default",
                                 &Object::create_empty(),
@@ -710,7 +800,10 @@ impl Control {
 
                     let download = Arc::new(RwLock::new(download));
                     {
-                        let mut dl_list = self.download_list.write().unwrap();
+                        let mut dl_list = self
+                            .download_list
+                            .write()
+                            .unwrap_or_else(|e| e.into_inner());
                         if !dl_list.insert(Arc::clone(&download)) {
                             duplicates += 1;
                             tracing::warn!(
@@ -723,12 +816,15 @@ impl Control {
                     }
 
                     {
-                        let mut vm = self.view_manager.write().unwrap();
+                        let mut vm = self.view_manager.write().unwrap_or_else(|e| e.into_inner());
                         vm.insert_download_to_all(Arc::clone(&download));
                     }
 
                     if was_active && resume_accepted {
-                        self.download_list.read().unwrap().start(&download);
+                        self.download_list
+                            .read()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .start(&download);
                         started += 1;
                     }
 
@@ -792,7 +888,10 @@ impl Control {
         // 9. Spawn NetworkRuntime supervisor
         let phase = Instant::now();
         let dht_cache_path = {
-            let session = self.session_manager.lock().unwrap();
+            let session = self
+                .session_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if session.path().is_empty() {
                 None
             } else {
@@ -804,7 +903,7 @@ impl Control {
         };
 
         let dht_lifecycle = {
-            let config = self.dht_config.read().unwrap();
+            let config = self.dht_config.read().unwrap_or_else(|e| e.into_inner());
             DhtLifecycleConfig {
                 mode: DhtMode::parse(&config.mode).unwrap_or(DhtMode::Auto),
                 port_override: config.override_port,
@@ -815,7 +914,7 @@ impl Control {
         let listen_port = if cli.port().is_some() {
             self.listen_port
         } else {
-            let map = self.command_map.read().unwrap();
+            let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
             map.call_command(
                 "network.port_range",
                 &Object::create_empty(),
@@ -833,6 +932,18 @@ impl Control {
         };
         self.listen_port = listen_port;
 
+        // Give the choke supervisor the handles it needs to enforce
+        // stop-on-ratio: the group manager (authoritative ratio config) and
+        // the command map (executes the group's ratio.command).
+        rt_core::network_runtime::install_ratio_context(
+            Arc::clone(&self.group_manager),
+            Arc::clone(&self.command_map),
+        );
+
+        // Mirror the configured throttle rates into the shared peer registry so
+        // the runtime's throttle driver can pace transfers to the limits.
+        rt_core::network_runtime::install_throttle_manager(Arc::clone(&self.throttle_manager));
+
         let runtime = rt_core::NetworkRuntime::spawn_with_network_config_and_dht(
             Arc::clone(&self.download_list),
             self.our_peer_id,
@@ -842,11 +953,18 @@ impl Control {
             self.network_config.clone(),
             dht_lifecycle,
         );
-        *self.network_runtime.lock().unwrap() = Some(runtime);
+        *self
+            .network_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(runtime);
         self.metrics
             .phase("startup.phase", "network_spawn", phase, None);
 
-        let torrents = self.download_list.read().unwrap().len() as u64;
+        let torrents = self
+            .download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .len() as u64;
         let mut summary: Vec<(&'static str, u64)> = vec![
             ("total_ms", self.metrics.ms_since(init_started)),
             ("torrents", torrents),
@@ -899,7 +1017,10 @@ impl Control {
                 .map_err(|e| format!("Load failed: {}", e))?;
         }
 
-        let mut dl_list = self.download_list.write().unwrap();
+        let mut dl_list = self
+            .download_list
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         let download = match factory.commit(&mut dl_list) {
             Ok(dl) => dl,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -909,10 +1030,13 @@ impl Control {
                         if start {
                             dl_list.start(&existing_dl);
                         }
-                        self.root_ui.lock().unwrap().push_log(format!(
-                            "Torrent already exists, updated/started: '{}'",
-                            trimmed
-                        ));
+                        self.root_ui
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .push_log(format!(
+                                "Torrent already exists, updated/started: '{}'",
+                                trimmed
+                            ));
                         return Ok(());
                     }
                 }
@@ -923,7 +1047,7 @@ impl Control {
 
         let default_dir = self.default_download_directory();
         {
-            let mut guard = download.write().unwrap();
+            let mut guard = download.write().unwrap_or_else(|e| e.into_inner());
             guard.set_directory(&default_dir);
             if guard.queue_recheck_if_files_exist() {
                 self.queued_rechecks.fetch_add(1, Ordering::Relaxed);
@@ -935,7 +1059,7 @@ impl Control {
         }
         drop(dl_list);
 
-        let mut vm = self.view_manager.write().unwrap();
+        let mut vm = self.view_manager.write().unwrap_or_else(|e| e.into_inner());
         vm.insert_download_to_all(Arc::clone(&download));
         let commit_started = Instant::now();
         let _ = self.save_session();
@@ -951,7 +1075,7 @@ impl Control {
     /// Resolves `directory.default`, falling back to the current directory
     /// when the command has not been registered (e.g. in isolated tests).
     fn default_download_directory(&self) -> String {
-        let map = self.command_map.read().unwrap();
+        let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
         map.call_command(
             "directory.default",
             &Object::create_empty(),
@@ -1039,7 +1163,10 @@ impl Control {
                 "Loaded {} torrents from watch directory '{}'",
                 loaded_count, dir_path
             );
-            self.root_ui.lock().unwrap().push_log(msg.clone());
+            self.root_ui
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push_log(msg.clone());
             tracing::info!("{}", msg);
         }
 
@@ -1076,7 +1203,7 @@ impl Control {
             return false;
         }
 
-        let mut dl_list = download_list.write().unwrap();
+        let mut dl_list = download_list.write().unwrap_or_else(|e| e.into_inner());
         let download = match factory.commit(&mut dl_list) {
             Ok(download) => download,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -1097,7 +1224,7 @@ impl Control {
         };
 
         {
-            let mut guard = download.write().unwrap();
+            let mut guard = download.write().unwrap_or_else(|e| e.into_inner());
             guard.set_directory(directory);
             if guard.queue_recheck_if_files_exist() {
                 if let Some(rechecks) = queued_rechecks {
@@ -1109,12 +1236,12 @@ impl Control {
         dl_list.start(&download);
         drop(dl_list);
 
-        let mut vm = view_manager.write().unwrap();
+        let mut vm = view_manager.write().unwrap_or_else(|e| e.into_inner());
         vm.insert_download_to_all(Arc::clone(&download));
 
         if let Some(ui) = root_ui {
             let msg = format!("Watch dir loaded torrent: {}", path_str);
-            ui.lock().unwrap().push_log(msg);
+            ui.lock().unwrap_or_else(|e| e.into_inner()).push_log(msg);
         }
 
         true
@@ -1204,7 +1331,7 @@ impl Control {
             .unwrap()
             .selected_download_hash()
             .ok_or_else(|| "No download selected".to_string())?;
-        let map = self.command_map.read().unwrap();
+        let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
         map.call_command(
             "d.directory.set",
             &Object::from(path),
@@ -1216,7 +1343,7 @@ impl Control {
     }
 
     pub fn execute_command(&self, cmd: &str) -> Result<String, String> {
-        let map = self.command_map.read().unwrap();
+        let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
         match parse_command(cmd, &Target::None, &map, true) {
             Ok((obj, _)) => {
                 let res = obj
@@ -1231,7 +1358,10 @@ impl Control {
             }
             Err(e) => {
                 let err = format!("Command error: {}", e);
-                self.root_ui.lock().unwrap().push_log(err.clone());
+                self.root_ui
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push_log(err.clone());
                 Err(err)
             }
         }
@@ -1249,12 +1379,15 @@ impl Control {
             // dispatched without holding the scheduler lock so a command may
             // call `schedule`/`schedule.remove` itself.
             let due = {
-                let mut scheduler = self.command_scheduler.lock().unwrap();
+                let mut scheduler = self
+                    .command_scheduler
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 scheduler.due_commands(Duration::from_secs(now))
             };
             for (key, command) in due {
                 {
-                    let map = self.command_map.read().unwrap();
+                    let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
                     if let Err(err) =
                         rt_rpc::scheduler::call_command_object(&command, &map, &Target::None, true)
                     {
@@ -1267,9 +1400,12 @@ impl Control {
                     .complete_command(Duration::from_secs(now), &key);
             }
 
-            let dl_list = self.download_list.read().unwrap();
+            let dl_list = self.download_list.read().unwrap_or_else(|e| e.into_inner());
             for dl in dl_list.all() {
-                dl.write().unwrap().download_mut().tick(now);
+                dl.write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .download_mut()
+                    .tick(now);
             }
         }
         t
@@ -1294,7 +1430,7 @@ impl Control {
         download_list: Arc<RwLock<DownloadList>>,
     ) -> std::io::Result<()> {
         let writer = {
-            let session = session_manager.lock().unwrap();
+            let session = session_manager.lock().unwrap_or_else(|e| e.into_inner());
             if !session.is_used() || !session.is_active() {
                 return Ok(());
             }
@@ -1303,8 +1439,12 @@ impl Control {
 
         let mut first_error = None;
         let mut entries = Vec::new();
-        for download in download_list.read().unwrap().all() {
-            let guard = download.read().unwrap();
+        for download in download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .all()
+        {
+            let guard = download.read().unwrap_or_else(|e| e.into_inner());
             if guard.is_hash_checking() || guard.is_erasing() {
                 continue;
             }
@@ -1371,19 +1511,22 @@ impl Control {
         abort: Option<Arc<AtomicBool>>,
     ) -> std::io::Result<()> {
         let writer = {
-            let session = session_manager.lock().unwrap();
+            let session = session_manager.lock().unwrap_or_else(|e| e.into_inner());
             if !session.is_used() || !session.is_active() {
                 return Ok(());
             }
             session.writer()
         };
 
-        let downloads = download_list.read().unwrap().all();
+        let downloads = download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .all();
         let mut entries = Vec::with_capacity(downloads.len());
         let mut first_error = None;
 
         for download in downloads {
-            let mut guard = download.write().unwrap();
+            let mut guard = download.write().unwrap_or_else(|e| e.into_inner());
             // A verification in flight has no stable bitfield: persisting the
             // resume now would store an empty one and force a recheck later.
             // The static torrent still has to exist, though, so a new import
@@ -1450,6 +1593,10 @@ impl Control {
             return;
         }
 
+        let force = rt_grpc::security::force_shutdown_requested();
+        if force {
+            tracing::warn!("Forced shutdown requested via RPC; shortening drain deadlines");
+        }
         tracing::info!("Graceful shutdown in progress...");
         let shutdown_started = Instant::now();
         let _ = self.shutdown_tx.send(true);
@@ -1457,14 +1604,28 @@ impl Control {
         // 1-3. Listeners, DHT and the coordinator supervisor (which stops
         // every per-torrent coordinator) in dependency order.
         let phase_started = Instant::now();
-        let runtime = self.network_runtime.lock().unwrap().take();
+        let runtime = self
+            .network_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         let mut network_completed = 1;
         if let Some(runtime) = runtime {
+            let (listeners, dht, coordinators) = if force {
+                let fast = Duration::from_secs(1);
+                (fast, fast, fast)
+            } else {
+                (
+                    LISTENER_SHUTDOWN_TIMEOUT,
+                    DHT_SHUTDOWN_TIMEOUT,
+                    COORDINATOR_SHUTDOWN_TIMEOUT,
+                )
+            };
             let report = runtime
                 .drain(rt_core::network_runtime::ShutdownTimeouts {
-                    listeners: LISTENER_SHUTDOWN_TIMEOUT,
-                    dht: DHT_SHUTDOWN_TIMEOUT,
-                    coordinators: COORDINATOR_SHUTDOWN_TIMEOUT,
+                    listeners,
+                    dht,
+                    coordinators,
                 })
                 .await;
 
@@ -1581,7 +1742,10 @@ impl Control {
 
         let phase_started = Instant::now();
         {
-            let mut session = self.session_manager.lock().unwrap();
+            let mut session = self
+                .session_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if session.is_active() {
                 if let Err(err) = session.stop() {
                     tracing::warn!(error = %err, "Could not stop session during shutdown");
@@ -1607,7 +1771,11 @@ impl Control {
     }
 
     async fn flush_downloads(&self) -> u64 {
-        let downloads = self.download_list.read().unwrap().all();
+        let downloads = self
+            .download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .all();
         if downloads.is_empty() {
             return 0;
         }
@@ -1616,7 +1784,11 @@ impl Control {
         let flush_errors = Arc::clone(&errors);
         let flush = tokio::task::spawn_blocking(move || {
             for download in downloads {
-                match download.write().unwrap().flush_disk() {
+                match download
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .flush_disk()
+                {
                     Ok(()) => {}
                     Err(err) => {
                         flush_errors.fetch_add(1, Ordering::Relaxed);
@@ -1640,7 +1812,11 @@ impl Control {
     /// schema is stable across runs.
     fn runtime_stats_fields(&self) -> Vec<(&'static str, u64)> {
         let mut fields = Vec::with_capacity(5);
-        let stats = self.download_list.read().unwrap().hash_scheduler_stats();
+        let stats = self
+            .download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .hash_scheduler_stats();
         fields.push(("hash_queued", stats.map_or(0, |s| s.queued as u64)));
         fields.push(("hash_active", stats.map_or(0, |s| s.active as u64)));
         fields.push(("hash_peak", stats.map_or(0, |s| s.peak as u64)));
@@ -1661,12 +1837,20 @@ impl Control {
         tracing::info!("Immediate shutdown requested...");
         let _ = self.shutdown_tx.send(true);
 
-        if let Some(runtime) = self.network_runtime.lock().unwrap().take() {
+        if let Some(runtime) = self
+            .network_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
             runtime.abort_all();
         }
 
         {
-            let mut session = self.session_manager.lock().unwrap();
+            let mut session = self
+                .session_manager
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if session.is_active() {
                 let _ = session.stop();
             }

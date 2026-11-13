@@ -2,7 +2,7 @@ use crate::download::Download;
 use crate::hash_scheduler::{HashJob, HashScheduler, HashSchedulerStats};
 use lt_common::hash_string::HashString;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 pub type DownloadEventListener = Arc<dyn Fn(&str, &Arc<RwLock<Download>>) + Send + Sync>;
@@ -17,7 +17,6 @@ pub fn default_hash_concurrency() -> usize {
         .clamp(1, 4)
 }
 
-#[derive(Default)]
 pub struct DownloadList {
     downloads: Vec<Arc<RwLock<Download>>>,
     /// Hash -> position in `downloads`. Kept in sync by every mutating method
@@ -29,6 +28,16 @@ pub struct DownloadList {
     /// pays for the worker threads.
     hash_scheduler: OnceLock<Arc<HashScheduler>>,
     hash_concurrency: AtomicUsize,
+    /// `scheduler.max_active`: cap on concurrently active torrents. Shared
+    /// with the `scheduler.max_active`/`.set` commands so the value they store
+    /// is the one enforced by `start`/`try_start`. Negative means unlimited.
+    max_active: Arc<AtomicI64>,
+}
+
+impl Default for DownloadList {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DownloadList {
@@ -40,7 +49,40 @@ impl DownloadList {
             batch_listeners: Vec::new(),
             hash_scheduler: OnceLock::new(),
             hash_concurrency: AtomicUsize::new(default_hash_concurrency()),
+            max_active: Arc::new(AtomicI64::new(-1)),
         }
+    }
+
+    /// Current `scheduler.max_active` cap (negative = unlimited).
+    pub fn max_active(&self) -> i64 {
+        self.max_active.load(Ordering::Relaxed)
+    }
+
+    /// Sets the `scheduler.max_active` cap.
+    pub fn set_max_active(&self, value: i64) {
+        self.max_active.store(value, Ordering::Relaxed);
+    }
+
+    /// Shared handle so the scheduler commands read/write the same cap that
+    /// `start`/`try_start` enforce.
+    pub fn max_active_handle(&self) -> Arc<AtomicI64> {
+        Arc::clone(&self.max_active)
+    }
+
+    /// True when starting `download` would exceed the active-torrent cap. An
+    /// already-active download never counts against it, so re-starting is a
+    /// no-op rather than a rejection.
+    fn active_limit_reached(&self, download: &Arc<RwLock<Download>>) -> bool {
+        let limit = self.max_active.load(Ordering::Relaxed);
+        if limit < 0 || download.read().unwrap().is_active() {
+            return false;
+        }
+        let active = self
+            .downloads
+            .iter()
+            .filter(|d| d.read().unwrap().is_active())
+            .count() as i64;
+        active >= limit
     }
 
     /// Configured bound on concurrent hash passes.
@@ -332,6 +374,12 @@ impl DownloadList {
             return;
         }
 
+        if self.active_limit_reached(download) {
+            // Leave the download open but stopped: it is queued until an
+            // active slot frees up, matching rTorrent's scheduler.max_active.
+            return;
+        }
+
         {
             let mut d_guard = download.write().unwrap();
             d_guard.start();
@@ -376,6 +424,10 @@ impl DownloadList {
             }
             self.begin_hash_check(download, was_active, was_done);
             return Ok(());
+        }
+
+        if self.active_limit_reached(download) {
+            return Err("scheduler.max_active limit reached".into());
         }
 
         let start_result = {
@@ -716,6 +768,7 @@ mod tests {
             announce_list: Vec::new(),
             is_private: false,
             is_meta_download: false,
+            v2: None,
         };
         Arc::new(RwLock::new(Download::from_metadata(metadata)))
     }

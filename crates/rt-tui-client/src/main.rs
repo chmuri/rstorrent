@@ -62,11 +62,27 @@ async fn main() -> ExitCode {
         }
     };
 
+    // CLI theme wins over the config file; "default" means "not given".
+    let cli_theme = if cli.theme == "default" {
+        None
+    } else {
+        rt_tui_client::config::theme_id_from_name(&cli.theme)
+    };
+    let theme_id = cli_theme
+        .or_else(|| {
+            config
+                .theme_name
+                .as_deref()
+                .and_then(rt_tui_client::config::theme_id_from_name)
+        })
+        .unwrap_or_default();
+
     let mut app = App::new(AppState::new(), bridge, Duration::from_millis(refresh_ms))
         .with_endpoint(&cli.endpoint)
         .with_streams(&cli.endpoint)
         .with_layout(&config.keys_layout)
-        .with_theme(config.theme());
+        .with_theme(config.theme_with_id(theme_id))
+        .with_theme_id(theme_id);
     app.log("client started");
 
     let outcome = app.run(session.terminal_mut()).await;

@@ -1,13 +1,8 @@
 use lt_common::bitfield::Bitfield;
 use std::path::{Path, PathBuf};
 
-use crate::chunk::Chunk;
-use crate::chunk_part::{ChunkPart, MappedType};
 use crate::error::StorageError;
 use crate::file::File;
-use crate::memory_chunk::MemoryChunk;
-use crate::mmap_safe::{MapFlags, Prot};
-use crate::socket_file::SocketFile;
 
 pub const MAX_CHUNKS: u64 = 1 << 22;
 
@@ -173,61 +168,5 @@ impl FileList {
                 }
             }
         }
-    }
-
-    pub fn create_chunk_index(&self, index: u32, prot: Prot) -> Result<Chunk, StorageError> {
-        if index >= self.size_chunks() {
-            return Err(StorageError::InvalidRange {
-                offset: (index as u64) * (self.chunk_size as u64),
-                length: self.chunk_size as u64,
-                size: self.torrent_size,
-            });
-        }
-
-        let chunk_start = (index as u64) * (self.chunk_size as u64);
-        let chunk_len =
-            (self.chunk_size as u64).min(self.torrent_size.saturating_sub(chunk_start)) as u32;
-
-        let mut chunk = Chunk::new();
-
-        for file in &self.files {
-            if file.size_bytes() == 0 {
-                continue;
-            }
-
-            let file_start = file.offset();
-            let file_end = file_start + file.size_bytes();
-
-            if chunk_start < file_end && (chunk_start + (chunk_len as u64)) > file_start {
-                let overlap_start = chunk_start.max(file_start);
-                let overlap_end = (chunk_start + (chunk_len as u64)).min(file_end);
-                let overlap_len = (overlap_end - overlap_start) as u32;
-
-                let file_offset = overlap_start - file_start;
-
-                let mem_chunk = if file.is_padding() {
-                    SocketFile::create_padding_chunk(overlap_len, prot, MapFlags::SHARED)?
-                } else if file.is_open() {
-                    let socket_file = SocketFile::from_fd(file.file_descriptor());
-                    let mc = socket_file.create_chunk(
-                        file_offset,
-                        overlap_len,
-                        prot,
-                        MapFlags::SHARED,
-                    )?;
-                    std::mem::forget(socket_file); // Don't close file fd here
-                    mc
-                } else {
-                    // In-memory mock chunk if file fd is not open (e.g. for standalone tests)
-                    MemoryChunk::from_vec(vec![0u8; overlap_len as usize], prot)
-                };
-
-                let mut part = ChunkPart::new(MappedType::Mmap, mem_chunk, 0);
-                part.set_file_offset(file_offset);
-                chunk.push_back(MappedType::Mmap, part.chunk().clone());
-            }
-        }
-
-        Ok(chunk)
     }
 }

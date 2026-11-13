@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use hickory_resolver::config::ResolverConfig;
@@ -64,12 +64,6 @@ impl DnsCache {
 pub struct DnsResolver {
     resolver: TokioResolver,
     cache: DnsCache,
-}
-
-impl Default for DnsResolver {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize system DNS resolver")
-    }
 }
 
 impl DnsResolver {
@@ -245,4 +239,15 @@ impl DnsResolver {
 
         (target, 0)
     }
+}
+
+static DNS_RESOLVER: OnceLock<Option<Arc<DnsResolver>>> = OnceLock::new();
+
+/// The process-wide caching DNS resolver, initialised once. Returns `None`
+/// if the system resolver could not be built; callers then fall back to the
+/// platform lookup.
+pub fn shared_dns_resolver() -> Option<Arc<DnsResolver>> {
+    DNS_RESOLVER
+        .get_or_init(|| DnsResolver::new().ok().map(Arc::new))
+        .clone()
 }

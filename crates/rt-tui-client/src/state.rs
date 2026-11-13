@@ -12,11 +12,13 @@ use rt_grpc::{
     FileInfo, PeerInfo, SessionStatsResponse, TorrentDetails, TorrentEvent, TorrentSummary,
     TrackerInfo,
 };
+use rt_tui::theme::ThemeId;
 
 use crate::config::Theme;
 
 use crate::actions::TuiAction;
 use crate::bridge::{BridgeError, GrpcBridge};
+use crate::palette::PaletteState;
 
 /// Index of the focused row in the torrent list.
 pub type FocusIndex = usize;
@@ -925,16 +927,19 @@ pub enum DetailTab {
     Trackers,
     /// Piece map.
     Chunks,
+    /// Client message log.
+    Logs,
 }
 
 impl DetailTab {
     /// All tabs in display order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Info,
         Self::Files,
         Self::Peers,
         Self::Trackers,
         Self::Chunks,
+        Self::Logs,
     ];
 
     /// Label shown in the tab bar.
@@ -945,6 +950,7 @@ impl DetailTab {
             Self::Peers => "Peers",
             Self::Trackers => "Trackers",
             Self::Chunks => "Chunks",
+            Self::Logs => "Logs",
         }
     }
 
@@ -956,6 +962,7 @@ impl DetailTab {
             Self::Peers => 3,
             Self::Trackers => 4,
             Self::Chunks => 5,
+            Self::Logs => 6,
         }
     }
 
@@ -1139,6 +1146,12 @@ pub struct AppState {
     pub show_log: bool,
     /// Resolved theme colours.
     pub theme: Theme,
+    /// Named palette currently applied.
+    pub theme_id: ThemeId,
+    /// Open theme picker previewing this palette; `None` when closed.
+    pub theme_picker: Option<ThemeId>,
+    /// Open command palette, if any.
+    pub palette: Option<PaletteState>,
 }
 
 impl Default for AppState {
@@ -1170,7 +1183,16 @@ impl AppState {
             log: LogState::default(),
             show_log: false,
             theme: Theme::default(),
+            theme_id: ThemeId::default(),
+            theme_picker: None,
+            palette: None,
         }
+    }
+
+    /// Applies a named palette, replacing the resolved colours wholesale.
+    pub fn set_theme_id(&mut self, id: ThemeId) {
+        self.theme_id = id;
+        self.theme = Theme::from_theme_id(id);
     }
 
     /// Refreshes torrents and stats; a failure only flips the connection status.

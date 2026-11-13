@@ -50,6 +50,7 @@ fn metadata() -> TorrentMetadata {
         ],
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 

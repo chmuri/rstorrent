@@ -131,6 +131,7 @@ fn metadata(name: &str) -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 
@@ -308,6 +309,7 @@ async fn paused_event_triggers_an_immediate_checkpoint() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let mut download = Download::new(EngineDownload::new(metadata));

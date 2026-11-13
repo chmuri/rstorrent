@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -27,6 +27,19 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(1);
 /// Legacy `SCgi::max_tasks` is 100. `0` disables the limit.
 pub const DEFAULT_MAX_CONNECTIONS: usize = 100;
+
+static SCGI_AUTH_TOKEN: OnceLock<Option<String>> = OnceLock::new();
+
+/// Install the bearer token required of remote (TCP) SCGI callers. Installed
+/// once by the daemon from `rstorrent.toml`; `None` disables authentication.
+/// Local Unix callers are trusted via socket permissions and bypass the token.
+pub fn install_auth_token(token: Option<String>) {
+    let _ = SCGI_AUTH_TOKEN.set(token);
+}
+
+fn auth_token() -> Option<&'static str> {
+    SCGI_AUTH_TOKEN.get().and_then(|token| token.as_deref())
+}
 
 #[derive(Error, Debug)]
 pub enum ScgiError {
@@ -161,6 +174,50 @@ impl ScgiMetrics {
     }
 }
 
+/// Process-wide registry of every SCGI handler's metrics. SCGI servers are
+/// opened on demand (`network.scgi.open_port`/`open_local`/`open_systemd`), so
+/// there is no single server to query; the Prometheus exporter sums the live
+/// handlers here. Weak references let dropped servers prune themselves.
+fn metrics_registry() -> &'static Mutex<Vec<Weak<ScgiMetrics>>> {
+    static REGISTRY: OnceLock<Mutex<Vec<Weak<ScgiMetrics>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn register_metrics(metrics: &Arc<ScgiMetrics>) {
+    metrics_registry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(Arc::downgrade(metrics));
+}
+
+/// Sums the counters of every live SCGI handler. Dead weak references are
+/// pruned so a long-running process does not accumulate dropped servers.
+pub fn aggregate_metrics() -> ScgiMetricsSnapshot {
+    let mut registry = metrics_registry().lock().unwrap_or_else(|e| e.into_inner());
+    let mut total = ScgiMetricsSnapshot::default();
+    registry.retain(|weak| {
+        let Some(metrics) = weak.upgrade() else {
+            return false;
+        };
+        let s = metrics.snapshot();
+        total.connections_accepted += s.connections_accepted;
+        total.connections_closed += s.connections_closed;
+        total.connections_rejected += s.connections_rejected;
+        total.active_connections += s.active_connections;
+        total.accept_errors += s.accept_errors;
+        total.requests_received += s.requests_received;
+        total.requests_completed += s.requests_completed;
+        total.requests_failed += s.requests_failed;
+        total.timeouts += s.timeouts;
+        total.protocol_errors += s.protocol_errors;
+        total.oversized_frames += s.oversized_frames;
+        total.bytes_read += s.bytes_read;
+        total.bytes_written += s.bytes_written;
+        true
+    });
+    total
+}
+
 struct ConnectionGuard {
     metrics: Arc<ScgiMetrics>,
 }
@@ -199,12 +256,14 @@ impl ScgiHandler {
         jsonrpc: Arc<JsonRpc>,
         config: ScgiConfig,
     ) -> Self {
+        let metrics = Arc::new(ScgiMetrics::default());
+        register_metrics(&metrics);
         Self {
             command_map,
             xmlrpc,
             jsonrpc,
             config,
-            metrics: Arc::new(ScgiMetrics::default()),
+            metrics,
         }
     }
 
@@ -219,12 +278,19 @@ impl ScgiHandler {
     /// Requests are processed strictly in order. After each response the
     /// connection is kept open for the next request when `keep_alive` is
     /// enabled; a clean EOF between requests is treated as a normal close.
-    pub async fn handle_stream<S>(&self, mut stream: S) -> Result<(), ScgiError>
+    /// Serve one connection. `trusted` is decided by the server from the
+    /// listener (a local Unix socket is trusted, a TCP peer is not); it is
+    /// never taken from the client-supplied `UNTRUSTED_CONNECTION` header.
+    pub async fn handle_stream<S>(
+        self: Arc<Self>,
+        mut stream: S,
+        trusted: bool,
+    ) -> Result<(), ScgiError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
         let _guard = ConnectionGuard::new(Arc::clone(&self.metrics));
-        let result = self.handle_stream_inner(&mut stream).await;
+        let result = self.handle_stream_inner(&mut stream, trusted).await;
 
         if result.is_err() {
             // Best-effort graceful FIN. Avoid letting a stuck peer keep the
@@ -235,12 +301,16 @@ impl ScgiHandler {
         result
     }
 
-    async fn handle_stream_inner<S>(&self, stream: &mut S) -> Result<(), ScgiError>
+    async fn handle_stream_inner<S>(
+        self: &Arc<Self>,
+        stream: &mut S,
+        trusted: bool,
+    ) -> Result<(), ScgiError>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
         loop {
-            let request = match self.read_request_or_eof(stream).await {
+            let request = match self.read_request_or_eof(stream, trusted).await {
                 Ok(Some(request)) => request,
                 Ok(None) => return Ok(()),
                 Err(err) => {
@@ -253,11 +323,25 @@ impl ScgiHandler {
                 .requests_received
                 .fetch_add(1, Ordering::Relaxed);
 
-            let response = match self.process_request(&request) {
-                Ok(response) => response,
-                Err(err) => {
+            // Command execution can block (fsync on pause/close, file I/O),
+            // so run it on a blocking worker instead of the Tokio reactor.
+            let handler = Arc::clone(self);
+            let response = match tokio::task::spawn_blocking(move || {
+                handler.process_request(&request)
+            })
+            .await
+            {
+                Ok(Ok(response)) => response,
+                Ok(Err(err)) => {
                     self.metrics.requests_failed.fetch_add(1, Ordering::Relaxed);
                     return Err(err);
+                }
+                Err(join_err) => {
+                    self.metrics.requests_failed.fetch_add(1, Ordering::Relaxed);
+                    return Err(ScgiError::Protocol(format!(
+                        "Command task failed: {}",
+                        join_err
+                    )));
                 }
             };
 
@@ -320,7 +404,11 @@ impl ScgiHandler {
 
     /// Read a single request. A clean EOF before any byte of a request is
     /// reported as `Ok(None)`.
-    async fn read_request_or_eof<R>(&self, reader: &mut R) -> Result<Option<ScgiRequest>, ScgiError>
+    async fn read_request_or_eof<R>(
+        &self,
+        reader: &mut R,
+        trusted: bool,
+    ) -> Result<Option<ScgiRequest>, ScgiError>
     where
         R: AsyncRead + Unpin,
     {
@@ -424,10 +512,9 @@ impl ScgiHandler {
                 .await?;
         }
 
-        let trusted = headers
-            .get("UNTRUSTED_CONNECTION")
-            .map(|v| v != "1")
-            .unwrap_or(true);
+        // Trust is the server-decided connection level passed in by the
+        // accept loop; the client-supplied UNTRUSTED_CONNECTION header is
+        // deliberately ignored so a remote peer cannot claim trusted access.
 
         let accepts_gzip = headers
             .get("ACCEPT_ENCODING")
@@ -502,11 +589,15 @@ impl ScgiHandler {
         }
     }
 
-    pub async fn read_request<R>(&self, reader: &mut R) -> Result<ScgiRequest, ScgiError>
+    pub async fn read_request<R>(
+        &self,
+        reader: &mut R,
+        trusted: bool,
+    ) -> Result<ScgiRequest, ScgiError>
     where
         R: AsyncRead + Unpin,
     {
-        match self.read_request_or_eof(reader).await? {
+        match self.read_request_or_eof(reader, trusted).await? {
             Some(request) => Ok(request),
             None => Err(ScgiError::Protocol(
                 "Unexpected EOF reading header length".to_string(),
@@ -545,6 +636,23 @@ impl ScgiHandler {
     }
 
     pub fn process_request(&self, req: &ScgiRequest) -> Result<Vec<u8>, ScgiError> {
+        // Remote (TCP) callers must present the configured bearer token to gain
+        // trust; local Unix callers are already trusted via socket permissions.
+        let mut trusted = req.trusted;
+        if let Some(expected) = auth_token() {
+            if !trusted {
+                let header = req
+                    .headers
+                    .get("HTTP_AUTHORIZATION")
+                    .or_else(|| req.headers.get("AUTHORIZATION"))
+                    .map(|value| value.as_str());
+                if !rt_rpc::auth::bearer_authorized(header, Some(expected)) {
+                    return Ok(b"Status: 401 Unauthorized\r\nContent-Length: 0\r\n\r\n".to_vec());
+                }
+                trusted = true;
+            }
+        }
+
         let map = self
             .command_map
             .read()
@@ -553,8 +661,8 @@ impl ScgiHandler {
         let body_str = String::from_utf8_lossy(&req.body);
 
         let resp_payload = match req.content_type {
-            ContentType::Xml => self.xmlrpc.process(&body_str, &map, req.trusted),
-            ContentType::Json => self.jsonrpc.process(&body_str, &map, req.trusted),
+            ContentType::Xml => self.xmlrpc.process(&body_str, &map, trusted),
+            ContentType::Json => self.jsonrpc.process(&body_str, &map, trusted),
         };
 
         let raw_bytes = resp_payload.into_bytes();
@@ -632,6 +740,10 @@ impl ScgiServer {
     ) -> Result<Self, ScgiError> {
         listener.set_nonblocking(true)?;
         let tokio_listener = UnixListener::from_std(listener)?;
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        }
         info!("SCGI listening on Unix socket {:?}", path);
         Ok(Self {
             handler,
@@ -657,6 +769,10 @@ impl ScgiServer {
             let _ = std::fs::remove_file(&p);
         }
         let listener = UnixListener::bind(&p)?;
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+        }
         info!("SCGI listening on Unix socket {:?}", p);
         Ok(Self {
             handler,
@@ -727,7 +843,9 @@ impl ScgiServer {
                     accepted = listener.accept() => {
                         match accepted {
                             Ok((stream, _addr)) => {
-                                Self::spawn_connection(&handler, &mut tasks, stream);
+                                // A TCP peer is remote: never trusted, regardless
+                                // of any header it sends.
+                                Self::spawn_connection(&handler, &mut tasks, stream, false);
                             }
                             Err(err) => {
                                 metrics.accept_errors.fetch_add(1, Ordering::Relaxed);
@@ -748,7 +866,9 @@ impl ScgiServer {
                         accepted = listener.accept() => {
                             match accepted {
                                 Ok((stream, _addr)) => {
-                                    Self::spawn_connection(&handler, &mut tasks, stream);
+                                    // A local Unix socket is permission-guarded
+                                    // (0o600), so its peer is trusted.
+                                    Self::spawn_connection(&handler, &mut tasks, stream, true);
                                 }
                                 Err(err) => {
                                     metrics.accept_errors.fetch_add(1, Ordering::Relaxed);
@@ -782,8 +902,12 @@ impl ScgiServer {
         result
     }
 
-    fn spawn_connection<S>(handler: &Arc<ScgiHandler>, tasks: &mut JoinSet<()>, stream: S)
-    where
+    fn spawn_connection<S>(
+        handler: &Arc<ScgiHandler>,
+        tasks: &mut JoinSet<()>,
+        stream: S,
+        trusted: bool,
+    ) where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         while tasks.try_join_next().is_some() {}
@@ -802,9 +926,40 @@ impl ScgiServer {
 
         let handler = Arc::clone(handler);
         tasks.spawn(async move {
-            if let Err(err) = handler.handle_stream(stream).await {
+            if let Err(err) = handler.handle_stream(stream, trusted).await {
                 debug!("SCGI connection error: {}", err);
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aggregate_metrics_sums_live_handlers_and_prunes_dropped() {
+        let before = aggregate_metrics();
+
+        let a = Arc::new(ScgiMetrics::default());
+        let b = Arc::new(ScgiMetrics::default());
+        register_metrics(&a);
+        register_metrics(&b);
+        a.requests_received.fetch_add(3, Ordering::Relaxed);
+        b.requests_received.fetch_add(4, Ordering::Relaxed);
+        a.bytes_written.fetch_add(100, Ordering::Relaxed);
+        b.active_connections.fetch_add(2, Ordering::Relaxed);
+
+        let during = aggregate_metrics();
+        assert_eq!(during.requests_received - before.requests_received, 7);
+        assert_eq!(during.bytes_written - before.bytes_written, 100);
+        assert_eq!(during.active_connections - before.active_connections, 2);
+
+        drop(a);
+        drop(b);
+        let after = aggregate_metrics();
+        assert_eq!(after.requests_received, before.requests_received);
+        assert_eq!(after.bytes_written, before.bytes_written);
+        assert_eq!(after.active_connections, before.active_connections);
     }
 }

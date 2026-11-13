@@ -45,14 +45,36 @@ impl BlockPool {
         self.queue.len()
     }
 
+    /// Drop idle buffers to release at least `bytes` of memory back to the OS.
+    /// Returns the number of bytes actually freed. Used by the memory manager
+    /// when accounting pressure asks for unused chunks to be reclaimed.
+    pub fn free_bytes(&self, bytes: u64) -> u64 {
+        let mut freed = 0u64;
+        while freed < bytes {
+            match self.queue.pop() {
+                Some(buf) => {
+                    freed += buf.capacity() as u64;
+                    drop(buf);
+                }
+                None => break,
+            }
+        }
+        freed
+    }
+
     /// Global singleton pool shared across tasks.
     pub fn global() -> &'static Arc<BlockPool> {
         static GLOBAL_POOL: OnceLock<Arc<BlockPool>> = OnceLock::new();
         GLOBAL_POOL.get_or_init(|| {
-            Arc::new(BlockPool::new(
+            let pool = Arc::new(BlockPool::new(
                 DEFAULT_POOL_CAPACITY,
                 DEFAULT_BLOCK_CAPACITY,
-            ))
+            ));
+            let hook_pool = pool.clone();
+            lt_storage::memory_manager::set_free_memory_hook(Arc::new(move |bytes| {
+                hook_pool.free_bytes(bytes)
+            }));
+            pool
         })
     }
 }

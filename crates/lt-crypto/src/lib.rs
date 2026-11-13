@@ -1,13 +1,20 @@
 pub mod dh;
+pub mod merkle;
 pub mod rc4;
 pub mod sha1;
+pub mod sha256;
 
 pub use dh::{
     mse_deobfuscate_hash, mse_key_a, mse_key_b, mse_req1, mse_req2, mse_req3, DiffieHellman,
     DH_GENERATOR, DH_PRIME, DH_PRIME_LENGTH, VC_DATA, VC_LENGTH,
 };
+pub use merkle::{
+    compute_merkle_tree, merkle_proof, merkle_root, verify_block_proof, verify_merkle_tree,
+    MerkleTree, BLOCK_SIZE,
+};
 pub use rc4::Rc4;
 pub use sha1::{sha1_hash, sha1_salt};
+pub use sha256::sha256_hash;
 
 #[cfg(test)]
 mod tests {

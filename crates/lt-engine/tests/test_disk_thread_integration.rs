@@ -29,6 +29,7 @@ fn metadata_for(payload: &[u8], name: &str) -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 
@@ -143,6 +144,7 @@ fn multi_file_pieces_are_written_relative_to_save_directory() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let root = std::env::temp_dir().join(format!(
@@ -207,6 +209,7 @@ fn many_piece_metadata(piece_length: u32, pieces: usize, name: &str) -> TorrentM
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 

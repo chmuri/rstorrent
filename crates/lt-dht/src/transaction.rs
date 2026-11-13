@@ -21,6 +21,11 @@ pub enum KrpcQuery {
         info_hash: HashString,
         port: u16,
         token: Vec<u8>,
+        implied_port: bool,
+    },
+    SampleInfohashes {
+        id: HashString,
+        target: HashString,
     },
 }
 
@@ -32,15 +37,26 @@ pub enum KrpcResponse {
     FindNode {
         id: HashString,
         nodes: Vec<u8>,
+        nodes6: Vec<u8>,
     },
     GetPeers {
         id: HashString,
         token: Vec<u8>,
-        values: Vec<[u8; 6]>,
+        values: Vec<Vec<u8>>,
+        values6: Vec<Vec<u8>>,
         nodes: Option<Vec<u8>>,
+        nodes6: Option<Vec<u8>>,
     },
     AnnouncePeer {
         id: HashString,
+    },
+    SampleInfohashes {
+        id: HashString,
+        interval: i64,
+        num: i64,
+        nodes: Option<Vec<u8>>,
+        nodes6: Option<Vec<u8>>,
+        samples: Vec<u8>,
     },
 }
 
@@ -110,6 +126,7 @@ impl KrpcMessage {
                         info_hash,
                         port,
                         token,
+                        implied_port,
                     } => {
                         root.insert_key("q", Object::create_string(b"announce_peer".to_vec()))
                             .unwrap();
@@ -124,6 +141,21 @@ impl KrpcMessage {
                             .unwrap();
                         args.insert_key("token", Object::create_string(token.clone()))
                             .unwrap();
+                        if *implied_port {
+                            args.insert_key("implied_port", Object::create_value(1))
+                                .unwrap();
+                        }
+                    }
+                    KrpcQuery::SampleInfohashes { id, target } => {
+                        root.insert_key("q", Object::create_string(b"sample_infohashes".to_vec()))
+                            .unwrap();
+                        args.insert_key("id", Object::create_string(id.as_slice().to_vec()))
+                            .unwrap();
+                        args.insert_key(
+                            "target",
+                            Object::create_string(target.as_slice().to_vec()),
+                        )
+                        .unwrap();
                     }
                 }
                 root.insert_key("a", args).unwrap();
@@ -138,17 +170,23 @@ impl KrpcMessage {
                         resp.insert_key("id", Object::create_string(id.as_slice().to_vec()))
                             .unwrap();
                     }
-                    KrpcResponse::FindNode { id, nodes } => {
+                    KrpcResponse::FindNode { id, nodes, nodes6 } => {
                         resp.insert_key("id", Object::create_string(id.as_slice().to_vec()))
                             .unwrap();
                         resp.insert_key("nodes", Object::create_string(nodes.clone()))
                             .unwrap();
+                        if !nodes6.is_empty() {
+                            resp.insert_key("nodes6", Object::create_string(nodes6.clone()))
+                                .unwrap();
+                        }
                     }
                     KrpcResponse::GetPeers {
                         id,
                         token,
                         values,
+                        values6,
                         nodes,
+                        nodes6,
                     } => {
                         resp.insert_key("id", Object::create_string(id.as_slice().to_vec()))
                             .unwrap();
@@ -158,19 +196,60 @@ impl KrpcMessage {
                             let mut val_list = Object::create_list();
                             for val in values {
                                 val_list
-                                    .insert_back(Object::create_string(val.to_vec()))
+                                    .insert_back(Object::create_string(val.clone()))
                                     .unwrap();
                             }
                             resp.insert_key("values", val_list).unwrap();
+                        }
+                        if !values6.is_empty() {
+                            let mut val_list = Object::create_list();
+                            for val in values6 {
+                                val_list
+                                    .insert_back(Object::create_string(val.clone()))
+                                    .unwrap();
+                            }
+                            resp.insert_key("values6", val_list).unwrap();
                         }
                         if let Some(ref n) = nodes {
                             resp.insert_key("nodes", Object::create_string(n.clone()))
                                 .unwrap();
                         }
+                        if let Some(ref n) = nodes6 {
+                            if !n.is_empty() {
+                                resp.insert_key("nodes6", Object::create_string(n.clone()))
+                                    .unwrap();
+                            }
+                        }
                     }
                     KrpcResponse::AnnouncePeer { id } => {
                         resp.insert_key("id", Object::create_string(id.as_slice().to_vec()))
                             .unwrap();
+                    }
+                    KrpcResponse::SampleInfohashes {
+                        id,
+                        interval,
+                        num,
+                        nodes,
+                        nodes6,
+                        samples,
+                    } => {
+                        resp.insert_key("id", Object::create_string(id.as_slice().to_vec()))
+                            .unwrap();
+                        resp.insert_key("interval", Object::create_value(*interval))
+                            .unwrap();
+                        resp.insert_key("num", Object::create_value(*num)).unwrap();
+                        resp.insert_key("samples", Object::create_string(samples.clone()))
+                            .unwrap();
+                        if let Some(ref n) = nodes {
+                            resp.insert_key("nodes", Object::create_string(n.clone()))
+                                .unwrap();
+                        }
+                        if let Some(ref n) = nodes6 {
+                            if !n.is_empty() {
+                                resp.insert_key("nodes6", Object::create_string(n.clone()))
+                                    .unwrap();
+                            }
+                        }
                     }
                 }
                 root.insert_key("r", resp).unwrap();
@@ -248,12 +327,25 @@ impl KrpcMessage {
                             .as_string()
                             .map_err(|_| DhtError::Input("'token' must be string".into()))?
                             .to_vec();
+                        // BEP 5: when set, the announcer's source UDP port is
+                        // authoritative and the announced `port` is ignored.
+                        let implied_port = args
+                            .get_key("implied_port")
+                            .ok()
+                            .and_then(|v| v.as_value().ok())
+                            .map(|v| v != 0)
+                            .unwrap_or(false);
                         KrpcQuery::AnnouncePeer {
                             id,
                             info_hash,
                             port,
                             token,
+                            implied_port,
                         }
+                    }
+                    b"sample_infohashes" => {
+                        let target = Self::extract_id(args, "target")?;
+                        KrpcQuery::SampleInfohashes { id, target }
                     }
                     other => {
                         return Err(DhtError::Input(format!(
@@ -284,9 +376,19 @@ impl KrpcMessage {
                             for item in val_list {
                                 if let Ok(s) = item.as_string() {
                                     if s.len() == 6 {
-                                        let mut compact = [0u8; 6];
-                                        compact.copy_from_slice(s);
-                                        values.push(compact);
+                                        values.push(s.to_vec());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let mut values6 = Vec::new();
+                    if let Ok(val_obj) = resp.get_key("values6") {
+                        if let Ok(val_list) = val_obj.as_list() {
+                            for item in val_list {
+                                if let Ok(s) = item.as_string() {
+                                    if s.len() == 18 {
+                                        values6.push(s.to_vec());
                                     }
                                 }
                             }
@@ -298,23 +400,76 @@ impl KrpcMessage {
                         .ok()
                         .and_then(|n| n.as_string().ok())
                         .map(|s| s.to_vec());
+                    let nodes6 = resp
+                        .get_key("nodes6")
+                        .ok()
+                        .and_then(|n| n.as_string().ok())
+                        .map(|s| s.to_vec());
                     Ok((
                         tid,
                         KrpcMessage::Response(KrpcResponse::GetPeers {
                             id,
                             token,
                             values,
+                            values6,
                             nodes,
+                            nodes6,
                         }),
                     ))
-                } else if let Ok(nodes_obj) = resp.get_key("nodes") {
-                    let nodes = nodes_obj
-                        .as_string()
-                        .map_err(|_| DhtError::Input("'nodes' must be string".into()))?
-                        .to_vec();
+                } else if resp.get_key("samples").is_ok() {
+                    let interval = resp
+                        .get_key("interval")
+                        .ok()
+                        .and_then(|v| v.as_value().ok())
+                        .unwrap_or(0);
+                    let num = resp
+                        .get_key("num")
+                        .ok()
+                        .and_then(|v| v.as_value().ok())
+                        .unwrap_or(0);
+                    let samples = resp
+                        .get_key("samples")
+                        .ok()
+                        .and_then(|s| s.as_string().ok())
+                        .map(|s| s.to_vec())
+                        .unwrap_or_default();
+                    let nodes = resp
+                        .get_key("nodes")
+                        .ok()
+                        .and_then(|n| n.as_string().ok())
+                        .map(|s| s.to_vec());
+                    let nodes6 = resp
+                        .get_key("nodes6")
+                        .ok()
+                        .and_then(|n| n.as_string().ok())
+                        .map(|s| s.to_vec());
                     Ok((
                         tid,
-                        KrpcMessage::Response(KrpcResponse::FindNode { id, nodes }),
+                        KrpcMessage::Response(KrpcResponse::SampleInfohashes {
+                            id,
+                            interval,
+                            num,
+                            nodes,
+                            nodes6,
+                            samples,
+                        }),
+                    ))
+                } else if resp.get_key("nodes").is_ok() || resp.get_key("nodes6").is_ok() {
+                    let nodes = resp
+                        .get_key("nodes")
+                        .ok()
+                        .and_then(|n| n.as_string().ok())
+                        .map(|s| s.to_vec())
+                        .unwrap_or_default();
+                    let nodes6 = resp
+                        .get_key("nodes6")
+                        .ok()
+                        .and_then(|n| n.as_string().ok())
+                        .map(|s| s.to_vec())
+                        .unwrap_or_default();
+                    Ok((
+                        tid,
+                        KrpcMessage::Response(KrpcResponse::FindNode { id, nodes, nodes6 }),
                     ))
                 } else {
                     Ok((tid, KrpcMessage::Response(KrpcResponse::Ping { id })))
@@ -378,5 +533,120 @@ mod tests {
             object.get_key_string("v").expect("v key"),
             lt_common::version::DHT_CLIENT_VERSION.as_bytes()
         );
+    }
+
+    #[test]
+    fn find_node_response_round_trips_nodes6() {
+        let id = HashString::new([3u8; 20]);
+        let nodes = vec![0x11u8; 26];
+        let nodes6 = vec![0x22u8; 38];
+        let msg = KrpcMessage::Response(KrpcResponse::FindNode {
+            id,
+            nodes: nodes.clone(),
+            nodes6: nodes6.clone(),
+        });
+        let bytes = msg.encode(b"tt").expect("encode");
+        let (tid, decoded) = KrpcMessage::decode(&bytes).expect("decode");
+        assert_eq!(tid, b"tt");
+        match decoded {
+            KrpcMessage::Response(KrpcResponse::FindNode {
+                id: rid,
+                nodes: rn,
+                nodes6: rn6,
+            }) => {
+                assert_eq!(rid, id);
+                assert_eq!(rn, nodes);
+                assert_eq!(rn6, nodes6);
+            }
+            _ => panic!("unexpected response variant"),
+        }
+    }
+
+    #[test]
+    fn get_peers_response_round_trips_values6_and_nodes6() {
+        let id = HashString::new([4u8; 20]);
+        let token = b"tok".to_vec();
+        let values = vec![vec![1, 2, 3, 4, 0x1a, 0xe1]];
+        let values6 = vec![vec![0x33u8; 18]];
+        let nodes6 = vec![0x44u8; 38];
+        let msg = KrpcMessage::Response(KrpcResponse::GetPeers {
+            id,
+            token: token.clone(),
+            values: values.clone(),
+            values6: values6.clone(),
+            nodes: None,
+            nodes6: Some(nodes6.clone()),
+        });
+        let bytes = msg.encode(b"gg").expect("encode");
+        let (_, decoded) = KrpcMessage::decode(&bytes).expect("decode");
+        match decoded {
+            KrpcMessage::Response(KrpcResponse::GetPeers {
+                id: rid,
+                token: rt,
+                values: rv,
+                values6: rv6,
+                nodes: rn,
+                nodes6: rn6,
+            }) => {
+                assert_eq!(rid, id);
+                assert_eq!(rt, token);
+                assert_eq!(rv, values);
+                assert_eq!(rv6, values6);
+                assert!(rn.is_none());
+                assert_eq!(rn6, Some(nodes6));
+            }
+            _ => panic!("unexpected response variant"),
+        }
+    }
+
+    #[test]
+    fn sample_infohashes_round_trips_samples_num_interval() {
+        let id = HashString::new([5u8; 20]);
+        let target = HashString::new([6u8; 20]);
+        let query = KrpcMessage::Query(KrpcQuery::SampleInfohashes { id, target });
+        let bytes = query.encode(b"ss").expect("encode query");
+        let (tid, decoded) = KrpcMessage::decode(&bytes).expect("decode query");
+        assert_eq!(tid, b"ss");
+        match decoded {
+            KrpcMessage::Query(KrpcQuery::SampleInfohashes {
+                id: qid,
+                target: qt,
+            }) => {
+                assert_eq!(qid, id);
+                assert_eq!(qt, target);
+            }
+            _ => panic!("unexpected query variant"),
+        }
+
+        let samples = vec![0x77u8; 40];
+        let nodes6 = vec![0x88u8; 38];
+        let msg = KrpcMessage::Response(KrpcResponse::SampleInfohashes {
+            id,
+            interval: 60,
+            num: 123,
+            nodes: None,
+            nodes6: Some(nodes6.clone()),
+            samples: samples.clone(),
+        });
+        let bytes = msg.encode(b"sr").expect("encode response");
+        let (_, decoded) = KrpcMessage::decode(&bytes).expect("decode response");
+        match decoded {
+            KrpcMessage::Response(KrpcResponse::SampleInfohashes {
+                id: rid,
+                interval,
+                num,
+                nodes,
+                nodes6: rn6,
+                samples: rs,
+            }) => {
+                assert_eq!(rid, id);
+                assert_eq!(interval, 60);
+                assert_eq!(num, 123);
+                assert!(nodes.is_none());
+                assert_eq!(rn6, Some(nodes6));
+                assert_eq!(rs, samples);
+            }
+            _ => panic!("unexpected response variant"),
+        }
     }
 }

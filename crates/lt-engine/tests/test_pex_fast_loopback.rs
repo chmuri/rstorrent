@@ -38,6 +38,7 @@ fn metadata(payload: &[u8], is_private: bool) -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private,
         is_meta_download: false,
+        v2: None,
     }
 }
 
@@ -87,7 +88,7 @@ async fn send_extension_handshake(client: &mut TcpStream, pex_id: u8) {
         .write_all(
             &PeerMessage::Extended {
                 id: 0,
-                payload: extension_handshake_payload(pex_id, 2, None),
+                payload: extension_handshake_payload(pex_id, 2, None, None),
             }
             .encode(),
         )
@@ -255,6 +256,38 @@ async fn private_torrents_ignore_pex() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(pool.lock().unwrap().get(injected).is_none());
     assert!(pex_statistics().private_blocked >= 1);
+
+    let _ = shutdown_tx.send(true);
+    let _ = session.await;
+}
+
+#[tokio::test]
+async fn fast_seeder_sends_allowed_fast_set() {
+    let payload = vec![0x55u8; 64];
+    let metadata = metadata(&payload, false);
+    let mut download = Download::new(metadata);
+    download.chunk_selector_mut().mark_completed(0);
+    assert!(download.is_seeder());
+    let download = Arc::new(Mutex::new(download));
+
+    let (mut client, session, shutdown_tx) = start(download, None).await;
+    send_extension_handshake(&mut client, 1).await;
+
+    // The peer connects from 127.0.0.1; with a single piece the canonical
+    // allowed-fast set collapses to piece 0.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut saw_allowed_fast = false;
+    while Instant::now() < deadline && !saw_allowed_fast {
+        let message = tokio::time::timeout(Duration::from_secs(1), read_message(&mut client))
+            .await
+            .expect("timed out")
+            .expect("peer closed");
+        if let PeerMessage::AllowedFast { index } = message {
+            assert_eq!(index, 0);
+            saw_allowed_fast = true;
+        }
+    }
+    assert!(saw_allowed_fast, "allowed_fast not received");
 
     let _ = shutdown_tx.send(true);
     let _ = session.await;

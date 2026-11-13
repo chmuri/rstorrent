@@ -50,8 +50,13 @@ impl ChunkManager {
         self.memory_manager().release_memory_block(size as u64);
     }
 
-    pub fn try_free_memory(&self, _size: u64) {
-        // Can trigger syncing and unloading of unreferenced chunks across active chunk lists
+    pub fn try_free_memory(&self, size: u64) {
+        // Reclaim unused block-pool buffers back to the OS through the engine
+        // hook, then record the attempt for the periodic memory-pressure poll.
+        let freed = self.memory_manager().try_free_memory(size);
+        if freed > 0 {
+            tracing::debug!(freed, requested = size, "reclaimed unused memory blocks");
+        }
         self.last_try_free.store(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

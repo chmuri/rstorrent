@@ -164,7 +164,7 @@ async fn test_scgi_tcp_xmlrpc_and_jsonrpc() {
                 if let Ok((stream, _)) = listener.accept().await {
                     let h = Arc::clone(&handler);
                     tokio::spawn(async move {
-                        let _ = h.handle_stream(stream).await;
+                        let _ = h.handle_stream(stream, true).await;
                     });
                 }
             }
@@ -243,7 +243,7 @@ async fn test_scgi_unix_socket() {
         };
         ready_tx.send(()).unwrap();
         if let Ok((stream, _)) = listener.accept().await {
-            let _ = handler.handle_stream(stream).await;
+            let _ = handler.handle_stream(stream, true).await;
         }
     });
 
@@ -297,7 +297,7 @@ async fn test_scgi_gzip_and_untrusted() {
 
     let h = Arc::clone(&handler);
     tokio::spawn(async move {
-        let _ = h.handle_stream(server_stream).await;
+        let _ = h.handle_stream(server_stream, true).await;
     });
 
     client_write.write_all(&req).await.unwrap();
@@ -319,13 +319,15 @@ async fn test_scgi_gzip_and_untrusted() {
     assert!(decompressed.contains(r#""id":99"#));
     assert!(decompressed.contains("aaaaa"));
 
-    // 2. Untrusted connection test
+    // 2. Untrusted connection test. Trust is decided by the server (here a
+    // remote/TCP peer => false). The client even claims UNTRUSTED_CONNECTION=0
+    // ("trusted"), which must be ignored: the call is still rejected.
     let untrusted_body = r#"{"jsonrpc":"2.0","method":"system.untrusted_only","params":[],"id":1}"#;
     let untrusted_req = encode_scgi_frame(
         &[
             ("CONTENT_LENGTH", &untrusted_body.len().to_string()),
             ("SCGI", "1"),
-            ("UNTRUSTED_CONNECTION", "1"),
+            ("UNTRUSTED_CONNECTION", "0"),
         ],
         untrusted_body.as_bytes(),
     );
@@ -334,7 +336,7 @@ async fn test_scgi_gzip_and_untrusted() {
     let (mut c2_read, mut c2_write) = tokio::io::split(client_stream2);
     let h2 = Arc::clone(&handler);
     tokio::spawn(async move {
-        let _ = h2.handle_stream(server_stream2).await;
+        let _ = h2.handle_stream(server_stream2, false).await;
     });
 
     c2_write.write_all(&untrusted_req).await.unwrap();
@@ -352,7 +354,7 @@ async fn test_scgi_pipelining_two_requests_in_order() {
     let (mut client, server) = tokio::io::duplex(64 * 1024);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     // Both requests are written before either response is read. The handler
     // must process them in order and leave the pipelined bytes untouched.
@@ -386,7 +388,7 @@ async fn test_scgi_keep_alive_sequential_requests() {
     let (mut client, server) = tokio::io::duplex(8192);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     client.write_all(&json_request(1)).await.unwrap();
     let first = String::from_utf8_lossy(&read_response(&mut client).await).to_string();
@@ -417,7 +419,7 @@ async fn test_scgi_idle_timeout_closes_connection() {
     let (mut client, server) = tokio::io::duplex(1024);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     let started = tokio::time::Instant::now();
     expect_eof(&mut client).await;
@@ -450,7 +452,7 @@ async fn test_scgi_read_timeout_closes_half_read_request() {
     let (mut client, server) = tokio::io::duplex(1024);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     // A header length prefix that never terminates with ':'.
     client.write_all(b"12").await.unwrap();
@@ -489,7 +491,7 @@ async fn test_scgi_body_read_timeout_closes_half_read_body() {
     let (mut client, server) = tokio::io::duplex(1024);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     // Header declares a 10 byte body but only 3 bytes are sent before the
     // peer stalls. The handler must time out and close, not wait forever.
@@ -533,7 +535,7 @@ async fn test_scgi_oversized_frames_are_rejected() {
     // 1. Header length exceeds max_header_size.
     let (mut client, server) = tokio::io::duplex(1024);
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
     client.write_all(b"999:").await.unwrap();
     expect_eof(&mut client).await;
     let result = server_task.await.unwrap();
@@ -546,7 +548,7 @@ async fn test_scgi_oversized_frames_are_rejected() {
     // frame without waiting for (or buffering) the declared body.
     let (mut client, server) = tokio::io::duplex(1024);
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
     let frame = encode_scgi_frame(&[("CONTENT_LENGTH", "100")], b"");
     client.write_all(&frame).await.unwrap();
     expect_eof(&mut client).await;
@@ -628,7 +630,7 @@ async fn test_scgi_normal_close_without_request() {
     let (mut client, server) = tokio::io::duplex(1024);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     // A peer that connects and disconnects without sending anything is a
     // normal close, not a protocol error.
@@ -654,7 +656,7 @@ async fn test_scgi_keep_alive_disabled_closes_after_response() {
     let (mut client, server) = tokio::io::duplex(8192);
 
     let h = Arc::clone(&handler);
-    let server_task = tokio::spawn(async move { h.handle_stream(server).await });
+    let server_task = tokio::spawn(async move { h.handle_stream(server, true).await });
 
     client.write_all(&json_request(7)).await.unwrap();
     let response = String::from_utf8_lossy(&read_response(&mut client).await).to_string();

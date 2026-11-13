@@ -39,6 +39,10 @@ pub struct Cli {
     #[arg(short = 'p', value_name = "PORT_RANGE")]
     pub port_range: Option<String>,
 
+    /// Outbound peer proxy URL (socks5://, socks5h://, http://, https://)
+    #[arg(long = "proxy", value_name = "URL")]
+    pub proxy: Option<String>,
+
     /// Session directory
     #[arg(short = 's', value_name = "DIRECTORY")]
     pub session: Option<String>,
@@ -62,6 +66,21 @@ pub struct Cli {
     /// Unix socket path for gRPC server
     #[arg(long = "grpc-socket", value_name = "SOCKET_PATH")]
     pub grpc_socket: Option<String>,
+
+    /// Bind address for the Prometheus /metrics HTTP server (e.g. 127.0.0.1:9090).
+    /// Overrides the TOML `[metrics] addr` key. Unset disables the server.
+    #[arg(long = "metrics-addr", value_name = "ADDR")]
+    pub metrics_addr: Option<String>,
+
+    /// Bind address for the native WebUI HTTP server (e.g. 127.0.0.1:8080).
+    /// Overrides the TOML `[webui] addr` key. Unset disables the server.
+    #[arg(long = "webui-addr", value_name = "ADDR")]
+    pub webui_addr: Option<String>,
+
+    /// Bearer token required by the WebUI. Overrides the TOML `[webui] token`
+    /// key. An empty token disables authentication (callers stay untrusted).
+    #[arg(long = "webui-token", value_name = "TOKEN")]
+    pub webui_token: Option<String>,
 
     /// Set arbitrary options (e.g. -o key=value)
     #[arg(short = 'o', value_name = "OPTION", action = clap::ArgAction::Append)]

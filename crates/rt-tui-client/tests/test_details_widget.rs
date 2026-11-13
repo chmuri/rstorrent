@@ -12,7 +12,7 @@ use common::{spawn_tcp_daemon, MockDaemon};
 use rt_grpc::{FileInfo, TorrentDetails, TorrentSummary, TrackerInfo};
 use rt_tui_client::app::App;
 use rt_tui_client::bridge::GrpcBridge;
-use rt_tui_client::state::{AppState, DetailTab, DetailsState, TorrentViewModel};
+use rt_tui_client::state::{AppState, DetailTab, DetailsState, LogState, TorrentViewModel};
 use rt_tui_client::widgets::DetailsWidget;
 
 const SHORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
@@ -60,7 +60,7 @@ fn buffer_to_string(buffer: &Buffer) -> String {
 
 fn render_details(state: &DetailsState, tab: DetailTab, area: Rect) -> String {
     let mut buffer = Buffer::empty(area);
-    DetailsWidget::new(state, tab).render(area, &mut buffer);
+    DetailsWidget::new(state, tab, &LogState::default()).render(area, &mut buffer);
     buffer_to_string(&buffer)
 }
 
@@ -82,7 +82,8 @@ fn app_in_details() -> App {
 fn details_info_tab_shows_hash_and_name() {
     let details = make_torrent_details("abc123def", "test.torrent");
     let state = DetailsState::from_proto(&details);
-    let widget = DetailsWidget::new(&state, DetailTab::Info);
+    let log = LogState::default();
+    let widget = DetailsWidget::new(&state, DetailTab::Info, &log);
     let mut buf = Buffer::empty(Rect::new(0, 0, 80, 20));
     widget.render(Rect::new(0, 0, 80, 20), &mut buf);
     let text = buffer_to_string(&buf);
@@ -105,7 +106,7 @@ fn tab_navigation_cycles_correctly() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn tab_bar_shows_all_five_labels() {
+fn tab_bar_shows_all_six_labels() {
     let state = DetailsState::from_proto(&make_torrent_details("h", "t"));
 
     let text = render_details(&state, DetailTab::Info, AREA);
@@ -116,6 +117,7 @@ fn tab_bar_shows_all_five_labels() {
         "[3:Peers]",
         "[4:Trackers]",
         "[5:Chunks]",
+        "[6:Logs]",
     ] {
         assert!(text.contains(label), "missing {label} in: {text}");
     }
@@ -126,7 +128,7 @@ fn active_tab_is_highlighted() {
     let state = DetailsState::from_proto(&make_torrent_details("h", "t"));
     let mut buffer = Buffer::empty(AREA);
 
-    DetailsWidget::new(&state, DetailTab::Files).render(AREA, &mut buffer);
+    DetailsWidget::new(&state, DetailTab::Files, &LogState::default()).render(AREA, &mut buffer);
 
     let reversed = buffer
         .content()
@@ -142,12 +144,12 @@ fn active_tab_is_highlighted() {
 }
 
 #[test]
-fn previous_tab_wraps_to_chunks() {
+fn previous_tab_wraps_to_logs() {
     let mut state = DetailsState::from_proto(&make_torrent_details("h", "t"));
 
     state.previous_tab();
 
-    assert_eq!(state.active_tab, DetailTab::Chunks);
+    assert_eq!(state.active_tab, DetailTab::Logs);
 }
 
 // ---------------------------------------------------------------------------

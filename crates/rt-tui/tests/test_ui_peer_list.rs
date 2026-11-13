@@ -26,6 +26,7 @@ fn make_download() -> Arc<RwLock<rt_core::Download>> {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     Arc::new(RwLock::new(rt_core::Download::new(

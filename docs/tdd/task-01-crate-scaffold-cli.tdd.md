@@ -23,7 +23,7 @@ Acceptance criteria from the plan:
 
 ## 2. Validation commands (actually run)
 
-The remote builder (`root@192.0.2.1`) was unreachable during this run (ping 100 %
+The remote builder (`root@builder.example.com`) was unreachable during this run (ping 100 %
 loss, SSH timeout), so every gate below was executed locally via the documented
 escape hatch `command cargo ...` instead of `scripts/remote-ci.sh`.
 

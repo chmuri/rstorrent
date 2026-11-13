@@ -12,11 +12,27 @@ fn get_free_port() -> u16 {
     listener.local_addr().unwrap().port()
 }
 
+/// Attach the configured bearer token to every outgoing request so the TCP
+/// peer is authenticated (and therefore trusted) by the server.
+fn inject_token(mut req: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
+    req.metadata_mut().insert(
+        "authorization",
+        "Bearer integration-test-token".parse().unwrap(),
+    );
+    Ok(req)
+}
+
 #[tokio::test]
 async fn test_grpc_daemon_integration() {
     let port = get_free_port();
 
     let mut control = Control::new();
+    // TCP peers are untrusted unless they present this bearer token; the test
+    // authenticates so it can exercise the privileged command surface.
+    rt_grpc::install_security(rt_grpc::GrpcSecurity {
+        token: Some("integration-test-token".to_string()),
+        ..Default::default()
+    });
     let download_directory = "/tmp/rstorrent-grpc-integration-downloads".to_string();
     let cli = Cli {
         daemon: true,
@@ -37,11 +53,14 @@ async fn test_grpc_daemon_integration() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let channel_url = format!("http://127.0.0.1:{}", port);
-
-    // Test SystemService
-    let mut system_client = SystemServiceClient::connect(channel_url.clone())
+    let channel = tonic::transport::Channel::from_shared(channel_url)
+        .unwrap()
+        .connect()
         .await
-        .expect("Failed to connect to gRPC SystemService");
+        .expect("Failed to connect to gRPC server");
+
+    // Test SystemService (authenticated with the configured bearer token).
+    let mut system_client = SystemServiceClient::with_interceptor(channel.clone(), inject_token);
 
     let version_resp = system_client
         .get_version(Empty {})
@@ -53,9 +72,7 @@ async fn test_grpc_daemon_integration() {
     assert_eq!(version_resp.api_version, lt_common::version::VERSION);
 
     // Test CommandService
-    let mut command_client = CommandServiceClient::connect(channel_url)
-        .await
-        .expect("Failed to connect to gRPC CommandService");
+    let mut command_client = CommandServiceClient::with_interceptor(channel, inject_token);
 
     let list_resp = command_client
         .list_commands(Empty {})

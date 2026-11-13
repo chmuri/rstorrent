@@ -6,8 +6,9 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::state::{DetailTab, DetailsInfo, DetailsState};
+use crate::state::{DetailTab, DetailsInfo, DetailsState, LogState};
 use crate::widgets::file_list::FileListWidget;
+use crate::widgets::log::LogWidget;
 use crate::widgets::peer_list::PeerListWidget;
 use crate::widgets::tracker_list::TrackerListWidget;
 
@@ -15,12 +16,13 @@ use crate::widgets::tracker_list::TrackerListWidget;
 pub struct DetailsWidget<'a> {
     state: &'a DetailsState,
     tab: DetailTab,
+    log: &'a LogState,
 }
 
 impl<'a> DetailsWidget<'a> {
-    /// Builds the widget for `state`, rendering `tab`.
-    pub fn new(state: &'a DetailsState, tab: DetailTab) -> Self {
-        Self { state, tab }
+    /// Builds the widget for `state`, rendering `tab`; `log` backs the Logs tab.
+    pub fn new(state: &'a DetailsState, tab: DetailTab, log: &'a LogState) -> Self {
+        Self { state, tab, log }
     }
 }
 
@@ -57,6 +59,9 @@ impl Widget for DetailsWidget<'_> {
                 } else {
                     render_count("Chunks", 0, body_area, buf);
                 }
+            }
+            DetailTab::Logs => {
+                LogWidget::new(self.log).render(body_area, buf);
             }
         }
     }

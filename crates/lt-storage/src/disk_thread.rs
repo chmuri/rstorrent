@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use bytes::Bytes;
 use lt_common::hash_string::HashString;
 
 use crate::chunk_list::ChunkHandle;
@@ -115,7 +116,7 @@ pub enum DiskCommand {
         piece_length: u32,
         piece_index: u32,
         block_offset: u32,
-        data: Vec<u8>,
+        data: Bytes,
         reply: SyncSender<DiskReply>,
     },
     Sync {
@@ -689,7 +690,7 @@ impl DiskThread {
         files: Arc<Vec<TargetFileInfo>>,
         piece_length: u32,
         piece_index: u32,
-        data: Vec<u8>,
+        data: impl Into<Bytes>,
     ) -> Result<DiskWriteHandle, StorageError> {
         self.submit_write_block(root, files, piece_length, piece_index, 0, data)
     }
@@ -703,7 +704,7 @@ impl DiskThread {
         piece_length: u32,
         piece_index: u32,
         block_offset: u32,
-        data: Vec<u8>,
+        data: impl Into<Bytes>,
     ) -> Result<DiskWriteHandle, StorageError> {
         self.try_submit_write_block(root, files, piece_length, piece_index, block_offset, data)
             .map_err(|(err, _data)| err)
@@ -719,8 +720,9 @@ impl DiskThread {
         piece_length: u32,
         piece_index: u32,
         block_offset: u32,
-        data: Vec<u8>,
-    ) -> Result<DiskWriteHandle, (StorageError, Vec<u8>)> {
+        data: impl Into<Bytes>,
+    ) -> Result<DiskWriteHandle, (StorageError, Bytes)> {
+        let data: Bytes = data.into();
         let id = self.next_id();
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let bytes = data.len() as u64;
@@ -757,7 +759,7 @@ impl DiskThread {
             Err(_) => {
                 self.stats.note_dequeued();
                 self.stats.rollback_write(bytes);
-                Err((StorageError::DiskThreadClosed, Vec::new()))
+                Err((StorageError::DiskThreadClosed, Bytes::new()))
             }
         }
     }
@@ -773,8 +775,9 @@ impl DiskThread {
         files: Arc<Vec<TargetFileInfo>>,
         piece_length: u32,
         piece_index: u32,
-        data: Vec<u8>,
+        data: impl Into<Bytes>,
     ) -> Result<(), StorageError> {
+        let data: Bytes = data.into();
         let id = self.next_id();
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let bytes = data.len() as u64;
@@ -901,7 +904,24 @@ impl DiskThread {
         };
 
         self.stats.reads_submitted.fetch_add(1, Ordering::AcqRel);
-        if let Err(err) = self.send_blocking(command) {
+        // The bounded queue can be full; waiting for capacity must not block
+        // the Tokio reactor, so the blocking send runs on a blocking worker.
+        let tx = self.tx.clone();
+        let stats = self.stats.clone();
+        let capacity = self.queue_capacity;
+        let sent = tokio::task::spawn_blocking(move || {
+            stats.note_queued(capacity);
+            match tx.send(command) {
+                Ok(()) => Ok(()),
+                Err(_) => {
+                    stats.note_dequeued();
+                    Err(StorageError::DiskThreadClosed)
+                }
+            }
+        })
+        .await
+        .unwrap_or(Err(StorageError::DiskThreadClosed));
+        if let Err(err) = sent {
             self.stats.reads_submitted.fetch_sub(1, Ordering::AcqRel);
             return Err(err);
         }
@@ -1451,7 +1471,28 @@ impl DiskWorker {
                     block_offset,
                     &data,
                 );
-                self.stats.release_write(bytes, result.is_ok());
+                let succeeded = result.is_ok();
+                self.stats.release_write(bytes, succeeded);
+                let cacheable = succeeded
+                    && bytes > 0
+                    && !range_segments(
+                        files.as_slice(),
+                        piece_length,
+                        piece_index,
+                        block_offset,
+                        bytes as usize,
+                    )
+                    .iter()
+                    .any(|seg| seg.padding);
+                if cacheable {
+                    // Write-through: serve the next upload read of this freshly
+                    // written block from RAM instead of re-reading it from disk.
+                    // Ranges overlapping padding files are skipped: their bytes
+                    // are virtual zeroes on read, so the raw written data must
+                    // not be cached verbatim (the read path caches the result).
+                    self.piece_cache
+                        .put(root, piece_index, block_offset, bytes as u32, data);
+                }
                 let _ = reply.send(DiskReply::Write { id, result });
                 false
             }
@@ -2151,6 +2192,37 @@ mod tests {
         second.wait().unwrap();
         thread.shutdown();
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_through_populates_piece_cache() {
+        let root = temp_root("wthrough");
+        let files = Arc::new(vec![TargetFileInfo {
+            path: PathBuf::from("cache.bin"),
+            length: 16,
+            offset: 0,
+        }]);
+
+        let thread = DiskThread::spawn(4).unwrap();
+        let original = b"0123456789abcdef".to_vec();
+        thread
+            .submit_write_block(&root, Arc::clone(&files), 16, 0, 0, original.clone())
+            .unwrap()
+            .wait()
+            .unwrap();
+
+        // Change the bytes on disk behind the worker's back. A read that still
+        // returns the originally written block proves the write fed the piece
+        // cache: the read is served from RAM, not re-read from disk.
+        fs::write(root.join("cache.bin"), vec![0xFFu8; 16]).unwrap();
+
+        let read = thread
+            .read_block(&root, Arc::clone(&files), 16, 0, 0, 16)
+            .unwrap();
+        assert_eq!(read, original);
+
+        thread.shutdown();
         let _ = fs::remove_dir_all(&root);
     }
 }

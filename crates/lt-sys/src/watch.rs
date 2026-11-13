@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::SysError;
 use crate::fs::FileStat;
 
 pub mod flags {
@@ -65,22 +66,23 @@ impl DirectoryEvents {
         path: impl AsRef<Path>,
         watch_flags: i32,
         callback: impl Fn(String) + Send + Sync + 'static,
-    ) -> Result<(), String> {
+    ) -> Result<(), SysError> {
         let p = path.as_ref();
         if p.as_os_str().is_empty() {
-            return Err("Cannot add notification event for empty paths.".into());
+            return Err(SysError::EmptyWatchPath);
         }
 
-        let canonical = p
-            .canonicalize()
-            .map_err(|e| format!("Could not resolve watch directory '{:?}': {e}", p))?;
+        let canonical = p.canonicalize().map_err(|e| SysError::WatchResolve {
+            path: p.to_path_buf(),
+            source: e,
+        })?;
 
         for wd in &self.watch_descriptors {
             if check_flags_conflict(wd.flags, watch_flags) && wd.canonical_path == canonical {
-                return Err(format!(
-                    "Conflicting directory watch modes for watch directories: {:?} : {:?}",
-                    wd.canonical_path, canonical
-                ));
+                return Err(SysError::WatchConflict {
+                    existing: wd.canonical_path.clone(),
+                    requested: canonical.clone(),
+                });
             }
         }
 

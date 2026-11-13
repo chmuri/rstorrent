@@ -165,7 +165,7 @@ impl Delegator {
             }
         }
 
-        // Tier 0: Partial pieces (kawałki napoczęte)
+        // Tier 0: Partial pieces (partially-started pieces)
         // Always assign missing blocks from existing in-progress pieces before starting new ones.
         // Piece Affinity: Protect Fast pieces from Slow peer stragglers outside Endgame.
         for bl in self.transfers.iter_mut() {

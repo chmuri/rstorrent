@@ -31,6 +31,7 @@ fn metadata(name: &str) -> lt_engine::constructor::TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 
@@ -240,10 +241,135 @@ fn log_commands_route_output_to_a_file() {
 }
 
 #[test]
+fn log_set_commands_open_real_file_outputs() {
+    let dir = std::env::temp_dir().join(format!(
+        "rtorrent-log-set-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let execute_file = dir.join("execute.log");
+    let rpc_file = dir.join("rpc.log");
+    let xmlrpc_file = dir.join("xmlrpc.log");
+
+    let mut map = CommandMap::new();
+    register_log_commands(&mut map).unwrap();
+
+    // log.execute.set routes the EVENTS group to a real file.
+    assert!(call(
+        &map,
+        "log.execute.set",
+        &Target::None,
+        vec![Object::from(execute_file.to_string_lossy().as_ref())]
+    )
+    .is_ok());
+    assert!(call(
+        &map,
+        "log.print",
+        &Target::None,
+        vec![Object::from("events"), Object::from("execute-line")]
+    )
+    .is_ok());
+    assert!(std::fs::read_to_string(&execute_file)
+        .unwrap()
+        .contains("execute-line"));
+
+    // log.rpc.set routes RPC_EVENTS to a real file.
+    assert!(call(
+        &map,
+        "log.rpc.set",
+        &Target::None,
+        vec![Object::from(rpc_file.to_string_lossy().as_ref())]
+    )
+    .is_ok());
+    assert!(call(
+        &map,
+        "log.print",
+        &Target::None,
+        vec![Object::from("rpc_events"), Object::from("rpc-line")]
+    )
+    .is_ok());
+    assert!(std::fs::read_to_string(&rpc_file)
+        .unwrap()
+        .contains("rpc-line"));
+
+    // log.xmlrpc.set shares the rpc output and also routes RPC_DUMP.
+    assert!(call(
+        &map,
+        "log.xmlrpc.set",
+        &Target::None,
+        vec![Object::from(xmlrpc_file.to_string_lossy().as_ref())]
+    )
+    .is_ok());
+    assert!(call(
+        &map,
+        "log.print",
+        &Target::None,
+        vec![Object::from("rpc_dump"), Object::from("xmlrpc-line")]
+    )
+    .is_ok());
+    assert!(std::fs::read_to_string(&xmlrpc_file)
+        .unwrap()
+        .contains("xmlrpc-line"));
+
+    // An empty destination closes the output and clears the getter.
+    assert!(call(
+        &map,
+        "log.execute.set",
+        &Target::None,
+        vec![Object::from("")]
+    )
+    .is_ok());
+    let getter = call(&map, "log.execute", &Target::None, vec![]).unwrap();
+    assert_eq!(rt_rpc::convert_to_string(&getter).unwrap(), "");
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn scheduler_max_active_is_shared_with_the_download_list() {
+    let list = DownloadList::new();
+    assert_eq!(list.max_active(), -1);
+
+    let scheduler = Arc::new(Mutex::new(CommandScheduler::new()));
+    let mut map = CommandMap::new();
+    register_scheduler_commands(&mut map, Arc::clone(&scheduler), list.max_active_handle())
+        .unwrap();
+
+    call(
+        &map,
+        "scheduler.max_active.set",
+        &Target::None,
+        vec![Object::from(2i64)],
+    )
+    .unwrap();
+    assert_eq!(list.max_active(), 2);
+    let getter = call(&map, "scheduler.max_active", &Target::None, vec![]).unwrap();
+    assert_eq!(rt_rpc::convert_to_value(&getter, 10, 1).unwrap(), 2);
+
+    call(
+        &map,
+        "scheduler.max_active.set",
+        &Target::None,
+        vec![Object::from(-1i64)],
+    )
+    .unwrap();
+    assert_eq!(list.max_active(), -1);
+}
+
+#[test]
 fn scheduler_commands_are_idempotent_and_removable() {
     let scheduler = Arc::new(Mutex::new(CommandScheduler::new()));
     let mut map = CommandMap::new();
-    register_scheduler_commands(&mut map, Arc::clone(&scheduler)).unwrap();
+    register_scheduler_commands(
+        &mut map,
+        Arc::clone(&scheduler),
+        Arc::new(std::sync::atomic::AtomicI64::new(-1)),
+    )
+    .unwrap();
 
     assert!(call(
         &map,

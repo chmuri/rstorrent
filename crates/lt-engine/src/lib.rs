@@ -9,7 +9,6 @@
 //! - DownloadConstructor: Parser for .torrent Bencode and magnet URIs
 //! - Download: Complete download controller integrating storage, peers, tracking
 //! - PeerPool: Unified tracker/DHT/PEX/inbound discovery with connection scheduling
-//! - EngineManager: Central BitTorrent engine coordinator
 
 pub mod choke_group;
 pub mod choke_queue;
@@ -19,10 +18,10 @@ pub mod client_config;
 pub mod constructor;
 pub mod delegator;
 pub mod download;
-pub mod engine;
 pub mod network;
 pub mod peer_pool;
 pub mod resource_manager;
+pub mod web_seed;
 
 pub use choke_group::{ChokeGroup, TrackerMode};
 pub use choke_queue::{
@@ -35,10 +34,9 @@ pub use client_config::ClientConfig;
 pub use constructor::{ConstructorError, DownloadConstructor, TorrentFileEntry, TorrentMetadata};
 pub use delegator::Delegator;
 pub use download::{Download, DownloadState};
-pub use engine::EngineManager;
 pub use network::{
     run_inbound_mse_peer, run_inbound_mse_peer_with_pool, run_inbound_peer,
-    run_inbound_peer_with_pool, DownloadNetworkCoordinator,
+    run_inbound_peer_with_pool, run_inbound_utp_peer, DownloadNetworkCoordinator,
 };
 pub use peer_pool::{
     max_connecting_for, normalize_socket_addr, PeerEntry, PeerPool, PeerPoolConfig, PeerPoolHandle,
@@ -46,3 +44,4 @@ pub use peer_pool::{
     DEFAULT_RETRY_BASE, DEFAULT_RETRY_MAX,
 };
 pub use resource_manager::{allocate_quotas, ResourceEntry, ResourceManager};
+pub use web_seed::{WebSeedFile, WebSeedPlan, WebSeedRequest};

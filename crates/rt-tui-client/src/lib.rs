@@ -14,6 +14,7 @@ pub mod connection;
 pub mod endpoint;
 pub mod events;
 pub mod key_handler;
+pub mod palette;
 pub mod run;
 pub mod state;
 pub mod stream;
@@ -25,10 +26,11 @@ pub use actions::{PromptKind, TorrentAction, TuiAction};
 pub use app::{App, PriorityCommand, DEFAULT_TICK};
 pub use bridge::{BridgeError, GrpcBridge, DEFAULT_RPC_TIMEOUT};
 pub use cli::{Cli, DEFAULT_REFRESH_MS};
-pub use config::{Theme, TuiConfig};
+pub use config::{theme_id_from_name, Theme, TuiConfig};
 pub use connection::{ConnectionManager, ConnectionState};
 pub use endpoint::{Endpoint, EndpointError, ProbeError, PROBE_TIMEOUT};
 pub use events::{AppEvent, EventPushOutcome, EventQueue, EventQueueConfig, ResizePolicy};
+pub use palette::{PaletteCommand, PaletteState, COMMANDS};
 pub use run::{run, StartupError, EXIT_DAEMON_UNREACHABLE, EXIT_INVALID_ENDPOINT};
 pub use state::{
     ActiveView, AppState, ConnectionStatus, DetailTab, DetailsInfo, DetailsState, FileEntry,
@@ -40,5 +42,5 @@ pub use terminal::{install_panic_hook, ClientTerminal, TerminalSession};
 pub use throttle::{StepSize, ThrottleAction, ThrottleKeyMap};
 pub use widgets::{
     DetailsWidget, DownloadListWidget, FileListWidget, InputWidget, LogWidget, MenuWidget,
-    PeerListWidget, StatusBarWidget, TitleBarWidget, TrackerListWidget,
+    PaletteWidget, PeerListWidget, StatusBarWidget, TitleBarWidget, TrackerListWidget,
 };

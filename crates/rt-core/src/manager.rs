@@ -123,6 +123,17 @@ impl Manager {
             }
         }
 
+        // Generic custom variables (`d.custom`). Stored as a nested bencode
+        // dict so arbitrary keys survive a restart, like the numbered fields.
+        let custom = download.custom_map();
+        if !custom.is_empty() {
+            let mut custom_obj = Object::create_map();
+            for (key, value) in custom {
+                let _ = custom_obj.insert_key(key.clone(), Object::from(value.as_str()));
+            }
+            let _ = rtorrent_obj.insert_key("custom", custom_obj);
+        }
+
         let resume = download.to_resume_data();
         let mut resume_obj = resume.to_object();
         crate::session::resume_extras(&resume, download.metadata(), &download.uncertain_pieces())

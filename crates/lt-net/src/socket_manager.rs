@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::os::unix::io::RawFd;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::NetError;
 
@@ -396,5 +396,72 @@ impl SocketManager {
     {
         let mut inner = self.inner.lock().unwrap();
         inner.subscribers.push(Box::new(callback));
+    }
+}
+
+static SHARED_SOCKET_MANAGER: OnceLock<SocketManager> = OnceLock::new();
+
+/// The process-wide socket budget shared by the peer accept/dial paths and the
+/// `system.sockets.*` / `network.*open_sockets*` command surface, so a limit set
+/// through `network.max_open_sockets.set` is enforced on real connections.
+pub fn shared_socket_manager() -> &'static SocketManager {
+    SHARED_SOCKET_MANAGER.get_or_init(SocketManager::new)
+}
+
+/// RAII accounting handle for one managed socket: records it as open on creation
+/// and records its close when dropped, keeping the budget accurate across every
+/// connection teardown path (handshake failure, session end, shutdown).
+pub struct SocketGuard {
+    fd: RawFd,
+}
+
+impl SocketGuard {
+    pub fn open(fd: RawFd, category: SocketCategory) -> Result<Self, NetError> {
+        shared_socket_manager().record_open_socket(fd, category)?;
+        Ok(Self { fd })
+    }
+}
+
+impl Drop for SocketGuard {
+    fn drop(&mut self) {
+        let _ = shared_socket_manager().record_close_socket(self.fd);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Both tests mutate the process-wide shared manager's Generic counter, so
+    // they must not interleave: a concurrent open/close would corrupt the
+    // `before + 1` delta each assertion relies on.
+    static SHARED_MANAGER_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn socket_guard_tracks_open_and_close() {
+        let _serial = SHARED_MANAGER_LOCK.lock().unwrap();
+        let manager = shared_socket_manager();
+        let before = manager.category_managed_size(SocketCategory::Generic);
+        let fd = 900_001;
+        {
+            let _guard = SocketGuard::open(fd, SocketCategory::Generic).unwrap();
+            assert_eq!(
+                manager.category_managed_size(SocketCategory::Generic),
+                before + 1
+            );
+        }
+        assert_eq!(
+            manager.category_managed_size(SocketCategory::Generic),
+            before
+        );
+    }
+
+    #[test]
+    fn socket_guard_open_rejects_duplicate_fd() {
+        let _serial = SHARED_MANAGER_LOCK.lock().unwrap();
+        let fd = 900_002;
+        let _guard = SocketGuard::open(fd, SocketCategory::Generic).unwrap();
+        assert!(SocketGuard::open(fd, SocketCategory::Generic).is_err());
     }
 }

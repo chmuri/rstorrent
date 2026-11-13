@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 lt-common.workspace = true
+lt-crypto.workspace = true
 lt-engine.workspace = true
 lt-dht.workspace = true
 lt-protocol.workspace = true
@@ -25,4 +26,4 @@ base64.workspace = true
 rayon.workspace = true
 
 [dev-dependencies]
-lt-crypto.workspace = true
+loom.workspace = true

@@ -368,7 +368,7 @@ impl SessionManager {
         if self.path.is_empty() {
             return Ok(Vec::new());
         }
-        super::storer::get_restorable_entries(&self.path)
+        Ok(super::storer::get_restorable_entries(&self.path)?)
     }
 
     pub fn remove_session_files(&self, info_hash_hex: &str) -> io::Result<()> {
@@ -630,7 +630,7 @@ impl SessionWriter {
             // A failed publish must not leave "this entry is current" behind.
             Err(_) => cache.forget(info_hash_hex),
         }
-        result
+        result.map_err(Into::into)
     }
 
     /// Returns `true` when the entry does not need to be written.
@@ -700,7 +700,11 @@ impl SessionWriter {
             return Ok(());
         }
         stats::record_torrent_only(stream.len() as u64);
-        DownloadStorer::save_single_stream(&path, self.use_fsyncdisk, stream)
+        Ok(DownloadStorer::save_single_stream(
+            &path,
+            self.use_fsyncdisk,
+            stream,
+        )?)
     }
 
     /// Writes entries sequentially, stopping at the first abort request.

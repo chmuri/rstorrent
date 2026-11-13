@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-14
+
+### Added
+- **BitTorrent v2 / hybrid (BEP 52)**:
+  - Direct `sha2` dependency and BEP 52 Merkle trees in `lt-crypto::merkle`
+    (16 KiB leaves, zero-hash padding, per-file `piece_root` / `piece_layers`),
+    verified 1:1 against the reference `bep_0052_torrent_creator.py`.
+  - v2 / hybrid `info_dict` parser (`piece_layers`, `piece_root`, `file tree`)
+    with dual identity hashing (v1 SHA-1, v2 SHA-256 truncated to 20 bytes).
+  - New `Hash256` type alongside the 20-byte wire `HashString`; magnet
+    `xt=urn:btmh:` multihash decoding and `xs=` exact-source support.
+  - Piece-aligned v2 storage layout, per-file resume bitfields, and Merkle-proof
+    block verification on both the receive and recheck paths.
+- **Native WebUI** (`crates/rstorrent/src/webui/`): axum REST API mapped onto the
+  `CommandMap`, WebSocket live events/stats bridge, bearer-token auth with
+  server-side trust, optional rustls TLS, and a self-contained embedded SPA
+  (no external CDN). Opt-in via `[webui]` / `--webui-addr`.
+- **Global and per-torrent rate limiting**: token-bucket `Throttle` enforced on
+  the peer read/write path (global + named levels), driven by a 100 ms refill
+  loop; `d.throttle_name` maps a torrent to a shared named throttle group.
+- **Stop-on-ratio**: production `ratio_reached` evaluation in the choking
+  supervisor executes `ratio.command` and stops seeding once the group ratio is
+  reached (collect-then-act, off the engine lock).
+- **Global connection budget**: process-wide `ConnectionBudget` with inbound cap
+  sourced from `max_connections`, a global outbound-dial semaphore, and a global
+  peer-slot limit covering inbound and outbound sessions of every torrent.
+- **WebSeed (BEP 19 / BEP 17)**: HTTP range consumer for `web_seeds` with SHA-1
+  verification, used as a piece source when peers are unavailable.
+- **uTP / LEDBAT dial + accept**: outbound uTP path alongside TCP and inbound
+  `UtpSocket` accept loop wired into the peer session runtime.
+- **DHT hardening**: IPv6 (`nodes6` / `peers6`), time-rotated token secret,
+  multi-bucket `get_closest_nodes`, `implied_port`, and BEP 51 `sample_infohashes`.
+- **Port mapping**: lease renewal, UDP mapping, shutdown cleanup, and NAT-PMP
+  gateway discovery replacing hardcoded addresses.
+- **Proxy & DNS**: SOCKS5 / HTTP proxy and cached DNS resolver wired into dialing.
+- **BEP 6 producer** (`AllowedFast` / `SuggestPiece`) and **LTEP** `yourip` /
+  `ipv4` / `ipv6` handshake extensions.
+- **Prometheus metrics**: opt-in `/metrics` endpoint (`--metrics-addr` /
+  `[metrics]`) exporting session, throttle, DHT, SCGI, peer and per-torrent stats.
+- **Lua scripting in the daemon**: `register_lua_commands` wired into
+  `Control::initialize`, loading `rtorrent.lua` from the config directory.
+- **TUI client parity**: mouse support, theme picker, command palette, and a Logs
+  tab ported from the in-process TUI.
+- **Quality infrastructure**: `cargo-fuzz` targets (bencode, message, magnet, DHT
+  KRPC, uTP, torrent/resume) with CI smoke + nightly runs; criterion hot-path
+  benchmarks with CI regression gating; loom lock-order models and proptest
+  parser/selector properties; `cargo-llvm-cov` coverage job; `[workspace.lints]`
+  with `deny(unsafe_code)` for the nine unsafe-free crates.
+- **Generic `d.custom` persistence** and **`scheduler.max_active`** enforcement at
+  the activation chokepoints (`start` / `try_start`).
+
+### Changed
+- **Tit-for-tat choking**: rate-based ranking with snubbed peers deprioritized and
+  a random optimistic unchoke every third round (replacing deterministic rotation).
+- **Zero-copy data path**: piece assembly uses `BytesMut`/`Bytes` end-to-end from
+  the block pool to the disk queue, removing the per-piece `to_vec` copy.
+- **Write-through piece cache** (fresh uploads served from RAM) and an LRU-bounded
+  `ConcurrentReadCache` replacing unbounded file-handle growth.
+- **Word-level rarity**: `u64` CLZ accounting with `u16` counts, lifting the legacy
+  255 saturation cap to 65535.
+- **Configurable logging**: `EnvFilter` (`RUST_LOG`) plus a config `LevelFilter`,
+  installed in both daemon and interactive modes; `log.execute/rpc/xmlrpc` now
+  open real file outputs.
+- **TOML configuration applied end-to-end**: `enable_utp` / `enable_upnp` flags
+  gate the uTP accept loop and port-mapping supervisor; error logging replaces
+  silent `let _ =` command application.
+- **README synchronized with the code**: 16 crates, 10 `TorrentService` gRPC
+  methods, 6 themes, and real TOML keys.
+
+### Fixed
+- **Reactor stalls**: received-piece SHA-1/SHA-256 verification moved off the
+  reactor into `spawn_blocking`; blocking pause `fsync` moved off the engine lock
+  via a snapshot + `spawn_blocking` (disk-queue backpressure already async).
+- **LEDBAT one-way-delay measurement** now uses a monotonic clock instead of time
+  since last receive.
+- **v2 `ut_metadata` verification**: pure-v2 torrents (truncated SHA-256 identity)
+  previously failed SHA-1-only verification; now verified with SHA-256 when the
+  full `btmh` hash is present.
+- **Domain error hierarchy**: `SessionError` (rt-core) and `SysError` (lt-sys)
+  replace stringly-typed errors at the session/watch/scheduler boundaries.
+- **DNS resolver startup panic** (`resolver.rs`) replaced with a graceful fallback.
+
+### Security
+- **gRPC hardening**: rustls TLS, constant-time bearer-token auth, default
+  loopback bind, and server-side trust derivation (the client-supplied `trusted`
+  flag is ignored).
+- **SCGI hardening**: UNIX socket `0o600` and TCP authentication.
+- **Removed hardcoded sccache S3 credentials** from the build scripts; they are
+  now injected via the environment or a gitignored local config
+  (`scripts/remote-ci.local.env`), and purged from all git history.
+
 ## [0.20.1] - 2026-11-06
 
 ### Added

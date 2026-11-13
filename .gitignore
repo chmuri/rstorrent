@@ -48,3 +48,7 @@ docs/knowledge-base/
 # Local agent tooling state
 /.claude/
 /.task
+
+# Local-only plan and remote-ci configuration (never committed)
+plan.md
+/scripts/remote-ci.local.env

@@ -67,6 +67,13 @@ impl Throttle {
         node
     }
 
+    /// Detach a node so a disconnected peer stops receiving quota and the
+    /// node list cannot grow without bound over the daemon's lifetime.
+    pub fn remove_node(&self, node: &Arc<ThrottleNode>) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.nodes.retain(|n| !Arc::ptr_eq(n, node));
+    }
+
     pub fn update_quota(&self, quota: u32) -> u32 {
         let mut inner = self.inner.lock().unwrap();
         if !self.is_throttled() {

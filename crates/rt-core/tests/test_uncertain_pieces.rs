@@ -39,6 +39,7 @@ fn metadata_for(payload: &[u8]) -> TorrentMetadata {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     }
 }
 

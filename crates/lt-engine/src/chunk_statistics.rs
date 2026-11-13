@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use lt_common::bitfield::Bitfield;
 use lt_common::hash_string::HashString;
 
-pub const MAX_ACCOUNTED: u32 = 255;
+/// Upper bound on partial peers folded into the per-piece rarity counts.
+/// Counts are `u16`, so the cap matches their range; seeders are tracked
+/// separately in `complete` and never consume this budget.
+pub const MAX_ACCOUNTED: u32 = u16::MAX as u32;
 
 /// One peer's availability snapshot in the `AvailableList`.
 #[derive(Debug, Clone)]
@@ -74,7 +77,7 @@ impl AvailableList {
 /// Tracks peer availability statistics and piece rarity across all connected peers.
 #[derive(Debug, Clone, Default)]
 pub struct ChunkStatistics {
-    counts: Vec<u8>,
+    counts: Vec<u16>,
     complete: u32,
     accounted: u32,
     available: AvailableList,
@@ -114,7 +117,7 @@ impl ChunkStatistics {
         self.available.len()
     }
 
-    pub fn rarity(&self, index: usize) -> u8 {
+    pub fn rarity(&self, index: usize) -> u16 {
         if index < self.counts.len() {
             self.counts[index]
         } else {
@@ -237,19 +240,39 @@ impl ChunkStatistics {
     }
 
     fn increment_counts(&mut self, bitfield: &Bitfield) {
-        let n = self.counts.len().min(bitfield.size_bits());
-        for index in 0..n {
-            if bitfield.get(index) {
-                self.counts[index] = self.counts[index].saturating_add(1);
-            }
-        }
+        self.adjust_counts(bitfield, 1);
     }
 
     fn decrement_counts(&mut self, bitfield: &Bitfield) {
+        self.adjust_counts(bitfield, -1);
+    }
+
+    /// Folds a peer's bitfield into the per-piece counts one `u64` word at a
+    /// time, visiting only set bits via `leading_zeros` (CLZ) and skipping
+    /// empty words entirely. `delta` is +1 on connect/`have`, -1 on disconnect.
+    fn adjust_counts(&mut self, bitfield: &Bitfield, delta: i16) {
         let n = self.counts.len().min(bitfield.size_bits());
-        for index in 0..n {
-            if bitfield.get(index) {
-                self.counts[index] = self.counts[index].saturating_sub(1);
+        for (w_idx, &word) in bitfield.words().iter().enumerate() {
+            let base = w_idx * 64;
+            if base >= n {
+                break;
+            }
+            let mut word = word;
+            // Mask off pieces beyond the counted range in the final word.
+            let word_end = base + 64;
+            if word_end > n {
+                word &= !0u64 << (word_end - n);
+            }
+            while word != 0 {
+                let lz = word.leading_zeros() as usize;
+                let index = base + lz;
+                let count = self.counts[index];
+                self.counts[index] = if delta > 0 {
+                    count.saturating_add(1)
+                } else {
+                    count.saturating_sub(1)
+                };
+                word &= !(1u64 << (63 - lz));
             }
         }
     }
@@ -350,6 +373,36 @@ mod tests {
     }
 
     #[test]
+    fn rarity_exceeds_legacy_255_cap() {
+        const PEERS: usize = 300;
+        // Unique 20-byte ids: encode the index in the first two bytes.
+        let id = |i: usize| {
+            let mut bytes = [0u8; 20];
+            bytes[0] = i as u8;
+            bytes[1] = (i >> 8) as u8;
+            HashString::new(bytes)
+        };
+        let mut stats = ChunkStatistics::new(4);
+        // Every partial peer owns piece 0 only; none is a seeder.
+        let mut bf = Bitfield::new(4);
+        bf.set(0);
+        for i in 0..PEERS {
+            stats.add_peer(id(i), &bf);
+        }
+        assert_eq!(stats.accounted(), PEERS as u32);
+        assert_eq!(stats.complete(), 0);
+        assert_eq!(stats.rarity(0), PEERS as u16);
+        assert_eq!(stats.rarity(1), 0);
+
+        // Disconnecting half restores the exact count (no saturation drift).
+        for i in 0..PEERS / 2 {
+            stats.remove_peer(&id(i));
+        }
+        assert_eq!(stats.rarity(0), (PEERS / 2) as u16);
+        assert_eq!(stats.accounted(), (PEERS / 2) as u32);
+    }
+
+    #[test]
     fn random_have_and_disconnect_sequences_keep_counts_consistent() {
         const PIECES: usize = 8;
         const PEERS: usize = 5;
@@ -401,7 +454,7 @@ mod tests {
                 }
             }
 
-            let mut expected_counts = [0u8; PIECES];
+            let mut expected_counts = [0u16; PIECES];
             let mut expected_complete = 0;
             let mut expected_accounted = 0;
             for bf in model.values() {

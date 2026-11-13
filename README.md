@@ -58,7 +58,7 @@ The project contains active implementations for core BitTorrent functionality, a
 
 ## Architecture & Modular Workspace
 
-`rstorrent` is organized as a clean, highly modular workspace consisting of 15 specialized crates:
+`rstorrent` is organized as a clean, highly modular workspace consisting of 16 specialized crates:
 
 ```
 rstorrent/
@@ -242,7 +242,7 @@ rstorrent --daemon --session /var/lib/rstorrent/session "magnet:?xt=urn:btih:...
 - `x`: Open the safe removal confirmation dialog (with disk file deletion toggle).
 - `+` / `-`: Increase or decrease priority across all selected items.
 - `:`: Open command palette for fuzzy search across all actions.
-- `t`: Open live theme selector (Tokyo Night, Catppuccin, Gruvbox, Nord, Solarized, Monokai, Dracula, ASCII).
+- `t`: Open live theme selector (Tokyo Night, Catppuccin Mocha, Dracula, Nord, Monokai Pro, ASCII).
 - `?` or `F1`: Open searchable keyboard shortcuts cheatsheet.
 
 The session directory stores both the static `.torrent` files and resume data,
@@ -314,7 +314,7 @@ rstorrent --daemon --grpc-port 50051
 
 | Service | Methods |
 | --- | --- |
-| `TorrentService` | `ListTorrents`, `GetTorrent`, `AddTorrent`, `ControlTorrent`, `RemoveTorrent`, `SetTorrentPriority`, `StreamEvents` (server streaming) |
+| `TorrentService` | `ListTorrents`, `GetTorrent`, `AddTorrent`, `ControlTorrent`, `RemoveTorrent`, `SetTorrentPriority`, `BulkControlTorrents`, `BulkRemoveTorrents`, `BulkSetTorrentPriority`, `StreamEvents` (server streaming) |
 | `SystemService` | `GetVersion`, `GetSessionStats`, `StreamStats` (server streaming), `Shutdown` |
 | `CommandService` | `Execute`, `Multicall`, `ListCommands` (full rTorrent DSL bridge) |
 
@@ -396,7 +396,7 @@ storage.load_threads = 4        # default min(4, CPU cores)
 
 ## Testing & Quality Assurance
 
-`rstorrent` has an exhaustive test suite covering unit tests, integration tests, fuzz targets, and end-to-end scenarios across all 15 crates:
+`rstorrent` has an exhaustive test suite covering unit tests, integration tests, fuzz targets, and end-to-end scenarios across all 16 crates:
 
 ```bash
 # Run all tests across the workspace

@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use tokio::sync::{broadcast, watch};
-use tonic::transport::Server;
+use tonic::service::InterceptorLayer;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tracing::info;
 
 use crate::command_service::CommandServiceImpl;
@@ -114,7 +115,28 @@ impl GrpcServer {
 
         let (torrent_svc, system_svc, command_svc) = build_services(&self.ctx);
 
-        Server::builder()
+        let sec = crate::security::security();
+        let token = sec.and_then(|s| s.token.clone());
+
+        let mut builder = Server::builder();
+        if let Some(sec) = sec {
+            if let (Some(cert), Some(key)) = (&sec.tls_cert, &sec.tls_key) {
+                let cert_pem = std::fs::read(cert)
+                    .map_err(|e| format!("read gRPC TLS cert {:?}: {}", cert, e))?;
+                let key_pem = std::fs::read(key)
+                    .map_err(|e| format!("read gRPC TLS key {:?}: {}", key, e))?;
+                let identity = Identity::from_pem(cert_pem, key_pem);
+                builder = builder
+                    .tls_config(ServerTlsConfig::new().identity(identity))
+                    .map_err(|e| format!("gRPC TLS config: {}", e))?;
+                info!("gRPC TLS enabled on {}", addr);
+            }
+        }
+
+        let mut server = builder.layer(InterceptorLayer::new(crate::security::tcp_interceptor(
+            token,
+        )));
+        server
             .add_service(torrent_svc)
             .add_service(system_svc)
             .add_service(command_svc)
@@ -149,7 +171,7 @@ impl GrpcServer {
         }
 
         let listener = UnixListener::bind(&path)?;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
         info!("Starting gRPC Unix domain socket server on {:?}", path);
 
         let stream = UnixListenerStream::new(listener);
@@ -157,7 +179,9 @@ impl GrpcServer {
         let (torrent_svc, system_svc, command_svc) = build_services(&self.ctx);
 
         let path_cleanup = path.clone();
-        Server::builder()
+        let mut server =
+            Server::builder().layer(InterceptorLayer::new(crate::security::local_interceptor()));
+        server
             .add_service(torrent_svc)
             .add_service(system_svc)
             .add_service(command_svc)

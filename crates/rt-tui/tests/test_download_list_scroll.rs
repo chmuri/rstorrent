@@ -26,6 +26,7 @@ fn make_download(name: &str, hash_byte: u8) -> Arc<RwLock<Download>> {
         announce_list: vec![vec!["http://tracker.example.com/announce".to_string()]],
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
     Arc::new(RwLock::new(Download::new(
         lt_engine::download::Download::new(metadata),

@@ -21,6 +21,7 @@ fn make_test_download(name: &str) -> Arc<RwLock<rt_core::Download>> {
         announce_list: vec![vec!["http://tracker.example.com/announce".to_string()]],
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     Arc::new(RwLock::new(rt_core::Download::new(
@@ -361,6 +362,7 @@ fn test_details_files_tab_lists_multi_file_rows() {
         announce_list: Vec::new(),
         is_private: false,
         is_meta_download: false,
+        v2: None,
     };
 
     let dl = Arc::new(RwLock::new(rt_core::Download::new(

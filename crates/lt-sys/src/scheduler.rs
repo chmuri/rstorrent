@@ -3,6 +3,8 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use crate::error::SysError;
+
 static NEXT_ENTRY_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -158,12 +160,12 @@ impl Scheduler {
         &mut self,
         entry: &mut SchedulerEntry,
         time: Duration,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), SysError> {
         if entry.is_scheduled() {
-            return Err("Scheduler::wait_until called on already scheduled entry.");
+            return Err(SysError::AlreadyScheduled);
         }
         if !entry.is_valid() {
-            return Err("Scheduler::wait_until called on invalid entry.");
+            return Err(SysError::InvalidEntry);
         }
 
         let slot = entry.slot.take().unwrap();
@@ -185,7 +187,7 @@ impl Scheduler {
         &mut self,
         entry: &mut SchedulerEntry,
         delay: Duration,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), SysError> {
         self.wait_until(entry, self.cached_time + delay)
     }
 
@@ -193,9 +195,9 @@ impl Scheduler {
         &mut self,
         entry: &mut SchedulerEntry,
         time: Duration,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), SysError> {
         if !entry.is_valid() && !entry.is_scheduled() {
-            return Err("Scheduler::update_wait_until called on invalid entry.");
+            return Err(SysError::InvalidEntry);
         }
 
         self.generation_counter += 1;
@@ -225,7 +227,7 @@ impl Scheduler {
         &mut self,
         entry: &mut SchedulerEntry,
         delay: Duration,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), SysError> {
         self.update_wait_until(entry, self.cached_time + delay)
     }
 

@@ -1,0 +1,52 @@
+name: Fuzz (nightly)
+
+on:
+  schedule:
+    # 03:00 UTC every day.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: cargo-fuzz (long budget)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rstorrent-shared-fuzz-nightly"
+          cache-all-crates: "true"
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Build fuzz targets (AddressSanitizer)
+        run: cargo +nightly fuzz build
+      # Restore the corpus from the previous run so coverage accumulates across
+      # nights; the key is per-run so a fresh corpus is always saved.
+      - name: Restore fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
+      # Longer budget: 300 s per target, 30 s per-input timeout.
+      - name: Fuzz each target
+        run: |
+          for target in bencode message magnet dht_krpc utp_packet torrent_resume; do
+            cargo +nightly fuzz run "$target" -- -max_total_time=300 -timeout=30
+          done
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore

@@ -8,8 +8,10 @@ use nix::unistd::fdatasync;
 use nix::unistd::{fsync, write};
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{self, Error, ErrorKind};
+use std::io::{Error, ErrorKind};
 use std::path::Path;
+
+use super::error::SessionError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectoryEntry {
@@ -57,12 +59,10 @@ pub fn file_holds(path: &str, expected: &[u8]) -> bool {
 }
 
 /// Loads a `.libtorrent_resume` file.
-pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
+pub fn load_resume_file(path: &str) -> Result<ResumeData, SessionError> {
     let bytes = fs::read(path)?;
-    let object = bencode::decode(&bytes)
-        .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))?;
-    ResumeData::from_object(&object)
-        .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))
+    let object = bencode::decode(&bytes)?;
+    Ok(ResumeData::from_object(&object)?)
 }
 
 /// Promote a staged ``.new`` file left behind by a crash between fsync and
@@ -152,7 +152,7 @@ fn is_valid_bencode_file(path: &str) -> bool {
 }
 
 /// Recover staged session files left behind by interrupted writes.
-pub fn recover_staged_entries(session_path: &str) -> io::Result<()> {
+pub fn recover_staged_entries(session_path: &str) -> Result<(), SessionError> {
     if session_path.is_empty() {
         return Ok(());
     }
@@ -182,7 +182,7 @@ pub fn recover_staged_entries(session_path: &str) -> io::Result<()> {
     Ok(())
 }
 
-pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntry>> {
+pub fn get_formatted_entries(session_path: &str) -> Result<Vec<DirectoryEntry>, SessionError> {
     if session_path.is_empty() {
         return Ok(Vec::new());
     }
@@ -229,7 +229,7 @@ pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntr
 /// the static torrent, the `.rtorrent` sidecar or the resume stream, so a
 /// magnet placeholder that never received metadata is not silently lost.
 /// Temporary/staged `.new` files and names for other hashes are ignored.
-pub fn get_restorable_entries(session_path: &str) -> io::Result<Vec<SessionEntry>> {
+pub fn get_restorable_entries(session_path: &str) -> Result<Vec<SessionEntry>, SessionError> {
     if session_path.is_empty() {
         return Ok(Vec::new());
     }
@@ -286,14 +286,14 @@ pub fn get_restorable_entries(session_path: &str) -> io::Result<Vec<SessionEntry
     Ok(entries)
 }
 
-fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
+fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> Result<(), SessionError> {
     // Remove any leftover temporary file first so that O_EXCL only ever fails
     // on an entry that appeared after the unlink, and O_NOFOLLOW keeps a symlink
     // planted in the session directory from redirecting the write.
     match fs::remove_file(path) {
         Ok(()) => {}
         Err(err) if err.kind() == ErrorKind::NotFound => {}
-        Err(err) => return Err(err),
+        Err(err) => return Err(err.into()),
     }
 
     let fd = open(
@@ -310,7 +310,7 @@ fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
             Err(nix::errno::Errno::EINTR) => continue,
             // The descriptor is owned, so dropping it closes it even when a
             // write fails. The caller removes all staged `.new` files.
-            Err(e) => return Err(Error::from_raw_os_error(e as i32)),
+            Err(e) => return Err(Error::from_raw_os_error(e as i32).into()),
         }
     }
 
@@ -322,7 +322,7 @@ fn save_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
         let sync_res = fdatasync(&fd);
 
         if let Err(e) = sync_res {
-            return Err(Error::from_raw_os_error(e as i32));
+            return Err(Error::from_raw_os_error(e as i32).into());
         }
     }
 
@@ -340,7 +340,7 @@ fn remove_staged_files(paths: &[String]) {
     }
 }
 
-fn sync_directory_of(path: &str) -> io::Result<()> {
+fn sync_directory_of(path: &str) -> Result<(), SessionError> {
     stats::record_dir_sync();
     let dir = match path.rfind('/') {
         Some(0) => "/",
@@ -359,23 +359,21 @@ fn sync_directory_of(path: &str) -> io::Result<()> {
 pub struct DownloadStorer;
 
 impl DownloadStorer {
-    pub fn build_path(session_path: &str, info_hash_hex: &str) -> io::Result<String> {
+    pub fn build_path(session_path: &str, info_hash_hex: &str) -> Result<String, SessionError> {
         if session_path.is_empty() {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "DownloadStorer::build_path() called with empty session path.",
+            return Err(SessionError::InvalidPath(
+                "DownloadStorer::build_path() called with empty session path.".into(),
             ));
         }
         if !session_path.ends_with('/') {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "DownloadStorer::build_path() session path missing trailing slash.",
+            return Err(SessionError::InvalidPath(
+                "DownloadStorer::build_path() session path missing trailing slash.".into(),
             ));
         }
         if info_hash_hex.len() != 40 || !info_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "DownloadStorer::build_path() requires a 40-character hexadecimal info hash.",
+            return Err(SessionError::InvalidInfoHash(
+                "DownloadStorer::build_path() requires a 40-character hexadecimal info hash."
+                    .into(),
             ));
         }
 
@@ -404,7 +402,7 @@ impl DownloadStorer {
         torrent_stream: Option<&[u8]>,
         rtorrent_stream: &[u8],
         libtorrent_stream: &[u8],
-    ) -> io::Result<()> {
+    ) -> Result<(), SessionError> {
         let torrent_path = path.to_string();
         let libtorrent_path = format!("{}.libtorrent_resume", path);
         let rtorrent_path = format!("{}.rtorrent", path);
@@ -424,7 +422,7 @@ impl DownloadStorer {
             }
             save_stream(&libtorrent_tmp, use_fsyncdisk, libtorrent_stream)?;
             save_stream(&rtorrent_tmp, use_fsyncdisk, rtorrent_stream)?;
-            Ok::<(), io::Error>(())
+            Ok::<(), SessionError>(())
         })();
 
         if let Err(err) = stage_result {
@@ -444,10 +442,7 @@ impl DownloadStorer {
             if let Ok(meta) = fs::symlink_metadata(target) {
                 if meta.is_dir() {
                     remove_staged_files(&[torrent_tmp, libtorrent_tmp, rtorrent_tmp]);
-                    return Err(Error::other(format!(
-                        "Session destination is a directory: {}",
-                        target
-                    )));
+                    return Err(SessionError::DestinationIsDirectory(target.to_string()));
                 }
             }
         }
@@ -460,7 +455,7 @@ impl DownloadStorer {
             }
             fs::rename(&libtorrent_tmp, &libtorrent_path)?;
             fs::rename(&rtorrent_tmp, &rtorrent_path)?;
-            Ok::<(), io::Error>(())
+            Ok::<(), SessionError>(())
         })();
 
         if let Err(err) = publish_result {
@@ -482,7 +477,11 @@ impl DownloadStorer {
     ///
     /// Used to persist a static `.torrent` while a verification in flight makes
     /// the resume bitfield untrustworthy.
-    pub fn save_single_stream(path: &str, use_fsyncdisk: bool, data: &[u8]) -> io::Result<()> {
+    pub fn save_single_stream(
+        path: &str,
+        use_fsyncdisk: bool,
+        data: &[u8],
+    ) -> Result<(), SessionError> {
         let staged = temp_path(path);
         stats::record_staged_files(1);
         if let Err(err) = save_stream(&staged, use_fsyncdisk, data) {
@@ -491,7 +490,7 @@ impl DownloadStorer {
         }
         if let Err(err) = fs::rename(&staged, path) {
             remove_staged_files(std::slice::from_ref(&staged));
-            return Err(err);
+            return Err(err.into());
         }
         if use_fsyncdisk {
             sync_directory_of(path)?;
@@ -500,15 +499,13 @@ impl DownloadStorer {
     }
 
     /// Loads a `.libtorrent_resume` file.
-    pub fn load_resume_file(path: &str) -> io::Result<ResumeData> {
+    pub fn load_resume_file(path: &str) -> Result<ResumeData, SessionError> {
         let bytes = fs::read(path)?;
-        let object = bencode::decode(&bytes)
-            .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))?;
-        ResumeData::from_object(&object)
-            .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))
+        let object = bencode::decode(&bytes)?;
+        Ok(ResumeData::from_object(&object)?)
     }
 
-    pub fn get_formatted_entries(session_path: &str) -> io::Result<Vec<DirectoryEntry>> {
+    pub fn get_formatted_entries(session_path: &str) -> Result<Vec<DirectoryEntry>, SessionError> {
         crate::session::storer::get_formatted_entries(session_path)
     }
 }

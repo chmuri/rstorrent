@@ -94,6 +94,41 @@ pub fn parse_nat_pmp_response(
     Ok(mapped_external_port)
 }
 
+/// Parses the Linux `/proc/net/route` table and returns the default gateway.
+///
+/// The default route has destination `00000000` and the `RTF_GATEWAY` flag
+/// (0x2); the gateway column is a little-endian hex IPv4 address.
+pub fn parse_default_gateway(route_table: &str) -> Option<Ipv4Addr> {
+    for line in route_table.lines().skip(1) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 4 || fields[1] != "00000000" {
+            continue;
+        }
+        let Ok(flags) = u16::from_str_radix(fields[3], 16) else {
+            continue;
+        };
+        if flags & 0x2 == 0 {
+            continue;
+        }
+        let Ok(gateway) = u32::from_str_radix(fields[2], 16) else {
+            continue;
+        };
+        if gateway == 0 {
+            continue;
+        }
+        return Some(Ipv4Addr::from(gateway.to_le_bytes()));
+    }
+    None
+}
+
+/// Discovers the default gateway from the kernel routing table (Linux).
+/// Returns `None` where the table is unavailable so callers can fall back to
+/// well-known gateway addresses.
+pub fn discover_default_gateway() -> Option<Ipv4Addr> {
+    let route_table = std::fs::read_to_string("/proc/net/route").ok()?;
+    parse_default_gateway(&route_table)
+}
+
 /// Attempts to map a port using NAT-PMP on the default gateway router.
 pub async fn try_map_nat_pmp(
     gateway: Ipv4Addr,
@@ -128,14 +163,26 @@ pub async fn try_map_nat_pmp(
     parse_nat_pmp_response(&buf[..len], protocol)
 }
 
-/// Discovers a UPnP IGD device and adds a port mapping.
-pub async fn try_map_upnp(
+/// Removes a NAT-PMP port mapping by requesting a zero lifetime (RFC 6886).
+pub async fn try_delete_nat_pmp(
+    gateway: Ipv4Addr,
     internal_port: u16,
     external_port: u16,
     protocol: PortMappingProtocol,
-    description: &str,
-    lease_duration: u32,
-) -> Result<u16, NetError> {
+) -> Result<(), NetError> {
+    try_map_nat_pmp(gateway, internal_port, external_port, protocol, 0).await?;
+    Ok(())
+}
+
+/// Discovered UPnP Internet Gateway Device control endpoint.
+struct UpnpIgd {
+    control_url: String,
+    service_type: String,
+    local_ip: String,
+}
+
+/// Discovers a UPnP IGD via SSDP and resolves its WAN connection control URL.
+async fn discover_upnp_igd() -> Result<UpnpIgd, NetError> {
     let socket = UdpSocket::bind("0.0.0.0:0")
         .await
         .map_err(|e| NetError::Io(std::io::Error::other(e)))?;
@@ -215,19 +262,40 @@ pub async fn try_map_upnp(
         location_url.to_string()
     };
 
+    Ok(UpnpIgd {
+        control_url,
+        service_type: service_type.to_string(),
+        local_ip,
+    })
+}
+
+/// Discovers a UPnP IGD device and adds a port mapping.
+pub async fn try_map_upnp(
+    internal_port: u16,
+    external_port: u16,
+    protocol: PortMappingProtocol,
+    description: &str,
+    lease_duration: u32,
+) -> Result<u16, NetError> {
+    let igd = discover_upnp_igd().await?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| NetError::Input(e.to_string()))?;
+
     let soap_body = format_upnp_soap_add_port_mapping(
-        service_type,
+        &igd.service_type,
         external_port,
         internal_port,
-        &local_ip,
+        &igd.local_ip,
         protocol,
         description,
         lease_duration,
     );
 
-    let soap_action = format!("\"{}#AddPortMapping\"", service_type);
+    let soap_action = format!("\"{}#AddPortMapping\"", igd.service_type);
     let resp = client
-        .post(&control_url)
+        .post(&igd.control_url)
         .header("SOAPAction", soap_action)
         .header("Content-Type", "text/xml; charset=\"utf-8\"")
         .body(soap_body)
@@ -240,6 +308,39 @@ pub async fn try_map_upnp(
     } else {
         Err(NetError::Input(format!(
             "UPnP SOAP error: status {}",
+            resp.status()
+        )))
+    }
+}
+
+/// Discovers a UPnP IGD device and removes a port mapping.
+pub async fn try_delete_upnp(
+    external_port: u16,
+    protocol: PortMappingProtocol,
+) -> Result<(), NetError> {
+    let igd = discover_upnp_igd().await?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| NetError::Input(e.to_string()))?;
+
+    let soap_body =
+        format_upnp_soap_delete_port_mapping(&igd.service_type, external_port, protocol);
+    let soap_action = format!("\"{}#DeletePortMapping\"", igd.service_type);
+    let resp = client
+        .post(&igd.control_url)
+        .header("SOAPAction", soap_action)
+        .header("Content-Type", "text/xml; charset=\"utf-8\"")
+        .body(soap_body)
+        .send()
+        .await
+        .map_err(|e| NetError::Input(e.to_string()))?;
+
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(NetError::Input(format!(
+            "UPnP SOAP delete error: status {}",
             resp.status()
         )))
     }
@@ -370,5 +471,42 @@ mod tests {
         assert!(xml.contains("<NewProtocol>TCP</NewProtocol>"));
         assert!(xml.contains("<NewInternalClient>192.168.1.100</NewInternalClient>"));
         assert!(xml.contains("<NewPortMappingDescription>rstorrent</NewPortMappingDescription>"));
+    }
+
+    #[test]
+    fn parse_default_gateway_finds_gateway() {
+        let table = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\n\
+                     eth0 00000000 0102A8C0 0003 0 0 100 00000000 0 0 0\n\
+                     eth0 0002A8C0 00000000 0001 0 0 100 00FFFFFF 0 0 0\n";
+        assert_eq!(
+            parse_default_gateway(table),
+            Some(Ipv4Addr::new(192, 168, 2, 1))
+        );
+    }
+
+    #[test]
+    fn parse_default_gateway_ignores_non_default_routes() {
+        let table = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\n\
+                     eth0 0002A8C0 00000000 0001 0 0 100 00FFFFFF 0 0 0\n";
+        assert_eq!(parse_default_gateway(table), None);
+    }
+
+    #[test]
+    fn parse_default_gateway_skips_zero_gateway() {
+        let table = "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\n\
+                     eth0 00000000 00000000 0003 0 0 100 00000000 0 0 0\n";
+        assert_eq!(parse_default_gateway(table), None);
+    }
+
+    #[test]
+    fn upnp_soap_delete_port_mapping_contains_elements() {
+        let xml = format_upnp_soap_delete_port_mapping(
+            "urn:schemas-upnp-org:service:WANIPConnection:1",
+            6881,
+            PortMappingProtocol::Udp,
+        );
+        assert!(xml.contains("<u:DeletePortMapping"));
+        assert!(xml.contains("<NewExternalPort>6881</NewExternalPort>"));
+        assert!(xml.contains("<NewProtocol>UDP</NewProtocol>"));
     }
 }

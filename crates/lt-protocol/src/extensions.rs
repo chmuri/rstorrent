@@ -1,6 +1,6 @@
 use lt_common::object::{encode, Object};
 use lt_net::addr::SocketAddress;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -361,10 +361,15 @@ pub fn ut_metadata_reject_payload(piece: u32) -> Vec<u8> {
 }
 
 /// Bencoded payload for the LTEP handshake (without the framing bytes).
+///
+/// `your_ip` is the address this peer sees the receiver as (BEP 10 `yourip`):
+/// a compact IPv4 (4 bytes) or IPv6 (16 bytes) address with no port. The
+/// receiver learns its own external address from it.
 pub fn extension_handshake_payload(
     pex_id: u8,
     metadata_id: u8,
     metadata_size: Option<u32>,
+    your_ip: Option<IpAddr>,
 ) -> Vec<u8> {
     let mut root = Object::create_map();
     let mut m = Object::create_map();
@@ -391,7 +396,33 @@ pub fn extension_handshake_payload(
         root.insert_key("metadata_size", Object::create_value(size as i64))
             .unwrap();
     }
+    if let Some(ip) = your_ip {
+        let octets = match ip {
+            IpAddr::V4(v4) => v4.octets().to_vec(),
+            IpAddr::V6(v6) => v6.octets().to_vec(),
+        };
+        root.insert_key("yourip", Object::create_string(octets))
+            .unwrap();
+    }
     encode(&root).unwrap_or_default()
+}
+
+/// Decode a compact IP address (4 bytes for IPv4, 16 bytes for IPv6, no port)
+/// as carried by the LTEP `yourip`/`ipv4`/`ipv6` handshake fields.
+pub fn decode_compact_ip(bytes: &[u8]) -> Option<IpAddr> {
+    match bytes.len() {
+        4 => {
+            let mut octets = [0u8; 4];
+            octets.copy_from_slice(bytes);
+            Some(IpAddr::V4(Ipv4Addr::from(octets)))
+        }
+        16 => {
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(bytes);
+            Some(IpAddr::V6(Ipv6Addr::from(octets)))
+        }
+        _ => None,
+    }
 }
 
 /// Parsed `ut_pex` message.
@@ -528,5 +559,65 @@ pub fn ut_pex_payload(added: &[SocketAddress], dropped: &[SocketAddress]) -> Vec
 impl Drop for ProtocolExtension {
     fn drop(&mut self) {
         self.cleanup();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lt_common::object::bencode::read_bencode;
+
+    fn yourip_from_payload(payload: &[u8]) -> Option<Vec<u8>> {
+        let (object, _) = read_bencode(payload).unwrap();
+        object
+            .get_key("yourip")
+            .ok()
+            .and_then(|value| value.as_string().ok())
+            .map(|bytes| bytes.to_vec())
+    }
+
+    #[test]
+    fn handshake_round_trips_yourip_v4() {
+        let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7));
+        let payload = extension_handshake_payload(2, 1, None, Some(ip));
+        let bytes = yourip_from_payload(&payload).expect("yourip present");
+        assert_eq!(bytes, vec![203, 0, 113, 7]);
+        assert_eq!(decode_compact_ip(&bytes), Some(ip));
+    }
+
+    #[test]
+    fn handshake_round_trips_yourip_v6() {
+        let ip = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
+        let payload = extension_handshake_payload(2, 1, None, Some(ip));
+        let bytes = yourip_from_payload(&payload).expect("yourip present");
+        assert_eq!(bytes.len(), 16);
+        assert_eq!(decode_compact_ip(&bytes), Some(ip));
+    }
+
+    #[test]
+    fn handshake_omits_yourip_when_none() {
+        let payload = extension_handshake_payload(2, 1, Some(1024), None);
+        assert!(yourip_from_payload(&payload).is_none());
+        let (object, _) = read_bencode(&payload).unwrap();
+        assert_eq!(object.get_key_value("metadata_size").unwrap(), 1024);
+    }
+
+    #[test]
+    fn decode_compact_ip_handles_v4_v6_and_invalid() {
+        assert_eq!(
+            decode_compact_ip(&[192, 0, 2, 1]),
+            Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)))
+        );
+        let mut v6 = [0u8; 16];
+        v6[0] = 0x20;
+        v6[1] = 0x01;
+        v6[15] = 0x01;
+        assert_eq!(
+            decode_compact_ip(&v6),
+            Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 1)))
+        );
+        assert_eq!(decode_compact_ip(&[]), None);
+        assert_eq!(decode_compact_ip(&[0u8; 6]), None);
+        assert_eq!(decode_compact_ip(&[0u8; 18]), None);
     }
 }

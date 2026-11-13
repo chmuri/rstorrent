@@ -7,6 +7,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
+use bytes::Bytes;
+
 /// Default maximum memory capacity for a disk worker's piece cache (64 MB per worker).
 pub const DEFAULT_PIECE_CACHE_CAPACITY_BYTES: usize = 64 * 1024 * 1024;
 
@@ -32,7 +34,7 @@ pub struct PieceCacheStats {
 pub struct PieceCache {
     capacity_bytes: usize,
     used_bytes: usize,
-    entries: HashMap<PieceCacheKey, Vec<u8>>,
+    entries: HashMap<PieceCacheKey, Bytes>,
     order: VecDeque<PieceCacheKey>,
     hits: u64,
     misses: u64,
@@ -75,7 +77,7 @@ impl PieceCache {
                     self.order.push_back(k);
                 }
             }
-            self.entries.get(&key).map(|v| v.as_slice())
+            self.entries.get(&key).map(|v| &v[..])
         } else {
             self.misses = self.misses.saturating_add(1);
             None
@@ -89,8 +91,9 @@ impl PieceCache {
         piece_index: u32,
         block_offset: u32,
         length: u32,
-        data: Vec<u8>,
+        data: impl Into<Bytes>,
     ) {
+        let data: Bytes = data.into();
         let entry_size = data.len();
         if entry_size > self.capacity_bytes {
             return;

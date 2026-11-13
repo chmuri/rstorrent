@@ -602,6 +602,8 @@ fn register_proxy_http_commands(
         |s| s.proxy_global.clone(),
         |s, value| {
             validate_proxy_url(&value)?;
+            let proxy = lt_net::ProxyConfig::parse(&value).map_err(|e| e.to_string())?;
+            lt_net::set_shared_proxy(proxy);
             s.proxy_global = value;
             Ok(())
         },

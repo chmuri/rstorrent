@@ -3,8 +3,30 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{OnceLock, RwLock};
 
 use crate::error::NetError;
+
+static EXTERNAL_ADDRESS: OnceLock<RwLock<Option<IpAddr>>> = OnceLock::new();
+
+fn external_address_cell() -> &'static RwLock<Option<IpAddr>> {
+    EXTERNAL_ADDRESS.get_or_init(|| RwLock::new(None))
+}
+
+/// Record the external address a peer reported for us via the LTEP `yourip`
+/// field (BEP 10). Later reports overwrite earlier ones.
+pub fn report_external_address(address: IpAddr) {
+    *external_address_cell()
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = Some(address);
+}
+
+/// The most recently learned external address of this client, if any.
+pub fn learned_external_address() -> Option<IpAddr> {
+    *external_address_cell()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AddressFamily {
@@ -654,5 +676,20 @@ impl std::ops::Deref for AddressList {
 impl std::ops::DerefMut for AddressList {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_address_is_learned_and_overwritten() {
+        let first = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1));
+        let second = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 2));
+        report_external_address(first);
+        assert_eq!(learned_external_address(), Some(first));
+        report_external_address(second);
+        assert_eq!(learned_external_address(), Some(second));
     }
 }

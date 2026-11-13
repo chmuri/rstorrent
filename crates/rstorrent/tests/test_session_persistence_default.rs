@@ -60,6 +60,7 @@ async fn test_default_session_persists_and_restores_torrents() {
         directory: None,
         watch_dir: None,
         local_address: None,
+        proxy: None,
         port_range: None,
         session: None, // No session path passed -> uses XDG default
         no_rc: true,
@@ -67,6 +68,9 @@ async fn test_default_session_persists_and_restores_torrents() {
         daemon: true,
         grpc_port: None,
         grpc_socket: None,
+        metrics_addr: None,
+        webui_addr: None,
+        webui_token: None,
         options: Vec::new(),
         command_options: Vec::new(),
         deprecated: false,

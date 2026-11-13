@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod command;
 pub mod command_map;
 pub mod error;

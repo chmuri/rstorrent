@@ -13,12 +13,12 @@
 //! torrent out for the duration of the pass (the engine does this while
 //! verification owns the data).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
 use lt_common::bitfield::Bitfield;
 use lt_crypto::sha1::sha1_hash;
@@ -365,38 +365,110 @@ impl HashTorrent {
 }
 
 /// Thread-safe file handle cache used during parallel hashing passes.
+///
+/// Bounded to `max_open` handles with LRU eviction so a large multi-file torrent
+/// cannot exhaust the file-descriptor budget during a hash pass. Eviction only
+/// drops the cache's `Arc<File>`; a worker still holding a clone keeps its handle
+/// open until it finishes, so correctness is unaffected.
 struct ConcurrentReadCache {
-    files: RwLock<HashMap<PathBuf, Arc<File>>>,
+    inner: Mutex<ReadCacheInner>,
+    max_open: usize,
+}
+
+struct ReadCacheInner {
+    files: HashMap<PathBuf, Arc<File>>,
+    /// Access order, least-recently-used at the front.
+    order: VecDeque<PathBuf>,
+}
+
+impl ReadCacheInner {
+    fn touch(&mut self, path: &Path) {
+        if let Some(pos) = self.order.iter().position(|p| p.as_path() == path) {
+            self.order.remove(pos);
+        }
+        self.order.push_back(path.to_path_buf());
+    }
 }
 
 impl ConcurrentReadCache {
-    fn new(_max_open: usize) -> Self {
+    fn new(max_open: usize) -> Self {
         Self {
-            files: RwLock::new(HashMap::new()),
+            inner: Mutex::new(ReadCacheInner {
+                files: HashMap::new(),
+                order: VecDeque::new(),
+            }),
+            max_open: max_open.max(1),
         }
     }
 
     fn get(&self, path: &Path) -> Result<Arc<File>, StorageError> {
         {
-            let map = self
-                .files
-                .read()
+            let mut inner = self
+                .inner
+                .lock()
                 .map_err(|_| StorageError::Io(std::io::Error::other("read cache lock poisoned")))?;
-            if let Some(file) = map.get(path) {
-                return Ok(Arc::clone(file));
+            if let Some(file) = inner.files.get(path) {
+                let file = Arc::clone(file);
+                inner.touch(path);
+                return Ok(file);
             }
         }
-        let mut map = self
-            .files
-            .write()
-            .map_err(|_| StorageError::Io(std::io::Error::other("read cache lock poisoned")))?;
-        if let Some(file) = map.get(path) {
-            return Ok(Arc::clone(file));
-        }
+        // Open without holding the lock so parallel hashing is not serialised on I/O.
         let file = Arc::new(OpenOptions::new().read(true).open(path)?);
-        map.insert(path.to_path_buf(), Arc::clone(&file));
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| StorageError::Io(std::io::Error::other("read cache lock poisoned")))?;
+        // Another worker may have inserted the same path while we opened it.
+        if let Some(existing) = inner.files.get(path) {
+            let existing = Arc::clone(existing);
+            inner.touch(path);
+            return Ok(existing);
+        }
+        inner.files.insert(path.to_path_buf(), Arc::clone(&file));
+        inner.order.push_back(path.to_path_buf());
+        while inner.files.len() > self.max_open {
+            match inner.order.pop_front() {
+                Some(old) => {
+                    inner.files.remove(&old);
+                }
+                None => break,
+            }
+        }
         Ok(file)
     }
+}
+
+/// Verify a single BEP52 v2 file on disk against its `pieces root` and the
+/// torrent's `piece layers`.
+///
+/// Reads the whole file, recomputes its Merkle tree and compares the root. The
+/// `piece layers` field only carries hashes for files larger than one piece, so
+/// a single-piece file's root is its only layer and an empty file has none.
+/// Returns `false` for an invalid piece length rather than panicking.
+pub fn verify_v2_file(
+    path: &Path,
+    piece_length: usize,
+    pieces_root: &[u8; 32],
+    piece_layers: &[[u8; 32]],
+) -> Result<bool, StorageError> {
+    use lt_crypto::merkle::{compute_merkle_tree, BLOCK_SIZE};
+    let data = std::fs::read(path)?;
+    if piece_length < BLOCK_SIZE || !piece_length.is_power_of_two() {
+        return Ok(false);
+    }
+    let computed = compute_merkle_tree(&data, piece_length);
+    if computed.piece_root != *pieces_root {
+        return Ok(false);
+    }
+    let expected_layers: Vec<[u8; 32]> = if data.is_empty() {
+        Vec::new()
+    } else if piece_layers.is_empty() {
+        vec![*pieces_root]
+    } else {
+        piece_layers.to_vec()
+    };
+    Ok(computed.piece_layers == expected_layers)
 }
 
 #[cfg(test)]
@@ -406,6 +478,64 @@ mod tests {
 
     fn hash_of(data: &[u8]) -> [u8; 20] {
         sha1_hash(data)
+    }
+
+    fn cache_root(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "rtorrent_read_cache_{}_{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn read_cache_evicts_least_recently_used() {
+        let root = cache_root("lru");
+        let paths: Vec<PathBuf> = (0..3)
+            .map(|i| {
+                let p = root.join(format!("{i}.bin"));
+                std::fs::write(&p, b"x").unwrap();
+                p
+            })
+            .collect();
+
+        let cache = ConcurrentReadCache::new(2);
+        let _a = cache.get(&paths[0]).unwrap();
+        let _b = cache.get(&paths[1]).unwrap();
+        // Touch `a` so `b` becomes the least-recently-used entry.
+        let _a2 = cache.get(&paths[0]).unwrap();
+        let _c = cache.get(&paths[2]).unwrap();
+
+        let inner = cache.inner.lock().unwrap();
+        assert_eq!(inner.files.len(), 2);
+        assert!(inner.files.contains_key(&paths[0]));
+        assert!(inner.files.contains_key(&paths[2]));
+        assert!(!inner.files.contains_key(&paths[1]));
+        drop(inner);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_cache_bounds_open_handles() {
+        let root = cache_root("cap");
+        let paths: Vec<PathBuf> = (0..10)
+            .map(|i| {
+                let p = root.join(format!("{i}.bin"));
+                std::fs::write(&p, b"x").unwrap();
+                p
+            })
+            .collect();
+
+        let cache = ConcurrentReadCache::new(3);
+        for p in &paths {
+            let file = cache.get(p).unwrap();
+            assert_eq!(file.metadata().unwrap().len(), 1);
+        }
+        assert!(cache.inner.lock().unwrap().files.len() <= 3);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -621,5 +751,43 @@ mod tests {
         assert_eq!(result.bitfield.size_bits(), 0);
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn verify_v2_file_matches_and_detects_tampering() {
+        use lt_crypto::merkle::{compute_merkle_tree, BLOCK_SIZE};
+        let path = std::env::temp_dir().join(format!("rtorrent_v2_verify_{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let piece_length = 4 * BLOCK_SIZE;
+        let data: Vec<u8> = (0..5).flat_map(|i| vec![i as u8; BLOCK_SIZE]).collect();
+        let tree = compute_merkle_tree(&data, piece_length);
+        std::fs::write(&path, &data).unwrap();
+
+        assert!(verify_v2_file(&path, piece_length, &tree.piece_root, &tree.piece_layers).unwrap());
+
+        let mut tampered = data.clone();
+        tampered[BLOCK_SIZE] ^= 0xff;
+        std::fs::write(&path, &tampered).unwrap();
+        assert!(
+            !verify_v2_file(&path, piece_length, &tree.piece_root, &tree.piece_layers).unwrap()
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn verify_v2_file_single_piece_has_no_layers() {
+        use lt_crypto::merkle::{compute_merkle_tree, BLOCK_SIZE};
+        let path = std::env::temp_dir().join(format!("rtorrent_v2_single_{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let data = vec![0x42u8; 2 * BLOCK_SIZE];
+        let tree = compute_merkle_tree(&data, 4 * BLOCK_SIZE);
+        std::fs::write(&path, &data).unwrap();
+
+        assert!(verify_v2_file(&path, 4 * BLOCK_SIZE, &tree.piece_root, &[]).unwrap());
+
+        let _ = std::fs::remove_file(&path);
     }
 }

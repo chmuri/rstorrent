@@ -4,6 +4,7 @@ pub use lt_dht::controller::{DhtLifecycleConfig, DhtMode};
 use lt_engine::{DownloadNetworkCoordinator, PeerPoolHandle};
 use lt_net::addr::SocketAddress;
 use lt_net::config::{ListenAddresses, NetworkConfig};
+use lt_net::socket_manager::{shared_socket_manager, SocketCategory};
 use lt_protocol::encryption::EncryptionPolicy;
 use lt_protocol::handshake::{is_plaintext_handshake_prefix, HandshakeMessage};
 use lt_protocol::mse::{accept as mse_accept, matches_obfuscated_info_hash};
@@ -22,7 +23,11 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout, timeout_at};
 use tracing::{debug, info, warn};
 
+use crate::commands::groups::ChokeGroupManager;
+use crate::commands::throttle::ThrottleManager;
 use crate::download_list::DownloadList;
+use rt_rpc::parse_commands::parse_command_multiple;
+use rt_rpc::{CommandMap, Target};
 
 /// Cumulative number of per-torrent network coordinators started since the
 /// process began, and the high-water mark of coordinators alive at once.
@@ -43,9 +48,21 @@ fn record_coordinator_spawn(active: usize) {
     COORDINATORS_PEAK.fetch_max(active as u64, Ordering::Relaxed);
 }
 
-/// Upper bound on concurrent inbound handshakes/connections.
+/// Default upper bound on concurrent inbound handshakes/connections, used
+/// when no process-wide connection cap is configured.
 const MAX_INBOUND_CONNECTIONS: usize = 256;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Inbound handshake budget for a process-wide connection cap. A cap of `0`
+/// means unlimited, so the listener keeps its own bounded default rather than
+/// accepting without limit.
+fn inbound_connection_cap(global_cap: usize) -> usize {
+    if global_cap == 0 {
+        MAX_INBOUND_CONNECTIONS
+    } else {
+        global_cap
+    }
+}
 
 /// Per-stage deadlines used while draining the network runtime.
 #[derive(Debug, Clone, Copy)]
@@ -95,6 +112,8 @@ pub struct PeerListenerConfig {
     pub block_incoming: bool,
     pub handshake_timeout: Duration,
     pub max_connections: usize,
+    pub enable_utp: bool,
+    pub enable_upnp: bool,
 }
 
 impl PeerListenerConfig {
@@ -112,7 +131,10 @@ impl PeerListenerConfig {
             addresses: config.listen_addresses(),
             block_incoming: config.is_block_incoming(),
             handshake_timeout: HANDSHAKE_TIMEOUT,
-            max_connections: MAX_INBOUND_CONNECTIONS,
+            // Read the process-wide cap once at spawn, like enable_utp/enable_upnp.
+            max_connections: inbound_connection_cap(lt_engine::network::global_max_connections()),
+            enable_utp: config.is_enable_utp(),
+            enable_upnp: config.is_enable_upnp(),
         }
     }
 
@@ -420,6 +442,10 @@ fn spawn_peer_listeners(
         mark_listener_open(port);
         let mut tasks: JoinSet<()> = JoinSet::new();
 
+        // One uTP socket on the primary listener address avoids binding the
+        // same UDP port twice when IPv4 and IPv6 listeners are separate.
+        let utp_addr = listeners.first().and_then(|l| l.local_addr().ok());
+
         for listener in listeners {
             if let Ok(addr) = listener.local_addr() {
                 info!(%addr, "Peer listener bound");
@@ -436,17 +462,39 @@ fn spawn_peer_listeners(
             ));
         }
 
+        if let Some(addr) = utp_addr {
+            if config.enable_utp {
+                tasks.spawn(utp_accept_loop(
+                    addr,
+                    Arc::clone(&downloads),
+                    our_peer_id,
+                    shutdown.clone(),
+                    Arc::clone(&peer_pools),
+                    Arc::clone(&encryption_policy),
+                    config.handshake_timeout,
+                    Arc::clone(&permits),
+                ));
+            } else {
+                info!("uTP accept disabled by configuration");
+            }
+        }
+
         tasks.spawn(lsd_loop(
             port,
             Arc::clone(&downloads),
             shutdown.clone(),
             Arc::clone(&peer_pools),
         ));
-        tasks.spawn(port_mapping_loop(port, shutdown.clone()));
+        if config.enable_upnp {
+            tasks.spawn(port_mapping_loop(port, shutdown.clone()));
+        } else {
+            info!("UPnP/NAT-PMP port mapping disabled by configuration");
+        }
         tasks.spawn(choke_supervisor_loop(
             Arc::clone(&downloads),
             shutdown.clone(),
         ));
+        tasks.spawn(web_seed_loop(Arc::clone(&downloads), shutdown.clone()));
 
         while tasks.join_next().await.is_some() {}
         mark_listener_closed();
@@ -475,6 +523,20 @@ fn candidate_ports(first: u16, last: u16, random: bool) -> Vec<u16> {
     (0..count)
         .map(|offset| first + ((start + offset) % count) as u16)
         .collect()
+}
+
+/// Uniform random index in `0..len`, used for the optimistic unchoke pick so
+/// rotation is unpredictable rather than a fixed `round % len` cycle.
+fn random_index(len: usize) -> usize {
+    if len <= 1 {
+        return 0;
+    }
+    let mut bytes = [0u8; 8];
+    if getrandom::fill(&mut bytes).is_ok() {
+        (u64::from_le_bytes(bytes) % len as u64) as usize
+    } else {
+        0
+    }
 }
 
 fn socket_address_for(address: &SocketAddress, port: u16) -> Option<std::net::SocketAddr> {
@@ -787,6 +849,11 @@ async fn accept_loop(
                         continue;
                     }
                 };
+
+                if !shared_socket_manager().can_open_socket(SocketCategory::Generic) {
+                    debug!(peer = %peer_addr, "Socket budget exhausted; dropping inbound connection");
+                    continue;
+                }
                 listener_active().fetch_add(1, Ordering::Relaxed);
 
                 let downloads = Arc::clone(&download_list);
@@ -950,6 +1017,133 @@ async fn accept_loop(
     debug!("Peer accept loop stopped");
 }
 
+/// Accepts inbound uTP (BEP 29) peers over UDP on the same port as the TCP
+/// listener. uTP carries plaintext BitTorrent handshakes; MSE-over-uTP is not
+/// negotiated, so encrypted-only policies reject these connections.
+#[allow(clippy::too_many_arguments)]
+async fn utp_accept_loop(
+    bind_addr: std::net::SocketAddr,
+    download_list: Arc<RwLock<DownloadList>>,
+    our_peer_id: HashString,
+    mut shutdown_rx: watch::Receiver<bool>,
+    peer_pools: Arc<Mutex<HashMap<HashString, PeerPoolHandle>>>,
+    encryption_policy: Arc<Mutex<EncryptionPolicy>>,
+    handshake_timeout: Duration,
+    permits: Arc<Semaphore>,
+) {
+    let mut socket = match lt_net::UtpSocket::bind(bind_addr).await {
+        Ok(socket) => socket,
+        Err(err) => {
+            warn!(error = %err, "Could not bind uTP listener");
+            return;
+        }
+    };
+    info!(addr = %socket.local_addr(), "uTP listener bound");
+
+    let mut connections: JoinSet<()> = JoinSet::new();
+
+    loop {
+        if *shutdown_rx.borrow() {
+            break;
+        }
+        while connections.try_join_next().is_some() {}
+
+        tokio::select! {
+            _ = shutdown_rx.changed() => break,
+            accepted = socket.accept() => {
+                let mut stream = match accepted {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        debug!(error = %err, "uTP accept failed");
+                        continue;
+                    }
+                };
+                let peer_addr = stream.peer_addr();
+
+                let permit = match Arc::clone(&permits).try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        debug!(peer = %peer_addr, "uTP inbound connection limit reached");
+                        continue;
+                    }
+                };
+
+                let downloads = Arc::clone(&download_list);
+                let shutdown = shutdown_rx.clone();
+                let peer_pools = Arc::clone(&peer_pools);
+                let policy_state = Arc::clone(&encryption_policy);
+
+                connections.spawn(async move {
+                    let _permit = permit;
+                    let policy = *policy_state.lock().unwrap_or_else(|e| e.into_inner());
+                    if !policy.allow_plaintext_handshake() {
+                        debug!(peer = %peer_addr, "Rejected unencrypted inbound uTP handshake");
+                        return;
+                    }
+
+                    let mut handshake_buf = [0u8; 68];
+                    match timeout(handshake_timeout, stream.read_exact(&mut handshake_buf)).await {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(err)) => {
+                            debug!(peer = %peer_addr, error = %err, "uTP handshake read failed");
+                            return;
+                        }
+                        Err(_) => {
+                            debug!(peer = %peer_addr, "uTP handshake timed out");
+                            return;
+                        }
+                    }
+
+                    let handshake = match HandshakeMessage::decode(&handshake_buf) {
+                        Ok(handshake) => handshake,
+                        Err(err) => {
+                            debug!(peer = %peer_addr, error = %err, "Invalid inbound uTP handshake");
+                            return;
+                        }
+                    };
+
+                    let download = {
+                        let list = downloads.read().unwrap_or_else(|e| e.into_inner());
+                        list.find(&handshake.info_hash)
+                    };
+                    let Some(download) = download else {
+                        debug!(
+                            peer = %peer_addr,
+                            info_hash = %handshake.info_hash.to_hex(),
+                            "uTP peer for unknown info-hash"
+                        );
+                        return;
+                    };
+
+                    let pool = peer_pools
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get(&handshake.info_hash)
+                        .cloned();
+                    let engine = download
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .engine_download();
+                    lt_engine::run_inbound_utp_peer(
+                        stream,
+                        handshake,
+                        our_peer_id,
+                        engine,
+                        shutdown,
+                        pool,
+                        Some(handshake_timeout),
+                    )
+                    .await;
+                });
+            }
+        }
+    }
+
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
+    debug!("uTP accept loop stopped");
+}
+
 fn rand_u32() -> u32 {
     let mut bytes = [0u8; 4];
     if getrandom::fill(&mut bytes).is_ok() {
@@ -1029,69 +1223,354 @@ async fn lsd_loop(
     debug!("LSD multicast loop stopped");
 }
 
+/// How a NAT port mapping was established, so it can be renewed and removed
+/// through the same mechanism.
+#[derive(Clone, Copy)]
+enum MappingMethod {
+    Upnp,
+    NatPmp(std::net::Ipv4Addr),
+}
+
+/// A successfully established NAT port mapping.
+#[derive(Clone, Copy)]
+struct ActiveMapping {
+    internal_port: u16,
+    external_port: u16,
+    protocol: lt_net::PortMappingProtocol,
+    method: MappingMethod,
+}
+
+/// Establishes one mapping, preferring UPnP IGD and falling back to NAT-PMP on
+/// the discovered gateway (then well-known candidates).
+async fn establish_mapping(
+    internal_port: u16,
+    protocol: lt_net::PortMappingProtocol,
+    gateways: &[std::net::Ipv4Addr],
+    lease: u32,
+) -> Option<ActiveMapping> {
+    if let Ok(ext) =
+        lt_net::try_map_upnp(internal_port, internal_port, protocol, "rstorrent", lease).await
+    {
+        return Some(ActiveMapping {
+            internal_port,
+            external_port: ext,
+            protocol,
+            method: MappingMethod::Upnp,
+        });
+    }
+    for &gw in gateways {
+        if let Ok(ext) =
+            lt_net::try_map_nat_pmp(gw, internal_port, internal_port, protocol, lease).await
+        {
+            return Some(ActiveMapping {
+                internal_port,
+                external_port: ext,
+                protocol,
+                method: MappingMethod::NatPmp(gw),
+            });
+        }
+    }
+    None
+}
+
+/// Refreshes the lease on an existing mapping, keeping its external port.
+async fn renew_mapping(mapping: &ActiveMapping, lease: u32) -> bool {
+    match mapping.method {
+        MappingMethod::Upnp => lt_net::try_map_upnp(
+            mapping.internal_port,
+            mapping.external_port,
+            mapping.protocol,
+            "rstorrent",
+            lease,
+        )
+        .await
+        .is_ok(),
+        MappingMethod::NatPmp(gw) => lt_net::try_map_nat_pmp(
+            gw,
+            mapping.internal_port,
+            mapping.external_port,
+            mapping.protocol,
+            lease,
+        )
+        .await
+        .is_ok(),
+    }
+}
+
+/// Removes a mapping on shutdown so the router does not keep a stale hole.
+async fn delete_mapping(mapping: &ActiveMapping) {
+    let result = match mapping.method {
+        MappingMethod::Upnp => {
+            lt_net::try_delete_upnp(mapping.external_port, mapping.protocol).await
+        }
+        MappingMethod::NatPmp(gw) => {
+            lt_net::try_delete_nat_pmp(
+                gw,
+                mapping.internal_port,
+                mapping.external_port,
+                mapping.protocol,
+            )
+            .await
+        }
+    };
+    if let Err(err) = result {
+        debug!(error = %err, external = mapping.external_port, "port mapping delete failed");
+    }
+}
+
 async fn port_mapping_loop(listen_port: u16, mut shutdown_rx: watch::Receiver<bool>) {
-    if *shutdown_rx.borrow() {
+    if *shutdown_rx.borrow() || listen_port == 0 {
+        let _ = shutdown_rx.changed().await;
         return;
     }
 
-    let mut mapped = false;
+    let lease: u32 = 3600;
+    let renew_interval = std::time::Duration::from_secs(u64::from(lease / 2));
 
-    // 1. Try UPnP IGD via SSDP M-SEARCH
-    match lt_net::try_map_upnp(
-        listen_port,
-        listen_port,
-        lt_net::PortMappingProtocol::Tcp,
-        "rstorrent",
-        3600,
-    )
-    .await
-    {
-        Ok(ext) => {
+    // DHT may listen on a different UDP port than the peer listener; honour the
+    // command-layer `dht.port`/`dht.override_port` preferences the same way the
+    // DHT lifecycle does.
+    let dht_port = match dht_config_snapshot() {
+        Some((port, _mode, override_port)) => {
+            let preferred = if override_port != 0 {
+                override_port
+            } else {
+                port
+            };
+            if preferred != 0 {
+                preferred
+            } else {
+                listen_port
+            }
+        }
+        None => listen_port,
+    };
+
+    // TCP for incoming peer connections, UDP for uTP on the same port, and UDP
+    // for DHT when it uses a distinct port.
+    let mut desired: Vec<(u16, lt_net::PortMappingProtocol)> = vec![
+        (listen_port, lt_net::PortMappingProtocol::Tcp),
+        (listen_port, lt_net::PortMappingProtocol::Udp),
+    ];
+    if dht_port != listen_port {
+        desired.push((dht_port, lt_net::PortMappingProtocol::Udp));
+    }
+
+    // Discover the real default gateway first, then fall back to common router
+    // addresses for hosts where the routing table is unavailable.
+    let mut gateways: Vec<std::net::Ipv4Addr> = Vec::new();
+    if let Some(gw) = lt_net::discover_default_gateway() {
+        gateways.push(gw);
+    }
+    for gw in [
+        std::net::Ipv4Addr::new(192, 168, 1, 1),
+        std::net::Ipv4Addr::new(192, 168, 0, 1),
+        std::net::Ipv4Addr::new(10, 0, 0, 1),
+    ] {
+        if !gateways.contains(&gw) {
+            gateways.push(gw);
+        }
+    }
+
+    let mut active: Vec<ActiveMapping> = Vec::new();
+    for &(port, protocol) in &desired {
+        // Cancel discovery on shutdown so a slow/absent gateway can't stall drain.
+        let mapping = tokio::select! {
+            mapping = establish_mapping(port, protocol, &gateways, lease) => mapping,
+            _ = shutdown_rx.changed() => break,
+        };
+        if let Some(mapping) = mapping {
             info!(
-                internal = listen_port,
-                external = ext,
-                "UPnP port mapped successfully on router"
+                internal = mapping.internal_port,
+                external = mapping.external_port,
+                protocol = mapping.protocol.as_str(),
+                "NAT port mapped successfully"
             );
-            mapped = true;
-        }
-        Err(err) => {
-            debug!(error = %err, "UPnP port mapping unsuccessful; falling back to NAT-PMP");
+            active.push(mapping);
         }
     }
-
-    // 2. If UPnP wasn't successful, try NAT-PMP gateways
-    if !mapped {
-        let candidate_gateways = [
-            std::net::Ipv4Addr::new(192, 168, 1, 1),
-            std::net::Ipv4Addr::new(192, 168, 0, 1),
-            std::net::Ipv4Addr::new(10, 0, 0, 1),
-        ];
-
-        for &gw in &candidate_gateways {
-            if *shutdown_rx.borrow() {
-                return;
-            }
-            if let Ok(ext) = lt_net::try_map_nat_pmp(
-                gw,
-                listen_port,
-                listen_port,
-                lt_net::PortMappingProtocol::Tcp,
-                3600,
-            )
-            .await
-            {
-                info!(gateway = %gw, internal = listen_port, external = ext, "NAT-PMP port mapped successfully");
-                mapped = true;
-                break;
-            }
+    if *shutdown_rx.borrow() {
+        for mapping in &active {
+            delete_mapping(mapping).await;
         }
+        return;
     }
-
-    if !mapped {
+    if active.is_empty() {
         debug!("Automatic port mapping: neither UPnP nor NAT-PMP gateway available");
     }
 
-    let _ = shutdown_rx.changed().await;
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.changed() => {
+                for mapping in &active {
+                    delete_mapping(mapping).await;
+                }
+                return;
+            }
+            _ = tokio::time::sleep(renew_interval) => {
+                if *shutdown_rx.borrow() {
+                    for mapping in &active {
+                        delete_mapping(mapping).await;
+                    }
+                    return;
+                }
+                // Renew existing leases, dropping any that no longer refresh.
+                let mut renewed = Vec::new();
+                for mapping in &active {
+                    if renew_mapping(mapping, lease).await {
+                        renewed.push(*mapping);
+                    }
+                }
+                active = renewed;
+                // Re-establish any desired mapping that is not currently active
+                // (covers both initial failures and leases that dropped out).
+                for &(port, protocol) in &desired {
+                    if active
+                        .iter()
+                        .any(|m| m.internal_port == port && m.protocol == protocol)
+                    {
+                        continue;
+                    }
+                    if let Some(mapping) =
+                        establish_mapping(port, protocol, &gateways, lease).await
+                    {
+                        active.push(mapping);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Handles the choke supervisor needs to enforce stop-on-ratio.
+///
+/// The authoritative per-group ratio config lives in the choke group manager
+/// (the daemon's `ratio.*` commands are group-aware), and the command map runs
+/// the group's `ratio.command` against the target torrent.
+struct RatioContext {
+    group_manager: Arc<RwLock<ChokeGroupManager>>,
+    command_map: Arc<RwLock<CommandMap>>,
+}
+
+static RATIO_CONTEXT: OnceLock<RatioContext> = OnceLock::new();
+
+/// Publish the ratio-enforcement handles. Called once by the daemon control
+/// plane after the group manager and command map are created.
+pub fn install_ratio_context(
+    group_manager: Arc<RwLock<ChokeGroupManager>>,
+    command_map: Arc<RwLock<CommandMap>>,
+) {
+    let _ = RATIO_CONTEXT.set(RatioContext {
+        group_manager,
+        command_map,
+    });
+}
+
+/// Handle to the daemon's throttle command state, published once so the network
+/// runtime can mirror the configured rates into the shared peer throttle
+/// registry and refill its quotas.
+static THROTTLE_CONTEXT: OnceLock<Arc<RwLock<ThrottleManager>>> = OnceLock::new();
+
+/// Publish the throttle manager. Called once by the daemon control plane after
+/// the command map is created, mirroring [`install_ratio_context`].
+pub fn install_throttle_manager(manager: Arc<RwLock<ThrottleManager>>) {
+    let _ = THROTTLE_CONTEXT.set(manager);
+}
+
+/// Periodically mirror the configured global and per-group rates into the shared
+/// [`lt_net::ThrottleRegistry`] and refill its byte quotas. Peer streams wrapped
+/// in `ThrottledReader`/`ThrottledWriter` consume that quota, so this loop is what
+/// actually paces transfers to the configured limits.
+///
+/// Runs independently of the peer listeners so outbound transfers stay paced
+/// even when incoming connections are blocked.
+async fn throttle_driver_loop(mut shutdown_rx: watch::Receiver<bool>) {
+    let registry = lt_net::throttle_registry();
+    let interval = Duration::from_millis(100);
+    let mut tick = tokio::time::interval(interval);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tick.tick().await;
+
+    let mut known_names: HashSet<String> = HashSet::new();
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.changed() => break,
+            _ = tick.tick() => {
+                if let Some(manager) = THROTTLE_CONTEXT.get() {
+                    let mut current_names: HashSet<String> = HashSet::new();
+                    {
+                        let mgr = manager.read().unwrap();
+                        registry.set_global_rates(mgr.global_up, mgr.global_down);
+                        for (name, (up, down)) in &mgr.named_throttles {
+                            registry.set_named_rate(name, *up, *down);
+                            current_names.insert(name.clone());
+                        }
+                    }
+
+                    // A group removed from the config must stop limiting any
+                    // session still holding its throttle: reset it to unlimited
+                    // before dropping it from the registry so orphaned nodes
+                    // bypass gating instead of stalling without quota.
+                    for name in known_names.difference(&current_names) {
+                        registry.set_named_rate(name, 0, 0);
+                        registry.remove_named(name);
+                    }
+                    known_names = current_names;
+                }
+                registry.refill(interval);
+            }
+        }
+    }
+}
+
+/// Stop-on-ratio: for every active, seeding torrent whose group ratio limit is
+/// reached, run the group's `ratio.command` against the torrent and stop it.
+///
+/// Reads the same authoritative config the user sets via `group.seeding.ratio.*`
+/// so the supervisor and the RPC surface never disagree. Collection and action
+/// are split into two phases: no download lock is held while the command runs,
+/// because the command re-enters the download list (`d.try_close`).
+fn enforce_stop_on_ratio(downloads: &Arc<RwLock<DownloadList>>) {
+    let Some(ctx) = RATIO_CONTEXT.get() else {
+        return;
+    };
+    enforce_stop_on_ratio_with(ctx, downloads);
+}
+
+fn enforce_stop_on_ratio_with(ctx: &RatioContext, downloads: &Arc<RwLock<DownloadList>>) {
+    let mut reached: Vec<(HashString, String)> = Vec::new();
+    {
+        let list = downloads.read().unwrap();
+        let groups = ctx.group_manager.read().unwrap();
+        for item in list.all() {
+            let dl = item.read().unwrap();
+            if !dl.is_seeding() {
+                continue;
+            }
+            let group = dl.group() as usize;
+            let Some(config) = groups.resource_manager().ratio_config(group) else {
+                continue;
+            };
+            if config.ratio_reached(dl.uploaded_bytes(), dl.downloaded_bytes()) {
+                reached.push((*dl.info_hash(), config.command.clone()));
+            }
+        }
+    }
+
+    for (hash, command) in reached {
+        let target = Target::Download(hash);
+        if !command.trim().is_empty() {
+            let map = ctx.command_map.read().unwrap();
+            if let Err(e) = parse_command_multiple(&command, &target, &map, true) {
+                warn!(target = %hash, error = %e, "stop-on-ratio: ratio.command failed");
+            }
+        }
+        let list = downloads.read().unwrap();
+        if let Some(item) = list.find(&hash) {
+            list.stop(&item);
+        }
+    }
 }
 
 async fn choke_supervisor_loop(
@@ -1109,6 +1588,8 @@ async fn choke_supervisor_loop(
             _ = interval.tick() => {
                 round = round.wrapping_add(1);
                 let is_optimistic_round = round.is_multiple_of(3);
+
+                enforce_stop_on_ratio(&downloads);
 
                 let engines: Vec<Arc<Mutex<lt_engine::download::Download>>> = {
                     let dl = downloads.read().unwrap();
@@ -1133,6 +1614,7 @@ async fn choke_supervisor_loop(
                         let max_slots = dl.client_config().max_uploads().max(1);
                         let is_seeding = dl.is_done();
 
+                        // (peer_id, rate_down, rate_up, downloaded, is_snubbed)
                         let mut interested_peers = Vec::new();
                         for peer in dl.connection_list_mut().iter_mut() {
                             if peer.peer_interested {
@@ -1141,6 +1623,7 @@ async fn choke_supervisor_loop(
                                     peer.rate_down.rate(),
                                     peer.rate_up.rate(),
                                     peer.downloaded,
+                                    peer.is_snubbed,
                                 ));
                             } else {
                                 peer.is_choked = true;
@@ -1151,11 +1634,18 @@ async fn choke_supervisor_loop(
                             continue;
                         }
 
-                        if is_seeding {
-                            interested_peers.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-                        } else {
-                            interested_peers.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                        }
+                        // Tit-for-tat ranking: snubbed peers (those not sending
+                        // us data) lose regular slots first; the rest are ranked
+                        // by the rate that matters for our current role.
+                        interested_peers.sort_by(|a, b| {
+                            a.4.cmp(&b.4).then_with(|| {
+                                if is_seeding {
+                                    b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
+                                } else {
+                                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                                }
+                            })
+                        });
 
                         let regular_slots = if is_optimistic_round && max_slots > 1 {
                             (max_slots - 1) as usize
@@ -1170,14 +1660,26 @@ async fn choke_supervisor_loop(
                             .collect();
 
                         if is_optimistic_round && unchoked_ids.len() < interested_peers.len() {
-                            let remaining: Vec<HashString> = interested_peers
+                            let remaining: Vec<(HashString, bool)> = interested_peers
                                 .iter()
                                 .skip(regular_slots)
-                                .map(|p| p.0)
+                                .map(|p| (p.0, p.4))
                                 .collect();
-                            if !remaining.is_empty() {
-                                let opt_idx = (round as usize) % remaining.len();
-                                unchoked_ids.insert(remaining[opt_idx]);
+                            // Prefer a non-snubbed peer for the optimistic slot
+                            // so we probe peers that might actually reciprocate.
+                            let candidates: Vec<HashString> =
+                                if remaining.iter().any(|(_, snubbed)| !snubbed) {
+                                    remaining
+                                        .iter()
+                                        .filter(|(_, s)| !s)
+                                        .map(|(id, _)| *id)
+                                        .collect()
+                                } else {
+                                    remaining.iter().map(|(id, _)| *id).collect()
+                                };
+                            if !candidates.is_empty() {
+                                let opt_idx = random_index(candidates.len());
+                                unchoked_ids.insert(candidates[opt_idx]);
                             }
                         }
 
@@ -1190,6 +1692,150 @@ async fn choke_supervisor_loop(
         }
     }
     debug!("Choke supervisor loop stopped");
+}
+
+/// Fallback HTTP seeding (BEP 19/17): fetches missing pieces from `url-list` /
+/// `httpseeds` mirrors for active downloads that have no connected peers.
+async fn web_seed_loop(
+    downloads: Arc<RwLock<DownloadList>>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    let client = match lt_net::HttpClient::new() {
+        Ok(client) => client,
+        Err(err) => {
+            warn!(error = %err, "WebSeed loop disabled: HTTP client init failed");
+            return;
+        }
+    };
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval.tick().await;
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.changed() => break,
+            _ = interval.tick() => {
+                let engines: Vec<Arc<Mutex<lt_engine::download::Download>>> = {
+                    let dl = downloads.read().unwrap();
+                    dl.all()
+                        .iter()
+                        .filter_map(|d| {
+                            let item = d.read().unwrap();
+                            if item.is_active() {
+                                Some(item.engine_download())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
+
+                for engine_arc in engines {
+                    // Reserve pieces and collect their v2 verification params
+                    // under the same lock so hashing can run off the reactor.
+                    let Some((plan, pieces, v2_checks)) = ({
+                        let Ok(mut dl) = engine_arc.try_lock() else {
+                            continue;
+                        };
+                        dl.reserve_web_seed_pieces(4).map(|(plan, pieces)| {
+                            let v2_checks = pieces
+                                .iter()
+                                .map(|&piece| dl.v2_piece_check(piece).ok().flatten())
+                                .collect::<Vec<_>>();
+                            (plan, pieces, v2_checks)
+                        })
+                    }) else {
+                        continue;
+                    };
+
+                    let mut fetches = JoinSet::new();
+                    for (piece, v2_check) in pieces.iter().copied().zip(v2_checks) {
+                        let plan = plan.clone();
+                        let client = client.clone();
+                        fetches.spawn(async move {
+                            let result = plan.fetch_piece(&client, piece).await;
+                            (piece, v2_check, result)
+                        });
+                    }
+
+                    let mut results = Vec::new();
+                    let mut fetch_pending = pieces.clone();
+                    while let Some(joined) = fetches.join_next().await {
+                        let Ok((piece, v2_check, result)) = joined else {
+                            continue;
+                        };
+                        fetch_pending.retain(|&p| p != piece);
+                        results.push((piece, v2_check, result));
+                    }
+                    // Fetch tasks that panicked never reported their piece.
+                    let mut failed = fetch_pending;
+
+                    // Hash every fetched piece off the reactor thread before
+                    // taking the download lock again.
+                    let mut hashes = JoinSet::new();
+                    let mut hash_pending = Vec::new();
+                    for (piece, v2_check, result) in results {
+                        match result {
+                            Ok(data) => {
+                                hash_pending.push(piece);
+                                hashes.spawn(async move {
+                                    let hashed = tokio::task::spawn_blocking(move || {
+                                        let hash = lt_crypto::sha1::sha1_hash(&data);
+                                        let v2_root = v2_check.map(|check| {
+                                            lt_crypto::merkle::piece_root(
+                                                &data,
+                                                check.piece_length,
+                                                check.single_piece_file,
+                                            )
+                                        });
+                                        (hash, v2_root, data)
+                                    })
+                                    .await;
+                                    (piece, hashed)
+                                });
+                            }
+                            Err(err) => {
+                                debug!(piece, error = %err, "WebSeed fetch failed");
+                                failed.push(piece);
+                            }
+                        }
+                    }
+
+                    let mut completed = Vec::new();
+                    while let Some(joined) = hashes.join_next().await {
+                        let Ok((piece, hashed)) = joined else {
+                            continue;
+                        };
+                        hash_pending.retain(|&p| p != piece);
+                        match hashed {
+                            Ok((hash, v2_root, data)) => {
+                                completed.push((piece, data, hash, v2_root));
+                            }
+                            Err(_) => failed.push(piece),
+                        }
+                    }
+                    failed.extend(hash_pending);
+
+                    // Lock (not try_lock) so reserved pieces are always completed
+                    // or released; skipping completion would leak the reservation
+                    // and stall the piece.
+                    let mut dl = engine_arc.lock().unwrap_or_else(|e| e.into_inner());
+                    for piece in failed {
+                        dl.release_web_seed_piece(piece);
+                    }
+                    for (piece, data, hash, v2_root) in completed {
+                        if dl
+                            .receive_web_seed_piece_prehashed(piece, data, hash, v2_root)
+                            .is_err()
+                        {
+                            dl.release_web_seed_piece(piece);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    debug!("WebSeed loop stopped");
 }
 
 /// Configuration for [`NetworkRuntime::spawn_with_listener_config`].
@@ -1579,6 +2225,9 @@ impl NetworkRuntime {
             None
         };
 
+        let throttle_task = tokio::spawn(throttle_driver_loop(shutdown_rx.clone()));
+        listener_tasks.push(throttle_task);
+
         let coordinator_task = tokio::spawn(async move {
             info!(
                 "NetworkRuntime supervisor started (listen_port: {})",
@@ -1752,6 +2401,96 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    /// Builds a real single-piece torrent that is seeding (its only piece has
+    /// arrived) with the given transfer counters, inserted into a fresh list.
+    fn seeding_fixture(
+        uploaded: u64,
+        downloaded: u64,
+    ) -> (
+        Arc<RwLock<DownloadList>>,
+        Arc<RwLock<crate::download::Download>>,
+    ) {
+        use crate::download::Download;
+        use lt_crypto::sha1::sha1_hash;
+        use lt_engine::constructor::TorrentMetadata;
+
+        let payload = b"stop-on-ratio";
+        let hash = sha1_hash(payload);
+        let meta = TorrentMetadata {
+            info_hash: HashString::new(hash),
+            name: "stop_on_ratio".into(),
+            piece_length: payload.len() as u32,
+            pieces: hash.to_vec(),
+            num_pieces: 1,
+            total_size: payload.len() as u64,
+            is_multi_file: false,
+            files: Vec::new(),
+            announce: None,
+            announce_list: vec![],
+            is_private: false,
+            is_meta_download: false,
+            v2: None,
+        };
+
+        let mut dl = Download::from_metadata(meta);
+        {
+            let mut engine = dl.download_mut();
+            engine.start();
+            assert!(engine.receive_block(0, 0, payload).unwrap());
+        }
+        dl.set_downloaded_bytes(downloaded);
+        dl.set_uploaded_bytes(uploaded);
+        assert!(dl.is_seeding());
+        let item = Arc::new(RwLock::new(dl));
+
+        let list = Arc::new(RwLock::new(DownloadList::new()));
+        list.write().unwrap().insert(Arc::clone(&item));
+        (list, item)
+    }
+
+    /// Group 0 with ratio enabled at `min` percent and no upload threshold, so
+    /// the ratio alone decides. Empty command isolates the stop action.
+    fn ratio_context(min: f64) -> RatioContext {
+        let groups = Arc::new(RwLock::new(ChokeGroupManager::new()));
+        {
+            let mut g = groups.write().unwrap();
+            let rm = g.resource_manager_mut();
+            rm.set_ratio_enabled(0, true);
+            let cfg = rm.ratio_mut(0).unwrap();
+            cfg.min = min;
+            cfg.max = 0.0;
+            cfg.upload = 0;
+            cfg.command = String::new();
+        }
+        RatioContext {
+            group_manager: groups,
+            command_map: Arc::new(RwLock::new(CommandMap::new())),
+        }
+    }
+
+    #[test]
+    fn stop_on_ratio_stops_seeding_torrent_when_limit_reached() {
+        // uploaded/downloaded = 1000/100 -> 1000% >= min 100%.
+        let (list, item) = seeding_fixture(1000, 100);
+        let ctx = ratio_context(100.0);
+
+        enforce_stop_on_ratio_with(&ctx, &list);
+
+        assert!(item.read().unwrap().is_stopped());
+    }
+
+    #[test]
+    fn stop_on_ratio_leaves_torrent_below_limit_seeding() {
+        // 10/100 -> 10% < min 100%: the limit is not reached, keep seeding.
+        let (list, item) = seeding_fixture(10, 100);
+        let ctx = ratio_context(100.0);
+
+        enforce_stop_on_ratio_with(&ctx, &list);
+
+        assert!(item.read().unwrap().is_seeding());
+        assert!(!item.read().unwrap().is_stopped());
+    }
+
     #[tokio::test]
     async fn drain_waits_for_stages_in_dependency_order() {
         let stages: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1837,6 +2576,38 @@ mod tests {
 
         let disabled = PeerListenerConfig::new(0);
         assert_eq!(disabled.effective_range(), None);
+    }
+
+    #[test]
+    fn listener_config_reads_utp_and_upnp_flags() {
+        let network_config = NetworkConfig::new();
+        let default = PeerListenerConfig::from_network_config(7000, &network_config);
+        assert!(default.enable_utp);
+        assert!(default.enable_upnp);
+
+        network_config.set_enable_utp(false);
+        network_config.set_enable_upnp(false);
+        let disabled = PeerListenerConfig::from_network_config(7000, &network_config);
+        assert!(!disabled.enable_utp);
+        assert!(!disabled.enable_upnp);
+    }
+
+    #[test]
+    fn inbound_cap_falls_back_to_default_when_unlimited() {
+        // A cap of 0 (unlimited/unset) keeps the bounded default; a set cap is
+        // used verbatim. Pure decision, independent of the global budget.
+        assert_eq!(inbound_connection_cap(0), MAX_INBOUND_CONNECTIONS);
+        assert_eq!(inbound_connection_cap(64), 64);
+        assert_eq!(inbound_connection_cap(1), 1);
+    }
+
+    #[test]
+    fn listener_config_sources_inbound_cap_from_global_limit() {
+        // Sole installer in this binary: `.get()` reads never pre-initialize
+        // the budget, so this install lands regardless of test ordering.
+        lt_engine::network::install_connection_limits(64, 0);
+        let config = PeerListenerConfig::from_network_config(7000, &NetworkConfig::new());
+        assert_eq!(config.max_connections, 64);
     }
 
     #[tokio::test]

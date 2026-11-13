@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -12,12 +13,15 @@ use lt_crypto::sha1::sha1_hash;
 use lt_dht::controller::DhtHandle;
 use lt_dht::search::{announce_peer, get_peers};
 use lt_net::addr::{AddressList, SocketAddress};
+use lt_net::socket_manager::{shared_socket_manager, SocketCategory, SocketGuard};
+use lt_net::{throttle_registry, ThrottledReader, ThrottledWriter, UtpSocket, UtpStream};
 use lt_protocol::connection::PeerConnection;
 use lt_protocol::connection::PeerDirection;
 use lt_protocol::encryption::EncryptionPolicy;
 use lt_protocol::extensions::{
-    extension_handshake_payload, ut_metadata_data_payload, ut_metadata_reject_payload,
-    ut_metadata_request_payload, ut_pex_payload, UtMetadataMessage, UtPexMessage,
+    decode_compact_ip, extension_handshake_payload, ut_metadata_data_payload,
+    ut_metadata_reject_payload, ut_metadata_request_payload, ut_pex_payload, UtMetadataMessage,
+    UtPexMessage,
 };
 use lt_protocol::handshake::HandshakeMessage;
 use lt_protocol::message::PeerMessage;
@@ -31,9 +35,9 @@ use lt_tracker::client::{
 };
 use lt_tracker::state::TrackerEvent;
 use lt_tracker::udp_router::UdpRouter;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info, warn};
@@ -126,6 +130,81 @@ pub fn peer_request_stats_snapshot() -> Vec<(HashString, HashString, PeerRequest
         .collect()
 }
 
+/// Process-wide connection budgets shared by every torrent's coordinator and
+/// the inbound listener: one semaphore for outbound handshakes in flight, one
+/// for connected peers. Sized once at install time; `0` means unlimited and is
+/// represented by an effectively unbounded semaphore so acquisition needs no
+/// special case.
+struct ConnectionBudget {
+    max_connections: usize,
+    outbound_dials: Arc<Semaphore>,
+    peers: Arc<Semaphore>,
+}
+
+static CONNECTION_BUDGET: OnceLock<ConnectionBudget> = OnceLock::new();
+
+fn bounded_semaphore(limit: usize) -> Arc<Semaphore> {
+    // `0` means unlimited. tokio panics above `Semaphore::MAX_PERMITS`, so that
+    // is the largest count we can use to stand in for "no limit".
+    let permits = match limit {
+        0 => Semaphore::MAX_PERMITS,
+        n => n.min(Semaphore::MAX_PERMITS),
+    };
+    Arc::new(Semaphore::new(permits))
+}
+
+/// Publish the process-wide connection limits, mirroring the daemon's
+/// `install_throttle_manager`/`install_ratio_context` pattern. Called once
+/// before the network runtime spawns; later calls are ignored.
+///
+/// `max_connections` caps connected peers across all torrents and sizes the
+/// inbound listener budget; `max_outbound_dials` caps concurrent outbound
+/// handshakes across all torrents. `0` leaves either limit unlimited.
+pub fn install_connection_limits(max_connections: usize, max_outbound_dials: usize) {
+    let _ = CONNECTION_BUDGET.set(ConnectionBudget {
+        max_connections,
+        outbound_dials: bounded_semaphore(max_outbound_dials),
+        peers: bounded_semaphore(max_connections),
+    });
+}
+
+/// `.get()` (not `get_or_init`) so a read before install cannot lock in the
+/// default and silently defeat a later install; unset means unlimited.
+fn connection_budget() -> Option<&'static ConnectionBudget> {
+    CONNECTION_BUDGET.get()
+}
+
+/// Unlimited fallback used until limits are installed. It carries no config,
+/// so eager initialization cannot race with `install_connection_limits`.
+fn unlimited_semaphore() -> &'static Arc<Semaphore> {
+    static UNLIMITED: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    UNLIMITED.get_or_init(|| Arc::new(Semaphore::new(Semaphore::MAX_PERMITS)))
+}
+
+/// Configured process-wide peer cap; `0` when unset (unlimited). The inbound
+/// listener reads this once at spawn to size its handshake budget.
+pub fn global_max_connections() -> usize {
+    connection_budget().map(|b| b.max_connections).unwrap_or(0)
+}
+
+/// One slot for an outbound dial, or `None` when the process-wide dial budget
+/// is exhausted. The permit must be held until the handshake completes.
+fn try_acquire_outbound_dial() -> Option<OwnedSemaphorePermit> {
+    let sem = connection_budget()
+        .map(|b| &b.outbound_dials)
+        .unwrap_or_else(unlimited_semaphore);
+    Arc::clone(sem).try_acquire_owned().ok()
+}
+
+/// One slot for a connected peer, or `None` when the process-wide peer budget
+/// is exhausted. The permit must be held for the whole session.
+fn try_acquire_peer_slot() -> Option<OwnedSemaphorePermit> {
+    let sem = connection_budget()
+        .map(|b| &b.peers)
+        .unwrap_or_else(unlimited_semaphore);
+    Arc::clone(sem).try_acquire_owned().ok()
+}
+
 /// LTEP ids we advertise. Incoming extended messages use *our* ids, while
 /// messages we send use the ids learned from the remote handshake.
 const LOCAL_METADATA_ID: u8 = 1;
@@ -190,7 +269,7 @@ fn peer_fast_state() -> &'static Mutex<HashMap<PeerRequestKey, PeerFastPieces>> 
 }
 
 fn record_allowed_fast(info_hash: &HashString, peer_id: &HashString, index: u32) {
-    let mut state = peer_fast_state().lock().unwrap();
+    let mut state = peer_fast_state().lock().unwrap_or_else(|e| e.into_inner());
     state
         .entry((*info_hash, *peer_id))
         .or_default()
@@ -199,7 +278,7 @@ fn record_allowed_fast(info_hash: &HashString, peer_id: &HashString, index: u32)
 }
 
 fn record_suggested_piece(info_hash: &HashString, peer_id: &HashString, index: u32) {
-    let mut state = peer_fast_state().lock().unwrap();
+    let mut state = peer_fast_state().lock().unwrap_or_else(|e| e.into_inner());
     state
         .entry((*info_hash, *peer_id))
         .or_default()
@@ -220,13 +299,71 @@ pub fn peer_fast_pieces(
     info_hash: &HashString,
     peer_id: &HashString,
 ) -> Option<(Vec<u32>, Vec<u32>)> {
-    let state = peer_fast_state().lock().unwrap();
+    let state = peer_fast_state().lock().unwrap_or_else(|e| e.into_inner());
     let peer = state.get(&(*info_hash, *peer_id))?;
     let mut allowed: Vec<u32> = peer.allowed_fast.iter().copied().collect();
     let mut suggested: Vec<u32> = peer.suggested.iter().copied().collect();
     allowed.sort_unstable();
     suggested.sort_unstable();
     Some((allowed, suggested))
+}
+
+/// BEP 6 default size of a peer's allowed-fast set.
+const ALLOWED_FAST_SIZE: usize = 10;
+
+/// Number of rare pieces suggested to a peer when it is choked.
+const SUGGEST_PIECE_LIMIT: usize = 4;
+
+/// Computes the canonical BEP 6 allowed-fast set for a peer: `k` piece indices
+/// unique to the peer's /24 network. The seed is the masked IPv4 address
+/// concatenated with the info hash; each round SHA-1s the previous digest and
+/// takes five big-endian `u32` values modulo the piece count, skipping
+/// duplicates, until `k` distinct indices are collected.
+fn allowed_fast_set(
+    peer_ip: Ipv4Addr,
+    info_hash: &HashString,
+    num_pieces: u32,
+    k: usize,
+) -> Vec<u32> {
+    let mut set: Vec<u32> = Vec::new();
+    if num_pieces == 0 || k == 0 {
+        return set;
+    }
+    let k = k.min(num_pieces as usize);
+    let masked = u32::from(peer_ip) & 0xFFFF_FF00;
+    let mut x = Vec::with_capacity(24);
+    x.extend_from_slice(&masked.to_be_bytes());
+    x.extend_from_slice(info_hash.as_bytes());
+    while set.len() < k {
+        let digest = sha1_hash(&x);
+        for chunk in digest.as_chunks::<4>().0 {
+            if set.len() >= k {
+                break;
+            }
+            let index = u32::from_be_bytes(*chunk) % num_pieces;
+            if !set.contains(&index) {
+                set.push(index);
+            }
+        }
+        x = digest.to_vec();
+    }
+    set
+}
+
+/// Picks up to `limit` pieces to suggest to a choked peer: completed pieces the
+/// peer does not have, rarest first, so its next unchoke spreads copies evenly
+/// through the swarm (BEP 6 `suggest_piece`).
+fn suggest_pieces_for_peer(dl: &Download, peer_id: &HashString, limit: usize) -> Vec<u32> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let stats = dl.chunk_statistics();
+    let mut candidates: Vec<u32> = (0..dl.total_chunks() as u32)
+        .filter(|&index| dl.has_piece(index) && !stats.peer_has(peer_id, index as usize))
+        .collect();
+    candidates.sort_by_key(|&index| (stats.rarity(index as usize), index));
+    candidates.truncate(limit);
+    candidates
 }
 
 /// Raw bencoded `info` dictionaries we can serve over `ut_metadata`.
@@ -292,7 +429,7 @@ fn broadcast_endgame_cancel(
     length: u32,
 ) {
     let senders = {
-        let guard = peer_senders().lock().unwrap();
+        let guard = peer_senders().lock().unwrap_or_else(|e| e.into_inner());
         guard
             .iter()
             .filter(|((h, pid), _)| h == info_hash && pid != sender_peer_id)
@@ -400,7 +537,9 @@ fn down_choked_peers() -> &'static Mutex<HashSet<PeerRequestKey>> {
 }
 
 fn set_peer_down_choked(info_hash: &HashString, peer_id: &HashString, choked: bool) {
-    let mut peers = down_choked_peers().lock().unwrap();
+    let mut peers = down_choked_peers()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if choked {
         peers.insert((*info_hash, *peer_id));
     } else {
@@ -434,7 +573,7 @@ fn update_peer_flags(
     peer_id: &HashString,
     update: impl FnOnce(&mut lt_protocol::connection::PeerConnection),
 ) {
-    let mut dl = download.lock().unwrap();
+    let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(peer) = dl.connection_list_mut().find_by_id_mut(peer_id) {
         update(peer);
     }
@@ -575,7 +714,11 @@ impl DownloadNetworkCoordinator {
         dht: Option<DhtHandle>,
         encryption_policy: Arc<Mutex<EncryptionPolicy>>,
     ) -> Self {
-        let max_peers = download.lock().unwrap().client_config().max_peers() as usize;
+        let max_peers = download
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .client_config()
+            .max_peers() as usize;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             download,
@@ -635,6 +778,17 @@ impl DownloadNetworkCoordinator {
         });
 
         tokio::spawn(async move {
+            // Outgoing uTP transport (BEP 29): one ephemeral UDP socket per
+            // download, shared by all outbound peer workers. Plaintext only;
+            // MSE stays on TCP.
+            let utp_socket = match UtpSocket::bind("0.0.0.0:0".parse().unwrap()).await {
+                Ok(socket) => Some(Arc::new(socket)),
+                Err(err) => {
+                    warn!(error = %err, "Failed to bind outgoing uTP socket; uTP dial disabled");
+                    None
+                }
+            };
+
             let mut is_first_announce = true;
             let mut udp_router = UdpRouter::new();
             let mut connect_tasks: JoinSet<()> = JoinSet::new();
@@ -642,7 +796,7 @@ impl DownloadNetworkCoordinator {
             let mut dht_announced = false;
 
             info!(
-                torrent = %download.lock().unwrap().name(),
+                torrent = %download.lock().unwrap_or_else(|e| e.into_inner()).name(),
                 "Starting DownloadNetworkCoordinator..."
             );
 
@@ -661,7 +815,7 @@ impl DownloadNetworkCoordinator {
                     min_peers,
                     connect_timeout,
                 ) = {
-                    let dl = download.lock().unwrap();
+                    let dl = download.lock().unwrap_or_else(|e| e.into_inner());
                     let meta = dl.metadata().clone();
                     // Use the live controller list so extra trackers inserted
                     // at runtime and per-tracker state changes are respected.
@@ -706,7 +860,7 @@ impl DownloadNetworkCoordinator {
                 // Limits may change at runtime through `ClientConfig`; the pool
                 // always applies them globally, never per discovery source.
                 {
-                    let mut p = pool.lock().unwrap();
+                    let mut p = pool.lock().unwrap_or_else(|e| e.into_inner());
                     p.set_limits(max_peers, max_connecting_for(max_peers));
                     // A magnet download may discover peers via DHT before the
                     // metadata reveals that the torrent is private.
@@ -719,7 +873,10 @@ impl DownloadNetworkCoordinator {
                 let dht_lookup_due = is_first_announce;
 
                 // Merge peers learned out-of-band (PEX and future sources).
-                let discovered = download.lock().unwrap().take_discovered_peers();
+                let discovered = download
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take_discovered_peers();
                 if !discovered.is_empty() {
                     let added = pool
                         .lock()
@@ -760,7 +917,11 @@ impl DownloadNetworkCoordinator {
                         event,
                     };
 
-                    let cached_time = download.lock().unwrap().tracker_controller().cached_time();
+                    let cached_time = download
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .tracker_controller()
+                        .cached_time();
 
                     for tracker_url in &trackers {
                         if *shutdown_rx.borrow() {
@@ -771,7 +932,7 @@ impl DownloadNetworkCoordinator {
                         // backoff. A failed tracker is retried only when its
                         // failed_time_next() deadline has been reached.
                         let should_send = {
-                            let mut dl = download.lock().unwrap();
+                            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                             let controller = dl.tracker_controller_mut();
                             if let Some(index) = controller.tracker_list.find_url(tracker_url) {
                                 let due = controller
@@ -838,7 +999,7 @@ impl DownloadNetworkCoordinator {
                                     "Discovered peers from tracker"
                                 );
 
-                                let added = pool.lock().unwrap().merge(
+                                let added = pool.lock().unwrap_or_else(|e| e.into_inner()).merge(
                                     result.peers.clone(),
                                     PeerSource::Tracker,
                                     is_private,
@@ -850,7 +1011,7 @@ impl DownloadNetworkCoordinator {
                                     addresses.push(SocketAddress::from(*peer));
                                 }
 
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 let controller = dl.tracker_controller_mut();
                                 if let Some(index) = controller.tracker_list.find_url(tracker_url) {
                                     {
@@ -878,7 +1039,7 @@ impl DownloadNetworkCoordinator {
                             }
                             Err(e) => {
                                 debug!(url = %tracker_url, error = %e, "Announce failed");
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 let controller = dl.tracker_controller_mut();
                                 if let Some(index) = controller.tracker_list.find_url(tracker_url) {
                                     controller.receive_failure(index, &e.to_string());
@@ -892,7 +1053,7 @@ impl DownloadNetworkCoordinator {
                         // socket; tracker peers remain the only source.
                         if dht.server.is_active() {
                             let peer_shortage = {
-                                let p = pool.lock().unwrap();
+                                let p = pool.lock().unwrap_or_else(|e| e.into_inner());
                                 p.connected_count() + p.connecting_count() < min_peers
                             };
 
@@ -934,11 +1095,10 @@ impl DownloadNetworkCoordinator {
                                         let addresses = peers
                                             .into_iter()
                                             .filter_map(|peer| peer.as_socket_addr());
-                                        let added = pool.lock().unwrap().merge(
-                                            addresses,
-                                            PeerSource::Dht,
-                                            is_private,
-                                        );
+                                        let added = pool
+                                            .lock()
+                                            .unwrap_or_else(|e| e.into_inner())
+                                            .merge(addresses, PeerSource::Dht, is_private);
                                         debug!(added, "Merged DHT peers into pool");
                                     }
                                     Err(err) => debug!(error = %err, "DHT lookup failed"),
@@ -962,9 +1122,11 @@ impl DownloadNetworkCoordinator {
                         let pool_ref = Arc::clone(&pool);
                         let peer_shutdown = shutdown_rx.clone();
                         let dht_ref = dht.clone();
+                        let utp_ref = utp_socket.clone();
                         // Snapshot the live policy when the dial is scheduled;
                         // existing sessions keep the policy they started with.
-                        let peer_encryption = *encryption_policy.lock().unwrap();
+                        let peer_encryption =
+                            *encryption_policy.lock().unwrap_or_else(|e| e.into_inner());
 
                         connect_tasks.spawn(async move {
                             run_peer_worker(
@@ -978,6 +1140,7 @@ impl DownloadNetworkCoordinator {
                                     policy: peer_encryption,
                                     pool: Some(pool_ref),
                                     dht: dht_ref,
+                                    utp: utp_ref,
                                 },
                             )
                             .await;
@@ -994,7 +1157,7 @@ impl DownloadNetworkCoordinator {
                 // success and the minimum interval after a failure.
                 if is_active {
                     let scrape_requests = {
-                        let mut dl = download.lock().unwrap();
+                        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                         let controller = dl.tracker_controller_mut();
 
                         if !controller.is_scrape_queued() && !controller.is_scrape_in_flight() {
@@ -1018,14 +1181,14 @@ impl DownloadNetworkCoordinator {
                             .map(|tracker| tracker.url().to_string());
 
                         let Some(url) = url else {
-                            let mut dl = download.lock().unwrap();
+                            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                             dl.tracker_controller_mut().receive_scrape_failure(index);
                             continue;
                         };
 
                         match scrape_with_router(&url, info_hash, &mut udp_router).await {
                             Ok(stats) => {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 let controller = dl.tracker_controller_mut();
                                 if let Some(index) = controller.tracker_list.find_url(&url) {
                                     controller.receive_scrape_stats(index, stats);
@@ -1035,7 +1198,7 @@ impl DownloadNetworkCoordinator {
                             }
                             Err(err) => {
                                 debug!(url = %url, error = %err, "Tracker scrape failed");
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 let controller = dl.tracker_controller_mut();
                                 let index = controller.tracker_list.find_url(&url).unwrap_or(index);
 
@@ -1055,7 +1218,7 @@ impl DownloadNetworkCoordinator {
                 // Check every 15 seconds while the swarm is below `min_peers`,
                 // otherwise every 60 seconds.
                 let current_peers_count = {
-                    let p = pool.lock().unwrap();
+                    let p = pool.lock().unwrap_or_else(|e| e.into_inner());
                     p.connected_count() + p.connecting_count()
                 };
                 let base_sleep_secs = if current_peers_count < min_peers {
@@ -1097,17 +1260,23 @@ impl DownloadNetworkCoordinator {
 
             // Flush verified pieces before the coordinator exits. This blocks,
             // so run it on a blocking pool rather than a reactor worker, only if needed.
-            let needs_flush = download.lock().unwrap().has_pending_disk_writes();
+            let needs_flush = download
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .has_pending_disk_writes();
             if needs_flush {
                 let flush_download = Arc::clone(&download);
                 let _ = tokio::task::spawn_blocking(move || {
-                    flush_download.lock().unwrap().flush_disk()
+                    flush_download
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .flush_disk()
                 })
                 .await;
             }
 
             info!(
-                torrent = %download.lock().unwrap().name(),
+                torrent = %download.lock().unwrap_or_else(|e| e.into_inner()).name(),
                 "DownloadNetworkCoordinator stopped."
             );
         });
@@ -1152,8 +1321,39 @@ fn record_connect_failure(pool: &Option<PeerPoolHandle>, peer_addr: SocketAddr) 
     }
 }
 
+/// A dialed peer transport: TCP (plaintext or MSE) or uTP (BEP 29).
+enum PeerStream {
+    Tcp(TcpStream, SocketGuard),
+    Utp(Box<UtpStream>),
+}
+
+impl PeerStream {
+    /// Splits into boxed async halves so the shared peer session loop can run
+    /// over either transport without a TCP-specific `into_split`. The TCP socket
+    /// guard is returned alongside so the caller keeps the fd accounted for the
+    /// whole session; uTP shares one UDP socket and has no per-connection fd.
+    fn into_split_boxed(
+        self,
+    ) -> (
+        Box<dyn AsyncRead + Unpin + Send>,
+        Box<dyn AsyncWrite + Unpin + Send>,
+        Option<SocketGuard>,
+    ) {
+        match self {
+            PeerStream::Tcp(stream, guard) => {
+                let (reader, writer) = stream.into_split();
+                (Box::new(reader), Box::new(writer), Some(guard))
+            }
+            PeerStream::Utp(stream) => {
+                let (reader, writer) = tokio::io::split(*stream);
+                (Box::new(reader), Box::new(writer), None)
+            }
+        }
+    }
+}
+
 struct OutgoingHandshake {
-    stream: TcpStream,
+    stream: PeerStream,
     peer_handshake: HandshakeMessage,
     cipher_enc: Option<Rc4>,
     cipher_dec: Option<Rc4>,
@@ -1161,18 +1361,47 @@ struct OutgoingHandshake {
     obfuscated: bool,
 }
 
-async fn dial_peer(peer_addr: SocketAddr, connect_timeout: Duration) -> Option<TcpStream> {
-    match timeout(connect_timeout, TcpStream::connect(peer_addr)).await {
-        Ok(Ok(stream)) => Some(stream),
-        Ok(Err(err)) => {
-            debug!(peer = %peer_addr, error = %err, "Connection failed");
-            None
-        }
-        Err(_) => {
-            debug!(peer = %peer_addr, "Connection timeout");
-            None
-        }
+async fn dial_peer(
+    peer_addr: SocketAddr,
+    connect_timeout: Duration,
+) -> Option<(TcpStream, SocketGuard)> {
+    if lt_net::learned_external_address() == Some(peer_addr.ip()) {
+        debug!(peer = %peer_addr, "Skipping dial to our own external address");
+        return None;
     }
+    if !shared_socket_manager().can_open_socket(SocketCategory::Generic) {
+        debug!(peer = %peer_addr, "Socket budget exhausted; skipping dial");
+        return None;
+    }
+    let stream = if let Some(proxy) = lt_net::current_proxy() {
+        match proxy.connect(peer_addr, connect_timeout).await {
+            Ok(stream) => stream,
+            Err(err) => {
+                debug!(peer = %peer_addr, error = %err, "Proxy connection failed");
+                return None;
+            }
+        }
+    } else {
+        match timeout(connect_timeout, TcpStream::connect(peer_addr)).await {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(err)) => {
+                debug!(peer = %peer_addr, error = %err, "Connection failed");
+                return None;
+            }
+            Err(_) => {
+                debug!(peer = %peer_addr, "Connection timeout");
+                return None;
+            }
+        }
+    };
+    let guard = match SocketGuard::open(stream.as_raw_fd(), SocketCategory::Generic) {
+        Ok(guard) => guard,
+        Err(err) => {
+            debug!(peer = %peer_addr, error = %err, "Failed to account outbound socket");
+            return None;
+        }
+    };
+    Some((stream, guard))
 }
 
 async fn try_plaintext_handshake(
@@ -1186,7 +1415,7 @@ async fn try_plaintext_handshake(
         return Err(());
     }
 
-    let mut stream = dial_peer(peer_addr, connect_timeout).await.ok_or(())?;
+    let (mut stream, socket_guard) = dial_peer(peer_addr, connect_timeout).await.ok_or(())?;
 
     let handshake_msg = HandshakeMessage::new(info_hash, our_peer_id);
     match timeout(connect_timeout, stream.write_all(&handshake_msg.encode())).await {
@@ -1211,7 +1440,7 @@ async fn try_plaintext_handshake(
     }
 
     Ok(OutgoingHandshake {
-        stream,
+        stream: PeerStream::Tcp(stream, socket_guard),
         peer_handshake,
         cipher_enc: None,
         cipher_dec: None,
@@ -1227,12 +1456,13 @@ async fn try_encrypted_handshake(
     connect_timeout: Duration,
     policy: &EncryptionPolicy,
 ) -> Result<OutgoingHandshake, MseError> {
-    let mut stream = dial_peer(peer_addr, connect_timeout).await.ok_or_else(|| {
-        MseError::Io(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            "could not connect",
-        ))
-    })?;
+    let (mut stream, socket_guard) =
+        dial_peer(peer_addr, connect_timeout).await.ok_or_else(|| {
+            MseError::Io(std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "could not connect",
+            ))
+        })?;
 
     let mut session = mse_initiate(&mut stream, info_hash, our_peer_id, policy).await?;
     let encrypted = session.encrypted_stream;
@@ -1241,7 +1471,7 @@ async fn try_encrypted_handshake(
     let peer_handshake = session.peer_handshake;
 
     Ok(OutgoingHandshake {
-        stream,
+        stream: PeerStream::Tcp(stream, socket_guard),
         peer_handshake,
         cipher_enc,
         cipher_dec,
@@ -1250,8 +1480,61 @@ async fn try_encrypted_handshake(
     })
 }
 
-/// Performs the outgoing handshake according to the legacy
-/// `HandshakeManager` retry rules.
+/// Attempts a plaintext handshake over uTP (BEP 29). MSE is not negotiated over
+/// uTP, so this path is only used when the policy permits plaintext.
+async fn try_utp_handshake(
+    peer_addr: SocketAddr,
+    info_hash: HashString,
+    our_peer_id: HashString,
+    connect_timeout: Duration,
+    utp: &UtpSocket,
+) -> Result<OutgoingHandshake, ()> {
+    let mut stream = match timeout(connect_timeout, utp.connect(peer_addr)).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) => {
+            debug!(peer = %peer_addr, error = %err, "uTP connection failed");
+            return Err(());
+        }
+        Err(_) => {
+            debug!(peer = %peer_addr, "uTP connection timeout");
+            return Err(());
+        }
+    };
+
+    let handshake_msg = HandshakeMessage::new(info_hash, our_peer_id);
+    match timeout(connect_timeout, stream.write_all(&handshake_msg.encode())).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            debug!(peer = %peer_addr, error = %err, "Failed to send uTP handshake");
+            return Err(());
+        }
+        Err(_) => {
+            debug!(peer = %peer_addr, "Timeout sending uTP handshake");
+            return Err(());
+        }
+    }
+
+    let peer_handshake = read_peer_handshake(&mut stream, peer_addr)
+        .await
+        .ok_or(())?;
+
+    if peer_handshake.info_hash != info_hash {
+        debug!(peer = %peer_addr, "Peer info_hash mismatch");
+        return Err(());
+    }
+
+    Ok(OutgoingHandshake {
+        stream: PeerStream::Utp(Box::new(stream)),
+        peer_handshake,
+        cipher_enc: None,
+        cipher_dec: None,
+        encrypted: false,
+        obfuscated: false,
+    })
+}
+
+/// Performs the outgoing handshake according to the encryption-policy
+/// retry rules.
 ///
 /// - `prefer`/`require` (or a required encrypted stream): MSE first.
 /// - `allow`/`disabled`: plaintext first.
@@ -1263,10 +1546,17 @@ async fn outgoing_handshake(
     our_peer_id: HashString,
     connect_timeout: Duration,
     policy: &EncryptionPolicy,
+    utp: Option<&UtpSocket>,
 ) -> Result<OutgoingHandshake, ()> {
-    let session =
-        outgoing_handshake_internal(peer_addr, info_hash, our_peer_id, connect_timeout, policy)
-            .await?;
+    let session = outgoing_handshake_internal(
+        peer_addr,
+        info_hash,
+        our_peer_id,
+        connect_timeout,
+        policy,
+        utp,
+    )
+    .await?;
     if session.peer_handshake.peer_id == our_peer_id {
         debug!(peer = %peer_addr, "Dropping outgoing self-connection");
         return Err(());
@@ -1275,6 +1565,35 @@ async fn outgoing_handshake(
 }
 
 async fn outgoing_handshake_internal(
+    peer_addr: SocketAddr,
+    info_hash: HashString,
+    our_peer_id: HashString,
+    connect_timeout: Duration,
+    policy: &EncryptionPolicy,
+    utp: Option<&UtpSocket>,
+) -> Result<OutgoingHandshake, ()> {
+    let tcp_result =
+        outgoing_handshake_tcp(peer_addr, info_hash, our_peer_id, connect_timeout, policy).await;
+    if tcp_result.is_ok() {
+        return tcp_result;
+    }
+
+    // uTP carries plaintext only; never downgrade an encrypted-required policy.
+    // UDP cannot traverse a SOCKS5/HTTP proxy, so skip uTP when one is set.
+    if let Some(utp) = utp {
+        if policy.allow_plaintext_handshake() && lt_net::current_proxy().is_none() {
+            if let Ok(session) =
+                try_utp_handshake(peer_addr, info_hash, our_peer_id, connect_timeout, utp).await
+            {
+                return Ok(session);
+            }
+        }
+    }
+
+    tcp_result
+}
+
+async fn outgoing_handshake_tcp(
     peer_addr: SocketAddr,
     info_hash: HashString,
     our_peer_id: HashString,
@@ -1344,6 +1663,7 @@ struct PeerWorkerContext {
     policy: EncryptionPolicy,
     pool: Option<PeerPoolHandle>,
     dht: Option<DhtHandle>,
+    utp: Option<Arc<UtpSocket>>,
 }
 
 /// Runs an outbound peer connection: dials, exchanges handshakes, then runs
@@ -1358,18 +1678,42 @@ async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
         policy,
         pool,
         dht,
+        utp,
     } = ctx;
     debug!(peer = %peer_addr, "Connecting to peer...");
 
-    let session =
-        match outgoing_handshake(peer_addr, info_hash, our_peer_id, connect_timeout, &policy).await
-        {
-            Ok(session) => session,
-            Err(()) => {
-                record_connect_failure(&pool, peer_addr);
-                return;
-            }
-        };
+    // Process-wide dial budget: one slot per handshake in flight, shared by
+    // all torrents. Reject instead of waiting so shutdown stays responsive;
+    // record_connect_failure frees the pool's connecting slot and backs the
+    // address off, exactly like a failed dial.
+    let dial_slot = match try_acquire_outbound_dial() {
+        Some(slot) => slot,
+        None => {
+            debug!(peer = %peer_addr, "Global outbound dial limit reached");
+            record_connect_failure(&pool, peer_addr);
+            return;
+        }
+    };
+
+    let session = match outgoing_handshake(
+        peer_addr,
+        info_hash,
+        our_peer_id,
+        connect_timeout,
+        &policy,
+        utp.as_deref(),
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(()) => {
+            record_connect_failure(&pool, peer_addr);
+            return;
+        }
+    };
+    // Handshake done: free the dial slot; the session itself only holds a
+    // peer slot from here on.
+    drop(dial_slot);
 
     debug!(
         peer = %peer_addr,
@@ -1395,7 +1739,7 @@ async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
     } = session;
     let remote_fast = peer_handshake.has_fast();
     let remote_dht = peer_handshake.has_dht();
-    let (reader, writer) = stream.into_split();
+    let (reader, writer, socket_guard) = stream.into_split_boxed();
 
     run_peer_session(
         reader,
@@ -1414,6 +1758,7 @@ async fn run_peer_worker(peer_addr: SocketAddr, ctx: PeerWorkerContext) {
         pool,
         dht,
         None,
+        socket_guard,
     )
     .await;
 }
@@ -1505,6 +1850,14 @@ async fn run_inbound_peer_with_pool_timeout(
             .record_inbound(peer_addr, Instant::now());
     }
 
+    let socket_guard = match SocketGuard::open(stream.as_raw_fd(), SocketCategory::Generic) {
+        Ok(guard) => Some(guard),
+        Err(err) => {
+            debug!(peer = %peer_addr, error = %err, "Failed to account inbound socket");
+            return;
+        }
+    };
+
     let (reader, mut writer) = stream.into_split();
 
     let remote_fast = handshake.has_fast();
@@ -1537,6 +1890,7 @@ async fn run_inbound_peer_with_pool_timeout(
         pool,
         None,
         request_timeout,
+        socket_guard,
     )
     .await;
 }
@@ -1598,6 +1952,7 @@ pub async fn run_inbound_utp_peer(
         pool,
         None,
         request_timeout,
+        None,
     )
     .await;
 }
@@ -1632,6 +1987,13 @@ pub async fn run_inbound_mse_peer_with_pool(
     let encrypted = session.encrypted_stream;
     let obfuscated = session.is_obfuscated();
     let (cipher_enc, cipher_dec) = session.take_ciphers();
+    let socket_guard = match SocketGuard::open(stream.as_raw_fd(), SocketCategory::Generic) {
+        Ok(guard) => Some(guard),
+        Err(err) => {
+            debug!(peer = %peer_addr, error = %err, "Failed to account inbound socket");
+            return;
+        }
+    };
     let (reader, writer) = stream.into_split();
 
     debug!(
@@ -1665,6 +2027,7 @@ pub async fn run_inbound_mse_peer_with_pool(
         pool,
         None,
         None,
+        socket_guard,
     )
     .await;
 }
@@ -1702,7 +2065,7 @@ async fn request_metadata_pieces(
     }
 
     let requests = {
-        let mut download = download.lock().unwrap();
+        let mut download = download.lock().unwrap_or_else(|e| e.into_inner());
         let Some(metadata) = download.metadata_download_mut() else {
             return;
         };
@@ -1733,6 +2096,15 @@ struct RemoteExtensionHandshake {
     metadata_size: Option<u32>,
     pex_id: Option<u8>,
     request_queue: Option<usize>,
+    /// BEP 10 `yourip`: the external address the peer sees us as.
+    your_ip: Option<IpAddr>,
+    /// BEP 10 `ipv4`/`ipv6`: the peer's own reported interfaces, usable as
+    /// connect-back candidates.
+    peer_ipv4: Option<IpAddr>,
+    peer_ipv6: Option<IpAddr>,
+    /// BEP 10 `p`: the peer's local TCP listen port, needed to turn its
+    /// reported interfaces into dialable connect-back addresses.
+    peer_port: Option<u16>,
 }
 
 fn parse_extension_handshake(payload: &[u8]) -> RemoteExtensionHandshake {
@@ -1769,6 +2141,22 @@ fn parse_extension_handshake(payload: &[u8]) -> RemoteExtensionHandshake {
         .and_then(|value| usize::try_from(value).ok())
         .map(|value| value.clamp(1, MAX_PEER_REQUEST_QUEUE));
 
+    let compact_ip = |key: &str| -> Option<IpAddr> {
+        object
+            .get_key(key)
+            .ok()
+            .and_then(|value| value.as_string().ok())
+            .and_then(decode_compact_ip)
+    };
+    handshake.your_ip = compact_ip("yourip");
+    handshake.peer_ipv4 = compact_ip("ipv4");
+    handshake.peer_ipv6 = compact_ip("ipv6");
+    handshake.peer_port = object
+        .get_key_value("p")
+        .ok()
+        .and_then(|value| u16::try_from(value).ok())
+        .filter(|&port| port > 0);
+
     handshake
 }
 
@@ -1793,7 +2181,7 @@ fn fill_request_pipeline(
     }
 
     let (pieces, aggressive) = {
-        let mut dl = download.lock().unwrap();
+        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
         if dl.is_done() {
             return Vec::new();
         }
@@ -1842,7 +2230,7 @@ fn fill_request_pipeline(
     }
 
     if !unregistered.is_empty() {
-        let mut dl = download.lock().unwrap();
+        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
         for transfer in unregistered {
             let _ = dl.cancel_block(peer_id, transfer.piece_index, transfer.block_offset);
         }
@@ -1876,7 +2264,7 @@ async fn cancel_completed_requests(
     tx: &mpsc::Sender<PeerMessage>,
 ) -> usize {
     let completed: Vec<BlockTransfer> = {
-        let dl = download.lock().unwrap();
+        let dl = download.lock().unwrap_or_else(|e| e.into_inner());
         request_list
             .outstanding()
             .filter(|record| dl.has_piece(record.transfer.piece_index))
@@ -1941,7 +2329,7 @@ async fn expire_requests(
     for record in expired {
         let transfer = record.transfer;
         {
-            let mut dl = download.lock().unwrap();
+            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
             if !dl.has_piece(transfer.piece_index) {
                 let _ = dl.cancel_block(peer_id, transfer.piece_index, transfer.block_offset);
             }
@@ -1972,7 +2360,7 @@ async fn cancel_outstanding_requests(
     for record in outstanding {
         let transfer = record.transfer;
         {
-            let mut dl = download.lock().unwrap();
+            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
             if !dl.has_piece(transfer.piece_index) {
                 let _ = dl.cancel_block(peer_id, transfer.piece_index, transfer.block_offset);
             }
@@ -2011,7 +2399,7 @@ fn bitfield_all_clear(bytes: &[u8]) -> bool {
 }
 
 fn download_is_private_and_pex_enabled(download: &Arc<Mutex<Download>>) -> (bool, bool) {
-    let dl = download.lock().unwrap();
+    let dl = download.lock().unwrap_or_else(|e| e.into_inner());
     let metadata = dl.metadata();
     let private = metadata.is_private;
     // Until metadata arrives the privacy flag of a magnet is unknown: do not
@@ -2028,7 +2416,7 @@ async fn serve_metadata_piece(
     piece: u32,
 ) {
     let metadata = {
-        let dl = download.lock().unwrap();
+        let dl = download.lock().unwrap_or_else(|e| e.into_inner());
         ensure_local_metadata(&dl)
     };
 
@@ -2064,8 +2452,8 @@ async fn serve_metadata_piece(
 /// Shared message loop for outbound and inbound peers.
 #[allow(clippy::too_many_arguments)]
 async fn run_peer_session<R, W>(
-    mut reader: R,
-    mut writer: W,
+    reader: R,
+    writer: W,
     peer_addr: SocketAddr,
     peer_id: HashString,
     download: Arc<Mutex<Download>>,
@@ -2080,17 +2468,51 @@ async fn run_peer_session<R, W>(
     pool: Option<PeerPoolHandle>,
     dht: Option<DhtHandle>,
     request_timeout: Option<Duration>,
+    socket_guard: Option<SocketGuard>,
 ) where
     R: AsyncReadExt + Unpin + Send + 'static,
     W: AsyncWriteExt + Unpin + Send + 'static,
 {
+    // Process-wide peer budget, shared by all torrents and both directions.
+    // This is the single admission chokepoint (TCP inbound/outbound, MSE and
+    // uTP), so one RAII permit held for the whole session covers them all and
+    // is released on every exit path.
+    let _peer_slot = match try_acquire_peer_slot() {
+        Some(slot) => slot,
+        None => {
+            debug!(peer = %peer_addr, "Global peer connection limit reached");
+            if let Some(pool) = &pool {
+                pool.lock()
+                    .unwrap()
+                    .record_disconnected(peer_addr, Instant::now());
+            }
+            return;
+        }
+    };
+
+    // Pace every peer stream against the global limits plus the torrent's
+    // named throttle group. This is the single chokepoint shared by TCP
+    // inbound/outbound, MSE and uTP sessions, so wrapping here covers them all.
+    let throttle_name = download
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .throttle_name()
+        .to_string();
+    let registry = throttle_registry();
+    let mut reader = ThrottledReader::new(reader, registry.download_levels(&throttle_name));
+    let mut writer = ThrottledWriter::new(writer, registry.upload_levels(&throttle_name));
+    // Rebind after the throttled halves so reverse-order drop records the socket
+    // close before the halves close the fd; a reused fd number must not be
+    // credited to this socket.
+    let _socket_guard = socket_guard;
+
     let mut cipher_dec = cipher_dec;
     let mut request_tick = tokio::time::interval(Duration::from_secs(1));
     request_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     // 3. Register Peer in Download ConnectionList
     let num_pieces = {
-        let mut dl = download.lock().unwrap();
+        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
         let n = dl.total_chunks();
         let mut peer_conn = PeerConnection::new_with_direction(
             peer_id,
@@ -2115,7 +2537,10 @@ async fn run_peer_session<R, W>(
         return;
     }
     let mut num_pieces = num_pieces.0;
-    let info_hash = *download.lock().unwrap().info_hash();
+    let info_hash = *download
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .info_hash();
     // A reconnect must not inherit a stale group-choke marker from a previous
     // session with the same peer id.
     set_peer_down_choked(&info_hash, &peer_id, false);
@@ -2124,7 +2549,7 @@ async fn run_peer_session<R, W>(
     // replaced by the peer's LTEP `reqq` value when its handshake arrives.
     let mut request_list = RequestList::with_queue_limit(DEFAULT_PEER_REQUEST_QUEUE);
     {
-        let dl = download.lock().unwrap();
+        let dl = download.lock().unwrap_or_else(|e| e.into_inner());
         request_list.set_block_size(negotiated_block_size(&dl));
     }
     if let Some(timeout) = request_timeout {
@@ -2141,7 +2566,7 @@ async fn run_peer_session<R, W>(
     // Metadata we can serve to this peer, and whether PEX is allowed for this
     // torrent. Private torrents never advertise or accept PEX.
     let (local_metadata_size, mut pex_allowed) = {
-        let dl = download.lock().unwrap();
+        let dl = download.lock().unwrap_or_else(|e| e.into_inner());
         (
             ensure_local_metadata(&dl).map(|bytes| bytes.len() as u32),
             !dl.metadata().is_private
@@ -2159,6 +2584,7 @@ async fn run_peer_session<R, W>(
                 if pex_allowed { LOCAL_PEX_ID } else { 0 },
                 LOCAL_METADATA_ID,
                 local_metadata_size,
+                Some(peer_addr.ip()),
             ),
         })
         .await;
@@ -2176,7 +2602,7 @@ async fn run_peer_session<R, W>(
     // bitfield stays empty; each peer is offered one piece with a HAVE
     // message instead (BEP 16).
     let (our_bitfield, initial_offer, initial_seeding) = {
-        let mut dl = download.lock().unwrap();
+        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
         let initial = dl.is_initial_seeding();
         let bitfield = if initial {
             vec![0u8; num_pieces.div_ceil(8)]
@@ -2212,7 +2638,31 @@ async fn run_peer_session<R, W>(
     let _ = tx.send(bitfield_message).await;
     if let Some(index) = initial_offer {
         let _ = tx.send(PeerMessage::Have { index }).await;
+        // BEP 6: reinforce the super-seed offer with a suggestion.
+        if remote_fast {
+            let _ = tx.send(PeerMessage::SuggestPiece { index }).await;
+        }
     }
+    // BEP 6: advertise the allowed-fast set so a starting peer can download a
+    // few pieces even while choked. The set is canonical per peer /24 + info
+    // hash and is also consulted when serving requests from a choked peer.
+    let allowed_fast: Vec<u32> = if remote_fast {
+        let indices = match peer_addr.ip() {
+            IpAddr::V4(ip) => {
+                allowed_fast_set(ip, &info_hash, num_pieces as u32, ALLOWED_FAST_SIZE)
+            }
+            IpAddr::V6(ip) => ip
+                .to_ipv4_mapped()
+                .map(|ip| allowed_fast_set(ip, &info_hash, num_pieces as u32, ALLOWED_FAST_SIZE))
+                .unwrap_or_default(),
+        };
+        for index in &indices {
+            let _ = tx.send(PeerMessage::AllowedFast { index: *index }).await;
+        }
+        indices
+    } else {
+        Vec::new()
+    };
     // Start with an upload slot; the choke group can choke us later through
     // `apply_choke_changes_to_download`, which the tick below mirrors on the
     // wire.
@@ -2284,7 +2734,7 @@ async fn run_peer_session<R, W>(
                 // keep the queue filled. Re-filling every tick also picks up
                 // pieces released by a peer that disconnected.
                 let metadata_pending = {
-                    let mut dl = download.lock().unwrap();
+                    let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                     match dl.metadata_download_mut() {
                         Some(metadata) => {
                             let _ =
@@ -2370,6 +2820,17 @@ async fn run_peer_session<R, W>(
                         PeerMessage::Unchoke
                     };
                     let _ = tx.send(message).await;
+                    // BEP 6: guide the peer's next unchoke toward rare pieces
+                    // it lacks, keeping swarm copies roughly balanced.
+                    if local_choked && remote_fast {
+                        let suggestions = {
+                            let dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                            suggest_pieces_for_peer(&dl, &peer_id, SUGGEST_PIECE_LIMIT)
+                        };
+                        for index in suggestions {
+                            let _ = tx.send(PeerMessage::SuggestPiece { index }).await;
+                        }
+                    }
                 }
 
                 if request_list.check_snubbing(now) {
@@ -2544,7 +3005,7 @@ async fn run_peer_session<R, W>(
                         PeerMessage::Have { index } => {
                             debug!(peer = %peer_addr, index, "Peer have chunk");
                             let (initial_complete, next_offer) = {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 if dl.total_chunks() == 0 {
                                     if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
                                         peer.pending_haves.push(index);
@@ -2569,7 +3030,7 @@ async fn run_peer_session<R, W>(
                                     let _ = tx.send(PeerMessage::HaveAll).await;
                                 } else {
                                     let bitfield =
-                                        download.lock().unwrap().completed_bitfield_bytes();
+                                        download.lock().unwrap_or_else(|e| e.into_inner()).completed_bitfield_bytes();
                                     let _ = tx.send(PeerMessage::Bitfield(bitfield)).await;
                                 }
                             } else if let Some(next) = next_offer {
@@ -2598,7 +3059,7 @@ async fn run_peer_session<R, W>(
                                 }
                             }
                             {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
                                     peer.raw_bitfield = Some(data.clone());
                                 }
@@ -2631,13 +3092,15 @@ async fn run_peer_session<R, W>(
                                 upload_requests.insert(request_key, length);
 
                                 let maybe_read = {
-                                    let dl = download.lock().unwrap();
+                                    let dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                     let unchoked = dl
                                         .connection_list()
                                         .find_by_id(&peer_id)
                                         .map(|peer| !peer.is_choked)
                                         .unwrap_or(true);
-                                    let allowed = unchoked
+                                    // BEP 6: a choked peer may still request
+                                    // pieces from its allowed-fast set.
+                                    let allowed = (unchoked || allowed_fast.contains(&index))
                                         && if dl.is_initial_seeding() {
                                             dl.initial_seed_allows(&peer_id, index)
                                         } else {
@@ -2653,7 +3116,7 @@ async fn run_peer_session<R, W>(
                                 match maybe_read {
                                     Some(Ok(Ok(cached_data))) => {
                                         {
-                                            let mut dl = download.lock().unwrap();
+                                            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                             dl.record_upload_for_peer(&peer_id, cached_data.len());
                                         }
                                         let _ = tx
@@ -2667,7 +3130,7 @@ async fn run_peer_session<R, W>(
                                         {
                                             Ok(data) => {
                                                 {
-                                                    let mut dl = download.lock().unwrap();
+                                                    let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                                     dl.record_upload_for_peer(&peer_id, data.len());
                                                 }
                                                 let _ = tx
@@ -2722,7 +3185,7 @@ async fn run_peer_session<R, W>(
 
                             // Record downloaded bytes and rate on the peer connection
                             {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
                                     peer.add_downloaded(data.len() as u64);
                                 }
@@ -2751,14 +3214,51 @@ async fn run_peer_session<R, W>(
                             // still useful. Do not discard it just because it
                             // is no longer tracked.
                             let mut download_finished = false;
-                            {
-                                let mut dl = download.lock().unwrap();
-                                if !dl.has_piece(index) && !block_already_received(&dl, index, begin) {
-                                    let completed = dl
-                                        .receive_block(index, begin, &data)
+                            // Buffer the block under the download mutex, then
+                            // release it before hashing so the SHA-1/merkle work
+                            // never stalls the reactor thread.
+                            let pending_piece = {
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                                let pending = if !dl.has_piece(index)
+                                    && !block_already_received(&dl, index, begin)
+                                {
+                                    dl.receive_block_buffered(index, begin, &data)
+                                        .unwrap_or(None)
+                                } else {
+                                    None
+                                };
+                                let v2_check = pending
+                                    .as_ref()
+                                    .and_then(|(idx, _)| dl.v2_piece_check(*idx).ok().flatten());
+                                let _ = dl.poll_disk_completions();
+                                pending.map(|piece| (piece, v2_check))
+                            };
+
+                            if let Some(((piece_index, completed), v2_check)) = pending_piece {
+                                let hashed = tokio::task::spawn_blocking(move || {
+                                    let hash = sha1_hash(&completed);
+                                    let v2_root = v2_check.map(|check| {
+                                        lt_crypto::merkle::piece_root(
+                                            &completed,
+                                            check.piece_length,
+                                            check.single_piece_file,
+                                        )
+                                    });
+                                    (hash, v2_root, completed)
+                                })
+                                .await;
+                                if let Ok((hash, v2_root, completed)) = hashed {
+                                    let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                                    let completed_ok = dl
+                                        .complete_pending_piece(
+                                            piece_index,
+                                            completed,
+                                            hash,
+                                            v2_root,
+                                        )
                                         .unwrap_or(false);
                                     let _ = dl.poll_disk_completions();
-                                    download_finished = completed && dl.is_done();
+                                    download_finished = completed_ok && dl.is_done();
                                 }
                             }
 
@@ -2793,7 +3293,7 @@ async fn run_peer_session<R, W>(
                                 bitfield.set(index);
                             }
                             {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(peer) = dl.connection_list_mut().find_by_id_mut(&peer_id) {
                                     peer.raw_have_all = true;
                                 }
@@ -2813,7 +3313,7 @@ async fn run_peer_session<R, W>(
                             debug!(peer = %peer_addr, "Peer has no pieces");
                             let bitfield = Bitfield::new(num_pieces);
                             {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 dl.receive_bitfield(&peer_id, bitfield);
                             }
                         }
@@ -2829,7 +3329,7 @@ async fn run_peer_session<R, W>(
                             // repeated rejects become visible to the choke
                             // heuristics and the retry scheduler.
                             {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(peer) = dl
                                     .connection_list_mut()
                                     .find_by_id_mut(&peer_id)
@@ -2880,7 +3380,7 @@ async fn run_peer_session<R, W>(
                                 remote_pex_id = pex_id;
                             }
                             if let Some(size) = handshake.metadata_size {
-                                let mut dl = download.lock().unwrap();
+                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(metadata) = dl.metadata_download_mut() {
                                     if let Err(err) = metadata.set_size(size as usize) {
                                         debug!(
@@ -2900,6 +3400,42 @@ async fn run_peer_session<R, W>(
                                     &request_list,
                                     !peer_unchoked,
                                 );
+                            }
+
+                            if let Some(external) = handshake.your_ip {
+                                lt_net::report_external_address(external);
+                                debug!(peer = %peer_addr, %external, "Learned external address via LTEP yourip");
+                            }
+
+                            // The peer's own reported interfaces (BEP 10
+                            // ipv4/ipv6) plus its listen port (p) become
+                            // connect-back candidates, gated like PEX so private
+                            // torrents never gain external peers.
+                            if pex_allowed {
+                                if let Some(port) = handshake.peer_port {
+                                    let connect_back: Vec<SocketAddr> =
+                                        [handshake.peer_ipv4, handshake.peer_ipv6]
+                                            .into_iter()
+                                            .flatten()
+                                            .map(|ip| SocketAddr::new(ip, port))
+                                            .collect();
+                                    if !connect_back.is_empty() {
+                                        if let Some(pool) = &pool {
+                                            let mut pool =
+                                                pool.lock().unwrap_or_else(|e| e.into_inner());
+                                            for address in connect_back {
+                                                pool.add_peer(address, PeerSource::Pex, false);
+                                            }
+                                        } else {
+                                            let mut dl =
+                                                download.lock().unwrap_or_else(|e| e.into_inner());
+                                            for address in connect_back {
+                                                dl.add_discovered_peer(address);
+                                            }
+                                        }
+                                        debug!(peer = %peer_addr, "Merged LTEP connect-back addresses");
+                                    }
+                                }
                             }
 
                             request_metadata_pieces(&download, &tx, remote_metadata_id, peer_id).await;
@@ -2923,7 +3459,7 @@ async fn run_peer_session<R, W>(
                                     data,
                                 }) => {
                                     let complete = {
-                                        let mut dl = download.lock().unwrap();
+                                        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                         dl.metadata_download_mut()
                                             .and_then(|metadata| {
                                                 metadata
@@ -2935,7 +3471,7 @@ async fn run_peer_session<R, W>(
 
                                     if complete {
                                         let verified = {
-                                            let mut dl = download.lock().unwrap();
+                                            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                             let info_hash = *dl.info_hash();
                                             let announce = dl.metadata().announce.clone();
                                             let announce_list =
@@ -2951,7 +3487,7 @@ async fn run_peer_session<R, W>(
                                         match verified {
                                             Some((Ok(bytes), info_hash, announce, announce_list)) => {
                                                 let (applied, advertise_pex) = {
-                                                    let mut dl = download.lock().unwrap();
+                                                    let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                                     match dl.apply_metadata_bytes(
                                                         &bytes,
                                                         info_hash,
@@ -2990,6 +3526,7 @@ async fn run_peer_session<R, W>(
                                                                         },
                                                                         LOCAL_METADATA_ID,
                                                                         Some(bytes.len() as u32),
+                                                                        Some(peer_addr.ip()),
                                                                     ),
                                                             })
                                                             .await;
@@ -3004,7 +3541,7 @@ async fn run_peer_session<R, W>(
                                                 // The complete but unverifiable
                                                 // set is useless; allow a
                                                 // fresh attempt from scratch.
-                                                let mut dl = download.lock().unwrap();
+                                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                                 if let Some(metadata) = dl.metadata_download_mut() {
                                                     metadata.reset();
                                                 }
@@ -3018,7 +3555,7 @@ async fn run_peer_session<R, W>(
                                 }
                                 Ok(UtMetadataMessage::Reject { piece }) => {
                                     {
-                                        let mut dl = download.lock().unwrap();
+                                        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                         if let Some(metadata) = dl.metadata_download_mut() {
                                             metadata.mark_rejected_by(piece, peer_id);
                                         }
@@ -3045,7 +3582,7 @@ async fn run_peer_session<R, W>(
                                         let mut added = 0usize;
                                         let mut rejected = 0usize;
                                         if let Some(pool) = &pool {
-                                            let mut pool = pool.lock().unwrap();
+                                            let mut pool = pool.lock().unwrap_or_else(|e| e.into_inner());
                                             for address in addresses {
                                                 if pool.add_peer(address, PeerSource::Pex, false)
                                                 {
@@ -3055,7 +3592,7 @@ async fn run_peer_session<R, W>(
                                                 }
                                             }
                                         } else {
-                                            let mut dl = download.lock().unwrap();
+                                            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                                             for address in addresses {
                                                 dl.add_discovered_peer(address);
                                                 added += 1;
@@ -3091,7 +3628,7 @@ async fn run_peer_session<R, W>(
     // chunk handles before removing the peer.
     {
         let outstanding = request_list.take_outstanding();
-        let mut dl = download.lock().unwrap();
+        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
         // Metadata requests owned by this peer must be retried elsewhere.
         if let Some(metadata) = dl.metadata_download_mut() {
             metadata.release_peer(&peer_id);
@@ -3119,4 +3656,227 @@ async fn run_peer_session<R, W>(
     }
 
     debug!(peer = %peer_addr, "Peer disconnected");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constructor::{TorrentFileEntry, TorrentMetadata};
+
+    fn metadata(num_pieces: usize) -> TorrentMetadata {
+        let mut path = lt_common::path::Path::new();
+        path.push("payload.bin");
+        TorrentMetadata {
+            info_hash: HashString::new([0x33; 20]),
+            name: "fast".to_string(),
+            piece_length: 16,
+            pieces: vec![0u8; num_pieces * 20],
+            num_pieces,
+            total_size: (num_pieces * 16) as u64,
+            is_multi_file: false,
+            files: vec![TorrentFileEntry {
+                path,
+                length: (num_pieces * 16) as u64,
+                offset: 0,
+            }],
+            announce: None,
+            announce_list: Vec::new(),
+            is_private: false,
+            is_meta_download: false,
+            v2: None,
+        }
+    }
+
+    /// BEP 6 reference vectors: info hash `aa…aa`, 1313 pieces, IP 80.4.4.200.
+    #[test]
+    fn allowed_fast_set_matches_bep6_reference_vectors() {
+        let info_hash = HashString::new([0xAA; 20]);
+        let ip: Ipv4Addr = "80.4.4.200".parse().unwrap();
+        assert_eq!(
+            allowed_fast_set(ip, &info_hash, 1313, 7),
+            vec![1059, 431, 808, 1217, 287, 376, 1188]
+        );
+        assert_eq!(
+            allowed_fast_set(ip, &info_hash, 1313, 9),
+            vec![1059, 431, 808, 1217, 287, 376, 1188, 353, 508]
+        );
+    }
+
+    #[test]
+    fn allowed_fast_set_is_prefix_stable_and_bounded() {
+        let info_hash = HashString::new([0x11; 20]);
+        let ip: Ipv4Addr = "203.0.113.7".parse().unwrap();
+
+        // k larger than the piece count clamps to the piece count.
+        let all = allowed_fast_set(ip, &info_hash, 5, 10);
+        assert_eq!(all.len(), 5);
+        let mut sorted = all.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 5, "indices must be distinct");
+
+        // A smaller k is a prefix of the larger set (canonical property).
+        assert_eq!(allowed_fast_set(ip, &info_hash, 5, 3), all[..3].to_vec());
+
+        // The whole /24 shares one set regardless of the host octet.
+        let other: Ipv4Addr = "203.0.113.99".parse().unwrap();
+        assert_eq!(allowed_fast_set(other, &info_hash, 5, 10), all);
+    }
+
+    #[test]
+    fn allowed_fast_set_empty_inputs() {
+        let info_hash = HashString::new([0x22; 20]);
+        let ip: Ipv4Addr = "192.0.2.1".parse().unwrap();
+        assert!(allowed_fast_set(ip, &info_hash, 0, 10).is_empty());
+        assert!(allowed_fast_set(ip, &info_hash, 100, 0).is_empty());
+    }
+
+    #[test]
+    fn suggest_pieces_prefers_rare_pieces_the_peer_lacks() {
+        // We have pieces 0,1,2 (not 3). The target peer already has piece 0.
+        // Piece 1 is rarer than piece 2, so the suggestions come back [1, 2].
+        let mut dl = Download::new(metadata(4));
+        for index in 0u32..3 {
+            dl.chunk_selector_mut().mark_completed(index);
+        }
+
+        let target = HashString::new([0x01; 20]);
+        let mut target_bf = Bitfield::new(4);
+        target_bf.set(0);
+        dl.chunk_statistics_mut().add_peer(target, &target_bf);
+
+        let mut rare_bf = Bitfield::new(4);
+        rare_bf.set(1);
+        rare_bf.set(2);
+        dl.chunk_statistics_mut()
+            .add_peer(HashString::new([0x02; 20]), &rare_bf);
+
+        let mut common_bf = Bitfield::new(4);
+        common_bf.set(2);
+        dl.chunk_statistics_mut()
+            .add_peer(HashString::new([0x03; 20]), &common_bf);
+
+        assert_eq!(suggest_pieces_for_peer(&dl, &target, 2), vec![1, 2]);
+        assert!(suggest_pieces_for_peer(&dl, &target, 0).is_empty());
+    }
+
+    #[test]
+    fn extension_handshake_parses_bep10_address_fields() {
+        use lt_common::object::{encode, Object};
+        let mut root = Object::create_map();
+        let mut m = Object::create_map();
+        m.insert_key("ut_pex", Object::create_value(2)).unwrap();
+        m.insert_key("ut_metadata", Object::create_value(1))
+            .unwrap();
+        root.insert_key("m", m).unwrap();
+        root.insert_key("yourip", Object::create_string(vec![203, 0, 113, 7]))
+            .unwrap();
+        root.insert_key("ipv4", Object::create_string(vec![198, 51, 100, 9]))
+            .unwrap();
+        let mut v6 = vec![0u8; 16];
+        v6[0] = 0x20;
+        v6[1] = 0x01;
+        v6[15] = 0x01;
+        root.insert_key("ipv6", Object::create_string(v6)).unwrap();
+        root.insert_key("p", Object::create_value(6881)).unwrap();
+        let payload = encode(&root).unwrap();
+
+        let handshake = parse_extension_handshake(&payload);
+        assert_eq!(
+            handshake.your_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)))
+        );
+        assert_eq!(
+            handshake.peer_ipv4,
+            Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9)))
+        );
+        assert_eq!(
+            handshake.peer_ipv6,
+            Some(IpAddr::V6(std::net::Ipv6Addr::new(
+                0x2001, 0, 0, 0, 0, 0, 0, 1
+            )))
+        );
+        assert_eq!(handshake.peer_port, Some(6881));
+        assert_eq!(handshake.pex_id, Some(2));
+        assert_eq!(handshake.metadata_id, Some(1));
+    }
+
+    #[test]
+    fn extension_handshake_address_fields_default_to_none() {
+        let payload = extension_handshake_payload(2, 1, None, None);
+        let handshake = parse_extension_handshake(&payload);
+        assert_eq!(handshake.your_ip, None);
+        assert_eq!(handshake.peer_ipv4, None);
+        assert_eq!(handshake.peer_ipv6, None);
+        assert_eq!(handshake.peer_port, None);
+    }
+
+    /// The budget is install-once, so a single test owns the install and
+    /// exercises both gates plus the worker rejection path in sequence;
+    /// parallel tests must not fight over the shared semaphores.
+    #[tokio::test]
+    async fn connection_budget_bounds_dials_and_peers_process_wide() {
+        install_connection_limits(3, 2);
+
+        // Dial gate: two handshakes in flight, third rejected, drop frees.
+        let dial_a = try_acquire_outbound_dial().expect("first dial slot");
+        let dial_b = try_acquire_outbound_dial().expect("second dial slot");
+        assert!(try_acquire_outbound_dial().is_none());
+        drop(dial_a);
+        let dial_c = try_acquire_outbound_dial().expect("dropped slot is reusable");
+        drop(dial_b);
+        drop(dial_c);
+
+        // Peer gate: three connected peers, fourth rejected, drop frees.
+        let mut peer_slots = Vec::new();
+        for _ in 0..3 {
+            peer_slots.push(try_acquire_peer_slot().expect("peer slot"));
+        }
+        assert!(try_acquire_peer_slot().is_none());
+        peer_slots.pop();
+        assert!(try_acquire_peer_slot().is_some());
+
+        // A worker rejected by the global dial budget must not dial and must
+        // release the pool's connecting slot via record_failure.
+        let addr: SocketAddr = "203.0.113.7:6881".parse().unwrap();
+        let pool = Arc::new(Mutex::new(PeerPool::new(8)));
+        assert!(pool
+            .lock()
+            .unwrap()
+            .add_peer(addr, PeerSource::Tracker, false));
+        assert_eq!(
+            pool.lock()
+                .unwrap()
+                .next_connect_batch(Instant::now(), 1)
+                .len(),
+            1
+        );
+        assert_eq!(pool.lock().unwrap().connecting_count(), 1);
+
+        let _dial_a = try_acquire_outbound_dial().expect("first dial slot");
+        let _dial_b = try_acquire_outbound_dial().expect("second dial slot");
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        run_peer_worker(
+            addr,
+            PeerWorkerContext {
+                info_hash: HashString::new([0x33; 20]),
+                our_peer_id: HashString::new([0x44; 20]),
+                download: Arc::new(Mutex::new(Download::new(metadata(1)))),
+                shutdown_rx,
+                connect_timeout: Duration::from_secs(1),
+                policy: EncryptionPolicy::default(),
+                pool: Some(Arc::clone(&pool)),
+                dht: None,
+                utp: None,
+            },
+        )
+        .await;
+
+        let pool = pool.lock().unwrap();
+        assert_eq!(pool.connecting_count(), 0, "connecting slot must be freed");
+        assert_eq!(
+            pool.get(addr).unwrap().state(),
+            crate::peer_pool::PeerState::Failed
+        );
+    }
 }
