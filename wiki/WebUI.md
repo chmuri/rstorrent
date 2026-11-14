@@ -1,6 +1,8 @@
 # Web UI
 
-`rstorrent` ships a built-in browser interface: an embedded single-page app served by an axum HTTP server, backed by a JSON REST API and a WebSocket event stream. It exposes the same torrent/session data and the same command map as [gRPC](gRPC-and-Remote-Control) and [XML-RPC/SCGI](XML-RPC-and-SCGI).
+`rstorrent` ships a built-in browser interface: an embedded [Leptos](https://leptos.dev/) WebAssembly single-page app (Tailwind v4, compiled with Trunk) served by an axum HTTP server, backed by a JSON REST API and a WebSocket event stream. It exposes the same torrent/session data and the same command map as [gRPC](gRPC-and-Remote-Control) and [XML-RPC/SCGI](XML-RPC-and-SCGI).
+
+The interface provides a torrent explorer (table/card views, search, sort, bulk start/stop/remove), a torrent inspector, an analytics dashboard, settings (API token/base, poll interval, theme, accent, density), a command palette (Ctrl+K), and live WebSocket updates. It is desktop-first but stays functional on mobile.
 
 The Web UI is **opt-in and disabled by default** — a standard install opens no extra port.
 
@@ -22,7 +24,7 @@ token = "secret"
 # tls_key = "/etc/rstorrent/webui.key"
 ```
 
-- The SPA is served at `/` (embedded in the binary — no external assets or build step).
+- The Leptos WASM SPA is served at `/` (compiled with Trunk and embedded into the binary at build time — no external assets or CDN).
 - An invalid `addr` logs a warning and disables the Web UI; it never blocks daemon startup.
 - Shutdown drains in-flight requests for up to 5 s.
 

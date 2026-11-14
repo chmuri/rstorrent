@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-14
+
+### Added
+- **Leptos WebAssembly Web UI** (`ui/`, crate `rt-ui`): a Leptos 0.7 CSR +
+  Tailwind v4 single-page app compiled to WASM with Trunk and **embedded into the
+  binary** at compile time (`crates/rstorrent/build.rs` emits `include_bytes!`
+  assets from `ui/dist`; `UI_EMBEDDED` switches the axum router to serve them with
+  an SPA fallback). Replaces the previous hand-written embedded SPA.
+  - Torrent explorer (table/card views, search, sort, multi-select bulk
+    start/stop/remove), torrent inspector, analytics dashboard, settings
+    (API token/base, poll interval, theme, accent, density), command palette
+    (Ctrl+K), and live WebSocket updates with a connection-mode pill.
+  - Desktop-first layout that stays functional on mobile (no horizontal
+    overflow; collapsible sidebar reclaims width).
+  - Build infra: the remote builder image installs Trunk 0.22.1; release and
+    Docker workflows build `ui/dist` before the backend so distributed binaries
+    embed the UI.
+
+### Fixed
+- **DHT on macOS/BSD**: map IPv4 destinations to v4-mapped IPv6 addresses when
+  sending from an `AF_INET6` socket (`EAFNOSUPPORT` otherwise); Linux accepts
+  both, so the mapping is harmless there.
+
+### Changed
+- Renamed `rtorrent.default.rc` to `rstorrent.default.rc`; removed the obsolete
+  `RELEASE_NOTES_v0.20.0.md` (consolidated into `CHANGELOG.md`).
+
 ## [0.21.0] - 2026-11-14
 
 ### Added

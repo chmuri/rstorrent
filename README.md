@@ -58,7 +58,7 @@ The project contains active implementations for core BitTorrent functionality, a
   - Headless daemon mode (`--daemon`) for servers and Docker containers.
   - A standalone gRPC TUI client (`rstorrent-tui`) for remote control over TCP/TLS/UNIX sockets.
 - **Native Web UI**:
-  - Opt-in axum-based REST + WebSocket API with an embedded single-page app, bearer-token auth, and optional TLS.
+  - Opt-in axum-based REST + WebSocket API with an embedded Leptos WebAssembly single-page app, bearer-token auth, and optional TLS.
 - **Observability**:
   - Prometheus `/metrics` HTTP endpoint and an optional JSONL event recorder (`RSTORRENT_METRICS_FILE`).
 - **Lua Scripting**:
@@ -383,7 +383,11 @@ for every flag, signal, and environment variable.
 
 ## Native Web UI
 
-The daemon ships an opt-in native Web UI (axum REST + WebSocket + embedded SPA).
+The daemon ships an opt-in native Web UI: an axum REST + WebSocket backend serving
+an embedded [Leptos](https://leptos.dev/) WebAssembly single-page app (Tailwind v4,
+compiled with Trunk and embedded into the binary at compile time — no external
+assets or CDN). It provides a torrent explorer, inspector, analytics dashboard,
+settings, command palette, and live WebSocket updates.
 Enable it with `--webui-addr` / `--webui-token` or the `[webui]` TOML table:
 
 ```bash
