@@ -265,8 +265,14 @@ impl Bitfield {
         let start_word = first / 64;
         let end_word = last.div_ceil(64);
 
-        for w_idx in start_word..end_word {
-            let mut word = self.words[w_idx];
+        for (w_idx, word) in self
+            .words
+            .iter()
+            .enumerate()
+            .take(end_word)
+            .skip(start_word)
+        {
+            let mut word = *word;
             if word == 0 {
                 continue;
             }

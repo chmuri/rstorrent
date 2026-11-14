@@ -2469,11 +2469,7 @@ impl Download {
         }
 
         let max_seed = self.client_config.max_peers_seed();
-        if max_seed >= 0 && peer.is_seeder() && self.seeder_peer_count() >= max_seed as usize {
-            return false;
-        }
-
-        true
+        !(max_seed >= 0 && peer.is_seeder() && self.seeder_peer_count() >= max_seed as usize)
     }
 
     /// Adds a peer if connection limits allow it, returning the reason when

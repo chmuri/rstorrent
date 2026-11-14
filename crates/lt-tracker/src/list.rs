@@ -203,8 +203,8 @@ impl TrackerList {
         }
 
         let mut preferred = None;
-        for i in from_index..self.trackers.len() {
-            if self.trackers[i].can_request_state() {
+        for (i, tracker) in self.trackers.iter().enumerate().skip(from_index) {
+            if tracker.can_request_state() {
                 preferred = Some(i);
                 break;
             }

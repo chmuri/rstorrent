@@ -542,10 +542,10 @@ mod tests {
             Some(c_tree.piece_root)
         );
         // A multi-piece file returns the per-piece layer hash by local index.
-        for local in 0..3 {
+        for (local, &layer) in b_tree.piece_layers.iter().enumerate().take(3) {
             assert_eq!(
                 v2_expected_piece_root(&l, &expected, 1 + local as u64),
-                Some(b_tree.piece_layers[local])
+                Some(layer)
             );
         }
         // Out-of-range pieces and files without a pieces root yield None.
