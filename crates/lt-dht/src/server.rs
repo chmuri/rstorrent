@@ -73,6 +73,23 @@ async fn bind_udp_socket(addr: &str) -> std::io::Result<UdpSocket> {
     UdpSocket::from_std(std_socket)
 }
 
+/// Maps an IPv4 destination to a v4-mapped IPv6 address when sending from an
+/// IPv6 socket. macOS/BSD reject a plain IPv4 destination on an `AF_INET6`
+/// socket (`EAFNOSUPPORT`); Linux accepts both, so the mapping is harmless there.
+fn map_target_to_socket(target: SocketAddr, socket: &UdpSocket) -> SocketAddr {
+    if let SocketAddr::V4(v4) = target {
+        if socket.local_addr().map(|a| a.is_ipv6()).unwrap_or(false) {
+            return SocketAddr::V6(std::net::SocketAddrV6::new(
+                v4.ip().to_ipv6_mapped(),
+                v4.port(),
+                0,
+                0,
+            ));
+        }
+    }
+    target
+}
+
 impl DhtServer {
     pub fn new(router: Arc<Mutex<DhtRouter>>, port: u16) -> Self {
         Self {
@@ -254,6 +271,7 @@ impl DhtServer {
             .await
             .insert(tid.clone(), tx);
 
+        let target_addr = map_target_to_socket(target_addr, &socket);
         if let Err(err) = socket.send_to(&packet, target_addr).await {
             self.pending_transactions.lock().await.remove(&tid);
             self.errors_sent.fetch_add(1, Ordering::Relaxed);
