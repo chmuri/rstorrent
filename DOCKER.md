@@ -58,6 +58,43 @@ All data is stored locally in the `./data` subdirectory:
 
 ---
 
+## 🧩 Optional: native Web UI, gRPC, and metrics
+
+The default stack uses Flood over SCGI. The daemon also ships a **native Web UI**,
+a **gRPC API**, and a **Prometheus metrics** endpoint, all opt-in and **not enabled
+in the default compose file**. To turn them on, drop a `rstorrent.toml` into
+`./data/config` (mounted at `/config`, which the daemon searches) and publish the
+matching ports:
+
+```toml
+# ./data/config/rstorrent.toml
+[rpc]
+grpc_port = 50051
+grpc_token = "change-me"
+
+[webui]
+addr = "0.0.0.0:8080"
+token = "change-me"
+
+[metrics]
+addr = "0.0.0.0:9090"
+```
+
+```yaml
+# add to the rstorrent service's ports:
+- "127.0.0.1:8080:8080"   # native Web UI
+- "127.0.0.1:50051:50051" # gRPC
+- "127.0.0.1:9090:9090"   # Prometheus /metrics
+```
+
+Bind to `127.0.0.1` on the host unless you intend to expose these interfaces, and
+always set a token. See the
+[Web UI](https://github.com/chmuri/rstorrent/wiki/WebUI) and
+[gRPC & Remote Control](https://github.com/chmuri/rstorrent/wiki/gRPC-and-Remote-Control)
+wiki pages for the security model.
+
+---
+
 ## 🛠️ Container management
 
 - **View logs in real time:**

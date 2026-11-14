@@ -1,17 +1,25 @@
-# rtorrent Wiki
+# rstorrent Wiki
 
 Welcome to the **rstorrent** wiki!
 
-`rstorrent` is a modern, high-performance, and memory-safe BitTorrent client and engine written from scratch in pure Rust. It provides full compatibility with the classic rTorrent ecosystem while offering modern features such as uTP (BEP 29), UPnP IGD port forwarding, a modern TOML configuration system, a lock-free asynchronous I/O engine, and a next-generation terminal user interface.
+`rstorrent` is a modern, high-performance, memory-safe BitTorrent client and engine written from scratch in pure Rust. It is a drop-in companion to the classic rTorrent ecosystem — same command surface over XML-RPC/SCGI and gRPC — while adding modern capabilities: uTP (BEP 29) with LEDBAT congestion control, BEP 52 v2/hybrid Merkle torrents, UPnP IGD / NAT-PMP port forwarding, DHT with BEP 51, a TOML configuration system, a lock-free asynchronous I/O engine with sharded disk workers, a native Web UI, and a next-generation terminal user interface.
+
+Current release: **v0.21.0**. Licensed under GPL-2.0-or-later.
 
 ---
 
 ## Wiki Pages
 
-- **[Configuration Guide](Configuration-Guide.md)**: Details on configuring rtorrent using modern `rstorrent.toml` or classic `.rtorrent.rc`.
-- **[Terminal UI and Keybindings](Terminal-UI-and-Keybindings.md)**: Full guide to mouse navigation, keyboard shortcuts, category tabs, and the torrent inspector drawer.
-- **[Protocol Support & Performance](Protocol-Support-and-Performance.md)**: BitTorrent Enhancement Proposals (BEP) matrix, uTP/LEDBAT congestion control, and scalability benchmarks.
-- **[gRPC and Remote Control](gRPC-and-Remote-Control.md)**: Running headless daemon mode and connecting via `rstorrent-tui` or custom gRPC integrations.
+- **[Configuration Guide](Configuration-Guide)** — the three config layers (`rstorrent.toml`, `.rtorrent.rc`, Lua), file lookup order, full TOML reference, command namespaces, schedules, and environment variables.
+- **[CLI Reference](CLI-Reference)** — every `rstorrent` and `rstorrent-tui` flag, config precedence, signals, and environment variables.
+- **[Terminal UI & Keybindings](Terminal-UI-and-Keybindings)** — the two shipped terminal surfaces, views, layout, inspector, themes, and mouse support.
+- **[Keyboard Shortcuts](Keyboard-Shortcuts)** — complete, source-verified key tables for both surfaces.
+- **[Protocol Support & Performance](Protocol-Support-and-Performance)** — the BEP implementation matrix, transports (MSE, UPnP, NAT-PMP, SOCKS5/HTTP), uTP/LEDBAT, and known limitations.
+- **[Performance & Scaling](Performance-and-Scaling)** — disk-thread tuning, piece memory, and scalability benchmarks.
+- **[Architecture & Algorithms](Architecture-and-Algorithms)** — piece selection, sharded disk pool, BEP 52 Merkle verification, throttling, and choke heuristics.
+- **[gRPC & Remote Control](gRPC-and-Remote-Control)** — headless daemon mode, the three gRPC services, connection security, and client integrations.
+- **[XML-RPC & SCGI](XML-RPC-and-SCGI)** — listeners, netstring framing, codecs, authentication, the command surface, and compatibility stubs.
+- **[Web UI](WebUI)** — the opt-in native Web UI: REST + WebSocket API, authentication, and TLS.
 
 ---
 
@@ -23,7 +31,7 @@ Download pre-built binaries or `.deb` packages from the [GitHub Releases](https:
 
 ```bash
 # Ubuntu / Debian
-sudo apt install ./rstorrent_0.20.1_amd64.deb
+sudo apt install ./rstorrent_0.21.0_amd64.deb
 
 # Or run standalone
 ./rstorrent
@@ -31,17 +39,17 @@ sudo apt install ./rstorrent_0.20.1_amd64.deb
 
 ### Running with TOML configuration
 
-Create `rstorrent.toml` in your home configuration directory (`~/.config/rstorrent/rstorrent.toml`):
+Create `rstorrent.toml` in your configuration directory (`~/.config/rstorrent/rstorrent.toml`):
 
 ```toml
 [network]
 port = 50000
-download_throttle_kb = 0
+download_throttle_kb = 0        # unlimited
 upload_throttle_kb = 2000
 
 [storage]
 directory = "~/Downloads"
-session_directory = "~/.local/share/rstorrent/session"
+session = "~/.local/share/rstorrent/session"
 watch_directory = "~/Downloads/watch"
 
 [dht]
@@ -54,3 +62,23 @@ Then start:
 ```bash
 rstorrent
 ```
+
+See the [Configuration Guide](Configuration-Guide) for the full reference and the [CLI Reference](CLI-Reference) for all flags.
+
+### Headless daemon + Web UI
+
+```toml
+[rpc]
+grpc_port = 50051
+grpc_token = "change-me"
+
+[webui]
+addr = "127.0.0.1:8080"
+token = "change-me"
+```
+
+```bash
+rstorrent --daemon
+```
+
+Connect a terminal client with `rstorrent-tui --endpoint 127.0.0.1:50051`, or open the Web UI at `http://127.0.0.1:8080`. See [gRPC & Remote Control](gRPC-and-Remote-Control) and [Web UI](WebUI).

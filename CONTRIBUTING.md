@@ -4,7 +4,7 @@ Thank you for your interest in contributing to `rstorrent`!
 
 ## Code Architecture
 
-The codebase is organized as a Cargo workspace with 14 crates:
+The codebase is organized as a Cargo workspace with 16 crates:
 - `crates/lt-*`: Engine, network, storage, protocol, DHT, and tracker crates (`libtorrent` domain).
 - `crates/rt-*`: RPC engine, SCGI server, core session manager, and TUI (`rtorrent` domain).
 - `crates/rstorrent`: Top-level CLI binary and supervisor.

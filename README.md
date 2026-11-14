@@ -29,23 +29,40 @@ The project contains active implementations for core BitTorrent functionality, a
   - **Real-Time Watch Directory**: Native inotify event monitoring via `notify` automatically loading and starting new torrents on filesystem changes.
 - **BitTorrent Protocol Support**:
   - **BEP 3**: Core BitTorrent Protocol.
+  - **BEP 5**: Mainline DHT (Kademlia) with bootstrap, persistent node cache, and dual-stack IPv4/IPv6.
   - **BEP 6**: Fast Extension (`Allowed Fast`, `Suggest`, `Have All`, `Have None`, `Reject Request`).
   - **BEP 9**: Extension for Peers to Send Metadata Files (`ut_metadata`, magnet links).
   - **BEP 10**: Extension Protocol.
   - **BEP 11**: Peer Exchange (PEX).
+  - **BEP 12**: Multitracker Metadata Extension (tiers, promotion, per-tier scrape).
+  - **BEP 14**: Local Service Discovery (BT-SEARCH multicast).
   - **BEP 15**: UDP Tracker Protocol with scrape support.
   - **BEP 16**: Super-Seeding (Initial Seeding).
+  - **BEP 17**: HTTP Seeding (per-file `Range` requests).
+  - **BEP 19**: WebSeed (GetRight-style `url-list` over HTTP/HTTPS).
+  - **BEP 23**: Tracker Returns Compact Peer Lists.
+  - **BEP 27**: Private Torrents (DHT/PEX/LSD gated, peer-pool enforcement).
   - **BEP 29**: Micro Transport Protocol (uTP) with LEDBAT congestion control.
+  - **BEP 32**: IPv6 DHT (`nodes6`, dual-stack socket).
+  - **BEP 51**: DHT `sample_infohashes` for info-hash bootstrapping.
+  - **BEP 52**: BitTorrent v2 — Merkle SHA-256 trees, v2 and hybrid torrents, `btmh` magnets.
   - **UPnP IGD & NAT-PMP**: Automatic router port forwarding.
-  - **MSE / PE**: Message Stream Encryption / Protocol Encryption (RC4 + Diffie-Hellman 768-bit).
-  - **Mainline DHT**: Kademlia Distributed Hash Table with bootstrap and caching.
+  - **MSE / PE**: Message Stream Encryption / Protocol Encryption (RC4 + Diffie-Hellman 768-bit, TCP only).
+  - **Outbound proxy**: SOCKS5 / SOCKS5h (remote DNS) / HTTP / HTTPS CONNECT for peer connections.
 - **SCGI & RPC Compatibility**:
-  - SCGI listener and parser code are present in the workspace (`rt-scgi`, `rt-rpc`).
-  - XML-RPC and JSON-RPC processing exists for command routing and compatibility layers.
+  - Non-blocking SCGI server over TCP & UNIX sockets with keep-alive and pipelining (`rt-scgi`, `rt-rpc`).
+  - XML-RPC and JSON-RPC 2.0 over the same ~1000-name command map, with bearer-token auth and optional gzip.
   - Intended compatibility with tooling such as **Flood**, **ruTorrent**, and custom scripts is real, but command coverage and full ecosystem parity are still being expanded.
 - **Interactive TUI & Daemon Mode**:
   - Rich Terminal User Interface powered by [Ratatui](https://github.com/ratatui/ratatui) and [Crossterm](https://github.com/crossterm-rs/crossterm).
   - Headless daemon mode (`--daemon`) for servers and Docker containers.
+  - A standalone gRPC TUI client (`rstorrent-tui`) for remote control over TCP/TLS/UNIX sockets.
+- **Native Web UI**:
+  - Opt-in axum-based REST + WebSocket API with an embedded single-page app, bearer-token auth, and optional TLS.
+- **Observability**:
+  - Prometheus `/metrics` HTTP endpoint and an optional JSONL event recorder (`RSTORRENT_METRICS_FILE`).
+- **Lua Scripting**:
+  - An optional `rtorrent.lua` loaded at startup, plus `lua.execute` / `lua.execute.str` commands, bridged to the live command map.
 - **Native gRPC API**:
   - Tonic-based `rtorrent.v1` services exist in [`crates/rt-grpc`](crates/rt-grpc).
   - This layer is an important compatibility and integration surface, but it is still best treated as an actively evolving API rather than a fully complete feature-equivalent replacement for the legacy rTorrent toolchain.
@@ -133,8 +150,9 @@ How it scales:
 Storage settings are read at startup (restart to apply):
 
 ```ini
-# Disk workers. Default 1; raise for concurrent I/O across torrents.
-storage.disk_threads = 1
+# Disk workers. Default: CPU cores / 2, clamped 2-16 (fallback 4).
+# Raise for concurrent I/O across torrents; fixed after the pool is created.
+storage.disk_threads = 4
 
 # Per-worker open-file cache.
 storage.max_open_files = 64
@@ -231,8 +249,13 @@ rstorrent --daemon --session /var/lib/rstorrent/session "magnet:?xt=urn:btih:...
   - `[3:Peers]`: Connected swarm peers, transfer speeds, encryption status, and client identifiers.
   - `[4:Files]`: File priority tree with progress bars; press `Space` to cycle file priority (`Off`, `Normal`, `High`).
   - `[★ 5:Piece Map]`: High-density Braille piece availability heatmap and verified piece counts.
-  - `[6:Logs]`: Filterable daemon events, session logs, and error diagnostic traces.
+  - `[6:Logs]`: Torrent metadata summary (name, save path, state, hash). Live daemon logs are available in the standalone client's Logs tab and the log file.
 - **Mouse**: Click any inspector tab pill to switch tabs, click `[i: Close]` to close the drawer, click any file/peer row to select it, or scroll with the mouse wheel.
+
+#### Bandwidth Throttle Keys
+- `]` / `[`: Increase / decrease the global download limit by 50 KiB/s.
+- `}` / `{`: Increase / decrease the global upload limit by 50 KiB/s.
+- `0`: Toggle uncapped ↔ 10 MiB/s (both directions).
 
 #### Multi-Torrent Operations & Batch Actions
 - `Space`: Toggle multi-selection on focused torrent.
@@ -329,16 +352,88 @@ see the Flood repository for a ready-to-run `docker-compose.rstorrent.yml`.
 managers such as Sonarr can therefore tag their own torrents and keep filtering
 them after a daemon restart.
 
+**Connection security**: a bare `--grpc-port` binds loopback (`127.0.0.1`);
+UNIX sockets are created `0600` and treated as trusted. Set `grpc_token` for
+bearer auth and `grpc_tls_cert`/`grpc_tls_key` for TLS. Trust is decided by the
+listener, never by the client payload. See
+[gRPC & Remote Control](https://github.com/chmuri/rstorrent/wiki/gRPC-and-Remote-Control)
+for the full service tables and security model.
+
+---
+
+## Command-Line Interface
+
+`rstorrent` accepts both modern flags and legacy rTorrent flags. Configuration
+precedence: config file → built-in CLI mappings (`-b`, `-i`, `-p`, `--proxy`,
+`-d`, `-s`, `--grpc-port`, `--grpc-socket`) → `-o key=value` → `-O '<command>'`.
+
+```bash
+rstorrent --daemon -d /downloads -s /session "magnet:?xt=urn:btih:..."
+rstorrent -c /path/to/rstorrent.toml      # explicit config
+rstorrent -n                              # no config file
+rstorrent --webui-addr 127.0.0.1:8080 --webui-token change-me
+rstorrent --metrics-addr 127.0.0.1:9090
+```
+
+Torrent arguments accept file paths, `data:` URIs, magnet links, and HTTP(S)
+URLs. See the [CLI Reference](https://github.com/chmuri/rstorrent/wiki/CLI-Reference)
+for every flag, signal, and environment variable.
+
+---
+
+## Native Web UI
+
+The daemon ships an opt-in native Web UI (axum REST + WebSocket + embedded SPA).
+Enable it with `--webui-addr` / `--webui-token` or the `[webui]` TOML table:
+
+```bash
+rstorrent --daemon --webui-addr 127.0.0.1:8080 --webui-token change-me
+```
+
+Then open `http://127.0.0.1:8080`. A valid token grants trusted (full) access;
+a configured-but-wrong token is rejected with `401`; no token leaves callers
+untrusted and restricted to read-only commands. TLS is TOML-only
+(`tls_cert`/`tls_key`). See [Web UI](https://github.com/chmuri/rstorrent/wiki/WebUI)
+for the REST/WebSocket API tables and authentication model.
+
+---
+
+## Metrics & Observability
+
+- **Prometheus**: set `[metrics] addr` (or `--metrics-addr`) to expose a
+  `/metrics` HTTP endpoint, e.g. `127.0.0.1:9090`.
+- **JSONL recorder**: set `RSTORRENT_METRICS_FILE=/path/events.jsonl` to record
+  startup/shutdown/phase events.
+
+---
+
+## Standalone TUI Client (`rstorrent-tui`)
+
+`rstorrent-tui` is a separate gRPC client binary for remote control. It connects
+over TCP, TLS, or UNIX sockets and renders its own ten-view terminal interface:
+
+```bash
+rstorrent-tui --endpoint 127.0.0.1:50051
+rstorrent-tui --endpoint unix:///run/rstorrent/grpc.sock --theme dracula
+```
+
+Configure it in `~/.config/rstorrent-tui/config.toml` (`endpoint`, `refresh_ms`,
+`keys_layout`, `theme_name`). It reconnects with exponential backoff and sets
+real global throttle rates. See
+[Terminal UI & Keybindings](https://github.com/chmuri/rstorrent/wiki/Terminal-UI-and-Keybindings)
+and [Keyboard Shortcuts](https://github.com/chmuri/rstorrent/wiki/Keyboard-Shortcuts).
+
 ---
 
 ## Configuration
 
-`rstorrent` automatically discovers configuration files adhering to modern XDG standards, with fallback to legacy `.rtorrent.rc`:
-1. `./rstorrent.toml` (or `./.rstorrent.toml`) in the current working directory
-2. `$XDG_CONFIG_HOME/rstorrent/rstorrent.toml`
-3. `~/.config/rstorrent/rstorrent.toml`
-4. `~/.rstorrent.toml`
-5. Legacy: `$XDG_CONFIG_HOME/rstorrent/rstorrent.rc`, `~/.config/rstorrent/rstorrent.rc`, or `~/.rtorrent.rc`
+`rstorrent` automatically discovers configuration files adhering to modern XDG standards, with fallback to legacy `.rtorrent.rc`. The first existing file wins; `-n` skips discovery entirely and `-c` overrides the path. A simplified order:
+1. `./rstorrent.toml` in the current working directory
+2. `$XDG_CONFIG_HOME/rstorrent/rstorrent.toml` (then `.rc` variants)
+3. `~/.config/rstorrent/rstorrent.toml`, `~/.rstorrent.toml`, then legacy `.rc` files
+4. Container/system paths: `/config/…`, `/etc/rstorrent/…`, `/etc/rtorrent/…`
+
+See the [Configuration Guide](https://github.com/chmuri/rstorrent/wiki/Configuration-Guide) for the full 12-step lookup order, override precedence, and every TOML/`.rc` key.
 
 ### Modern `rstorrent.toml` Example:
 
@@ -356,15 +451,30 @@ directory = "/downloads"
 session_directory = "/session"
 watch_directory = "/downloads/watch"
 
+[protocol]
+encryption = "allow"
+# proxy = "socks5h://127.0.0.1:1080"   # outbound peer proxy
+
 [rpc]
 grpc_port = 50051
 scgi_port = 5000
 scgi_socket = "/session/rtorrent.sock"
+# grpc_token = "change-me"
+# scgi_token = "change-me"
 
 [dht]
 mode = "auto"
 port = 6881
+
+[metrics]
+addr = "127.0.0.1:9090"      # Prometheus /metrics endpoint
+
+[webui]
+addr = "127.0.0.1:8080"      # native Web UI (opt-in)
+token = "change-me"
 ```
+
+An optional `rtorrent.lua` next to the active config file is loaded at startup; `lua.execute` / `lua.execute.str` also run Lua from `.rc` files and RPC. See the [Configuration Guide](https://github.com/chmuri/rstorrent/wiki/Configuration-Guide) for Lua scripting, schedules, and environment variables.
 
 ### Legacy `.rtorrent.rc` Example:
 

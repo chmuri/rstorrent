@@ -26,7 +26,7 @@ rechecks, and which knobs change that. Numbers live in
 Tokio runtime        SCGI/XML-RPC/JSON-RPC, timers, network supervision
 hash scheduler       `storage.hash_concurrency` threads (default min(4, cores))
                      each runs one whole hash pass; queue is FIFO, unbounded
-disk pool            `storage.disk_threads` workers (default 1)
+disk pool            `storage.disk_threads` workers (default cores/2, clamped 2-16)
                      every read/write/sync for a torrent goes to one shard
 session loader       `storage.load_threads` scoped threads (default min(4, cores))
                      only alive during startup
@@ -105,7 +105,7 @@ All are read at startup; changing them requires a restart.
 
 | Command | Default | Range | Effect |
 |---|---:|---:|---|
-| `storage.disk_threads` | 1 | 1–64 | Disk workers. Raise for concurrent I/O across torrents. |
+| `storage.disk_threads` | cores/2, clamped 2–16 (fallback 4) | 1–64 | Disk workers. Raise for concurrent I/O across torrents. |
 | `storage.max_open_files` | 64 | 4–65536 | Per-worker open-file cache. |
 | `storage.hash_concurrency` | min(4, cores) | 1–1024 | Concurrent hash passes. Bounds CPU and read concurrency. |
 | `storage.load_threads` | min(4, cores) | 1–64 | Session parse threads during startup. |
@@ -131,8 +131,8 @@ soft limit. The hash-pass term is the one the pool config does not cover:
 - **Hash throughput follows `storage.hash_concurrency`, not
   `storage.disk_threads`.** Hash reads bypass the disk worker by design; the
   disk pool helps writes, reads, syncs and concurrent torrents.
-- **`disk_threads` defaults to 1** to preserve existing behaviour. Raising it is
-  an explicit opt-in.
+- **`disk_threads` auto-scales** to CPU cores / 2 (clamped 2–16, fallback 4).
+  Set it explicitly to override; it is fixed once the pool is created.
 - **Scale tests are `#[ignore]`d** and driven by `scripts/bench/run_all.sh`; CI
   never depends on wall-clock numbers.
 

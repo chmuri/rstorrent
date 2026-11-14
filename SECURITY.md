@@ -4,8 +4,8 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.10.x  | Yes       |
-| < 0.10  | No        |
+| 0.21.x  | Yes       |
+| < 0.21  | No        |
 
 ## Reporting a vulnerability
 
@@ -30,7 +30,7 @@ you prefer to stay anonymous.
 
 In scope:
 
-- the `rstorrent` daemon, the SCGI/XML-RPC/JSON-RPC and gRPC servers,
+- the `rstorrent` daemon, the SCGI/XML-RPC/JSON-RPC and gRPC servers, the native Web UI,
 - the Torrent engine, protocol and storage crates,
 - the Docker images and packaging scripts.
 
