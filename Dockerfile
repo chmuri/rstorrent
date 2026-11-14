@@ -6,12 +6,24 @@ FROM rust:bookworm AS builder
 WORKDIR /build
 
 # rt-grpc's build script compiles the protobuf contract at build time.
-RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler \
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project workspace definition and source code
+# Copy project workspace definition and source code (ui/ is a workspace member)
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
+COPY ui/ ./ui/
+
+# Install Trunk and build the Leptos WebAssembly UI (ui/dist) that build.rs
+# embeds into the binary.
+RUN case "$(uname -m)" in \
+         x86_64) asset=trunk-x86_64-unknown-linux-gnu.tar.gz ;; \
+         aarch64) asset=trunk-aarch64-unknown-linux-gnu.tar.gz ;; \
+       esac \
+    && curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v0.22.1/$asset" \
+       | tar xz -C /usr/local/bin \
+    && rustup target add wasm32-unknown-unknown \
+    && cd ui && trunk build --release
 
 # Build the release binary for rstorrent
 RUN cargo build --release -p rstorrent

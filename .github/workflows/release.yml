@@ -38,6 +38,14 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cross
+      - name: Install trunk
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v0.22.1/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar xz -C "$HOME/.cargo/bin"
+      - name: Build Web UI
+        run: |
+          rustup target add wasm32-unknown-unknown
+          (cd ui && trunk build --release)
       - name: Build release binary
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
@@ -80,6 +88,18 @@ jobs:
           key: ${{ matrix.target }}
       - name: Install protoc
         run: brew install protobuf
+      - name: Install trunk
+        run: |
+          case "$(uname -m)" in
+            arm64) asset=trunk-aarch64-apple-darwin.tar.gz ;;
+            x86_64) asset=trunk-x86_64-apple-darwin.tar.gz ;;
+          esac
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v0.22.1/$asset" \
+            | tar xz -C "$HOME/.cargo/bin"
+      - name: Build Web UI
+        run: |
+          rustup target add wasm32-unknown-unknown
+          (cd ui && trunk build --release)
       - name: Build release binary
         run: cargo build --release --target "${{ matrix.target }}" -p rstorrent -p rt-tui-client
       - name: Package

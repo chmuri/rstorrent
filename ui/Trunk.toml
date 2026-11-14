@@ -1,0 +1,9 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Absolute asset URLs so SPA deep links (/explorer, /analytics, /settings)
+# resolve assets from the origin root regardless of the current route.
+public_url = "/"
+
+[serve]
+port = 8081

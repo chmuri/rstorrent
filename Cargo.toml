@@ -17,13 +17,14 @@ members = [
     "crates/rt-tui",
     "crates/rt-tui-client",
     "crates/rstorrent",
+    "ui",
 ]
 # cargo-fuzz crate (plan.md :259) is built only by the nightly CI job; exclude it
 # from the stable workspace gate so `cargo test --workspace` never builds it.
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.21.0"
+version = "0.22.0"
 edition = "2021"
 rust-version = "1.99"
 authors = ["chmuri <chmuri@gmail.com>"]

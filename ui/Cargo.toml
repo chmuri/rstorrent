@@ -1,0 +1,33 @@
+[package]
+name = "rt-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+leptos = { version = "0.7", features = ["csr"] }
+leptos_router = { version = "0.7" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gloo-net = { version = "0.6", features = ["http", "websocket"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-storage = "0.3"
+futures-util = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = [
+  "KeyboardEvent", "Window", "Document", "Element", "HtmlElement",
+  "HtmlInputElement", "HtmlSelectElement", "HtmlTextAreaElement", "HtmlAnchorElement",
+  "Node", "Event", "EventTarget", "MouseEvent", "CustomEvent", "CustomEventInit",
+  "AddEventListenerOptions", "Storage", "Location", "History", "Url", "UrlSearchParams",
+  "WebSocket", "MessageEvent", "CloseEvent", "ErrorEvent", "BinaryType",
+  "CssStyleDeclaration", "DomRect", "ScrollToOptions", "ScrollBehavior",
+  "NodeList", "HtmlCollection", "DomTokenList", "Performance", "Navigator",
+  "Blob", "BlobPropertyBag", "MediaQueryList", "DocumentFragment",
+] }

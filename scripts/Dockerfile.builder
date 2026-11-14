@@ -11,6 +11,13 @@ RUN curl -fsSL https://github.com/mozilla/sccache/releases/download/v0.19.0/scca
     chmod +x /usr/local/bin/sccache && \
     rm -rf /tmp/sccache*
 
+# Trunk builds the Leptos/WASM Web UI (ui/) into ui/dist, which the rstorrent
+# crate's build.rs embeds into the binary. Trunk auto-manages wasm-bindgen-cli,
+# wasm-opt and the Tailwind CLI at build time. The wasm32-unknown-unknown target
+# is added per-run in the container command: the rustup home is a bind mount, so
+# an image-layer `rustup target add` would be shadowed at runtime.
+RUN cargo install trunk --locked --version 0.22.1
+
 # sccache S3 credentials are injected at build time via --build-arg (see
 # scripts/remote-ci.sh `image`); no secrets are stored in this repository.
 ARG SCCACHE_ENDPOINT=http://cache.example.com:9000

@@ -1,6 +1,7 @@
 # Rust build artifacts
 /target
 /dist/
+/ui/dist/
 **/*.rs.bk
 Cargo.lock.backup
 
