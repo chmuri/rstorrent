@@ -7,20 +7,6 @@ use lt_dht::controller::{DhtController, DhtLifecycleConfig, DhtMode, BOOTSTRAP_C
 use lt_dht::node::DhtNode;
 use lt_net::addr::SocketAddress;
 
-fn free_udp_port() -> u16 {
-    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket.local_addr().unwrap().port()
-}
-
-fn free_udp_port_other_than(other: u16) -> u16 {
-    loop {
-        let port = free_udp_port();
-        if port != other {
-            return port;
-        }
-    }
-}
-
 fn id(byte: u8) -> HashString {
     HashString::new([byte; 20])
 }
@@ -34,7 +20,7 @@ fn now_seconds() -> u32 {
 
 #[tokio::test]
 async fn bootstrap_failure_is_bounded_and_non_fatal() {
-    let controller = DhtController::new(id(0xaa), free_udp_port());
+    let controller = DhtController::new(id(0xaa), 0);
     controller.start();
     controller.server().bind().await.unwrap();
 
@@ -179,11 +165,7 @@ async fn periodic_refresh_prunes_stale_peers_and_nodes() {
         ..Default::default()
     };
 
-    let controller = Arc::new(DhtController::with_config(
-        id(0xcc),
-        free_udp_port(),
-        config,
-    ));
+    let controller = Arc::new(DhtController::with_config(id(0xcc), 0, config));
     controller.start();
 
     let stale_hash = id(0x44);
@@ -247,8 +229,14 @@ async fn mode_transitions_and_port_restart_are_applied() {
     assert_eq!(DhtMode::parse("on"), Some(DhtMode::On));
     assert_eq!(DhtMode::parse("bogus"), None);
 
-    let first_port = free_udp_port();
-    let second_port = free_udp_port_other_than(first_port);
+    // This test asserts concrete port values, so reserve two distinct ports
+    // by holding both sockets at once (the kernel cannot give one port to two
+    // live sockets). Each reservation is dropped right before the controller
+    // binds that port to keep the probe-then-bind race window minimal.
+    let first_probe = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let first_port = first_probe.local_addr().unwrap().port();
+    let second_probe = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let second_port = second_probe.local_addr().unwrap().port();
     let controller = Arc::new(DhtController::new(id(0xdd), first_port));
 
     assert!(!controller.set_mode(DhtMode::Off));
@@ -259,6 +247,12 @@ async fn mode_transitions_and_port_restart_are_applied() {
     assert!(controller.set_mode(DhtMode::On));
     assert!(controller.start());
     assert!(controller.is_active());
+
+    drop(first_probe);
+    // `set_mode(Off)` above unbound the socket and zeroed its port, so bind the
+    // requested port explicitly rather than via `bind()` (which would pick an
+    // ephemeral port).
+    controller.server().bind_port(first_port).await.unwrap();
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let run_controller = Arc::clone(&controller);
@@ -272,6 +266,7 @@ async fn mode_transitions_and_port_restart_are_applied() {
     }
     assert_eq!(controller.port(), first_port);
 
+    drop(second_probe);
     controller.restart_with_port(second_port).await.unwrap();
     assert_eq!(controller.port(), second_port);
     assert_eq!(controller.requested_port(), second_port);
@@ -290,21 +285,19 @@ async fn mode_transitions_and_port_restart_are_applied() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn add_peer_node_contacts_peer_while_bootstrapping() {
     let peer_id = id(0xbb);
-    let peer_port = free_udp_port();
     let peer_router = Arc::new(tokio::sync::Mutex::new(lt_dht::router::DhtRouter::new(
         peer_id,
     )));
-    let peer_server = Arc::new(lt_dht::server::DhtServer::new(
-        Arc::clone(&peer_router),
-        peer_port,
-    ));
+    let peer_server = Arc::new(lt_dht::server::DhtServer::new(Arc::clone(&peer_router), 0));
+    peer_server.bind().await.unwrap();
+    let peer_port = peer_server.port();
     let (peer_shutdown_tx, peer_shutdown_rx) = tokio::sync::watch::channel(false);
     let peer_task = {
         let server = Arc::clone(&peer_server);
         tokio::spawn(async move { server.run(peer_shutdown_rx).await })
     };
 
-    let controller = Arc::new(DhtController::new(id(0xaa), free_udp_port()));
+    let controller = Arc::new(DhtController::new(id(0xaa), 0));
     controller.start();
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let run_controller = Arc::clone(&controller);

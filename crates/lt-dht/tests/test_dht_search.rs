@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,11 +10,6 @@ use lt_dht::server::DhtServer;
 use lt_net::addr::SocketAddress;
 use tokio::sync::Mutex;
 
-fn free_udp_port() -> u16 {
-    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket.local_addr().unwrap().port()
-}
-
 fn id(byte: u8) -> HashString {
     HashString::new([byte; 20])
 }
@@ -24,9 +19,9 @@ async fn lookup_and_announce_over_loopback() {
     let info_hash = id(0x11);
     let id_a = id(0xaa);
     let id_b = id(0xbb);
-    let port_b = free_udp_port();
 
-    // Node B answers get_peers and stores announces.
+    // Node B answers get_peers and stores announces. Bind to an ephemeral port
+    // up front (see test_dht_lifecycle for why probing a free port is racy).
     let router_b = Arc::new(Mutex::new(DhtRouter::new(id_b)));
     {
         let mut router = router_b.lock().await;
@@ -34,7 +29,9 @@ async fn lookup_and_announce_over_loopback() {
         tracker.add_peer(u32::from(Ipv4Addr::new(127, 0, 0, 9)), 51413, 0);
     }
 
-    let server_b = Arc::new(DhtServer::new(Arc::clone(&router_b), port_b));
+    let server_b = Arc::new(DhtServer::new(Arc::clone(&router_b), 0));
+    server_b.bind().await.unwrap();
+    let port_b = server_b.port();
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let server_b_task = {
         let server = Arc::clone(&server_b);
@@ -51,7 +48,8 @@ async fn lookup_and_announce_over_loopback() {
         ));
     }
 
-    let server_a = Arc::new(DhtServer::new(Arc::clone(&router_a), free_udp_port()));
+    let server_a = Arc::new(DhtServer::new(Arc::clone(&router_a), 0));
+    server_a.bind().await.unwrap();
     let (shutdown_a_tx, shutdown_a_rx) = tokio::sync::watch::channel(false);
     let server_a_task = {
         let server = Arc::clone(&server_a);

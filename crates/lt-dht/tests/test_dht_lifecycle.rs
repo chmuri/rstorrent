@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,11 +9,6 @@ use lt_dht::router::DhtRouter;
 use lt_net::addr::SocketAddress;
 use tokio::sync::Mutex;
 
-fn free_udp_port() -> u16 {
-    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    socket.local_addr().unwrap().port()
-}
-
 fn id(byte: u8) -> HashString {
     HashString::new([byte; 20])
 }
@@ -21,13 +16,15 @@ fn id(byte: u8) -> HashString {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn bootstrap_adds_responding_node() {
     let id_b = id(0xbb);
-    let port_b = free_udp_port();
 
+    // Bind each socket to an ephemeral port up front and read the assigned
+    // port back. Probing a "free" port and rebinding it later races with other
+    // tests: the kernel can hand the same port to a concurrent socket between
+    // the probe and the bind, leaving one server permanently unbound.
     let router_b = Arc::new(Mutex::new(DhtRouter::new(id_b)));
-    let server_b = Arc::new(lt_dht::server::DhtServer::new(
-        Arc::clone(&router_b),
-        port_b,
-    ));
+    let server_b = Arc::new(lt_dht::server::DhtServer::new(Arc::clone(&router_b), 0));
+    server_b.bind().await.unwrap();
+    let port_b = server_b.port();
     let (shutdown_b_tx, shutdown_b_rx) = tokio::sync::watch::channel(false);
     let server_b_task = {
         let server = Arc::clone(&server_b);
@@ -35,8 +32,9 @@ async fn bootstrap_adds_responding_node() {
     };
 
     let id_a = id(0xaa);
-    let controller_a = DhtController::new(id_a, free_udp_port());
+    let controller_a = DhtController::new(id_a, 0);
     controller_a.start();
+    controller_a.server().bind().await.unwrap();
     let (shutdown_a_tx, shutdown_a_rx) = tokio::sync::watch::channel(false);
     let server_a_task = {
         let server = controller_a.server();
