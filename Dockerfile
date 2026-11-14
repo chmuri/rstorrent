@@ -15,10 +15,11 @@ COPY crates/ ./crates/
 COPY ui/ ./ui/
 
 # Install Trunk and build the Leptos WebAssembly UI (ui/dist) that build.rs
-# embeds into the binary.
+# embeds into the binary. Use the static musl builds: the gnu prebuilts require
+# GLIBC_2.39, newer than rust:bookworm's 2.36.
 RUN case "$(uname -m)" in \
-         x86_64) asset=trunk-x86_64-unknown-linux-gnu.tar.gz ;; \
-         aarch64) asset=trunk-aarch64-unknown-linux-gnu.tar.gz ;; \
+         x86_64) asset=trunk-x86_64-unknown-linux-musl.tar.gz ;; \
+         aarch64) asset=trunk-aarch64-unknown-linux-musl.tar.gz ;; \
        esac \
     && curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v0.22.1/$asset" \
        | tar xz -C /usr/local/bin \
