@@ -51,6 +51,28 @@ pub struct DhtServer {
     errors_received: AtomicUsize,
 }
 
+/// Binds a UDP socket for `addr`. An IPv6 wildcard is bound dual-stack
+/// (`IPV6_V6ONLY` disabled) so the DHT serves both IPv4 and IPv6 peers
+/// (BEP 32). macOS/BSD default that option to enabled, which would leave the
+/// socket IPv6-only and silently drop every IPv4 peer.
+async fn bind_udp_socket(addr: &str) -> std::io::Result<UdpSocket> {
+    let sock_addr: SocketAddr = addr.parse().map_err(std::io::Error::other)?;
+    if !sock_addr.is_ipv6() {
+        return UdpSocket::bind(sock_addr).await;
+    }
+
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV6,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )?;
+    socket.set_only_v6(false)?;
+    socket.bind(&socket2::SockAddr::from(sock_addr))?;
+    socket.set_nonblocking(true)?;
+    let std_socket: std::net::UdpSocket = socket.into();
+    UdpSocket::from_std(std_socket)
+}
+
 impl DhtServer {
     pub fn new(router: Arc<Mutex<DhtRouter>>, port: u16) -> Self {
         Self {
@@ -132,7 +154,7 @@ impl DhtServer {
 
         for addr in &candidates {
             for attempt in 0..10 {
-                match UdpSocket::bind(addr).await {
+                match bind_udp_socket(addr).await {
                     Ok(socket) => {
                         let actual_port = socket.local_addr()?.port();
                         self.port.store(actual_port, Ordering::Relaxed);
