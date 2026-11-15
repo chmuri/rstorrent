@@ -765,6 +765,21 @@ mod tests {
     }
 
     #[test]
+    fn test_magnet_uri_fuzz_crash_no_panic() {
+        // Nightly fuzz crash magnet-998c50cf: a 40-byte btih value containing
+        // multibyte UTF-8 split a char boundary inside HashString::from_hex and
+        // panicked. Malformed input must be rejected, never panic.
+        let raw: &[u8] = &[
+            109, 97, 103, 110, 101, 116, 58, 63, 38, 120, 116, 61, 117, 114, 110, 58, 98, 116, 105,
+            104, 58, 61, 117, 158, 114, 110, 58, 98, 116, 58, 63, 38, 120, 116, 61, 117, 114, 110,
+            58, 98, 116, 105, 104, 58, 122, 134, 141, 145, 197, 98, 116, 176, 117, 114, 110, 58,
+            98, 116, 105, 104, 58, 61, 117, 109, 239, 191, 97, 103, 116, 189, 63,
+        ];
+        let uri = String::from_utf8_lossy(raw);
+        let _ = DownloadConstructor::from_magnet_uri(&uri);
+    }
+
+    #[test]
     fn test_from_info_bytes() {
         let mut info = Object::create_map();
         info.insert_key("name", Object::from("metadata-dir"))

@@ -55,10 +55,13 @@ pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
         return Err("Hex string has odd length".into());
     }
 
-    let mut bytes = Vec::with_capacity(hex.len() / 2);
-    for i in (0..hex.len()).step_by(2) {
-        let byte = u8::from_str_radix(&hex[i..i + 2], 16)
-            .map_err(|e| format!("Invalid hex digit at {i}: {e}"))?;
+    let src = hex.as_bytes();
+    let mut bytes = Vec::with_capacity(src.len() / 2);
+    for i in (0..src.len()).step_by(2) {
+        let pair =
+            std::str::from_utf8(&src[i..i + 2]).map_err(|_| format!("Invalid hex digit at {i}"))?;
+        let byte =
+            u8::from_str_radix(pair, 16).map_err(|e| format!("Invalid hex digit at {i}: {e}"))?;
         bytes.push(byte);
     }
     Ok(bytes)
@@ -183,6 +186,14 @@ mod tests {
         assert_eq!(hex, "deadbeef");
         let parsed = hex_to_bytes(&hex).unwrap();
         assert_eq!(parsed, bytes);
+    }
+
+    #[test]
+    fn test_hex_to_bytes_rejects_non_ascii_without_panic() {
+        // "a€" is 4 bytes (even length) but the second pair slices through the
+        // 3-byte '€'; the byte-pair decoder must return Err, not panic.
+        assert!(hex_to_bytes("a\u{20AC}").is_err());
+        assert!(hex_to_bytes("\u{e9}deadbe").is_err());
     }
 
     #[test]

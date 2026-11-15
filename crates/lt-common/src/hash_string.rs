@@ -27,12 +27,14 @@ impl HashString {
     }
 
     pub fn from_hex(hex: &str) -> Option<Self> {
-        if hex.len() != 40 {
+        let src = hex.as_bytes();
+        if src.len() != 40 {
             return None;
         }
         let mut bytes = [0u8; 20];
         for i in 0..20 {
-            bytes[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+            let pair = std::str::from_utf8(&src[i * 2..i * 2 + 2]).ok()?;
+            bytes[i] = u8::from_str_radix(pair, 16).ok()?;
         }
         Some(Self(bytes))
     }
@@ -173,12 +175,14 @@ impl Hash256 {
     }
 
     pub fn from_hex(hex: &str) -> Option<Self> {
-        if hex.len() != 64 {
+        let src = hex.as_bytes();
+        if src.len() != 64 {
             return None;
         }
         let mut bytes = [0u8; 32];
         for i in 0..32 {
-            bytes[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+            let pair = std::str::from_utf8(&src[i * 2..i * 2 + 2]).ok()?;
+            bytes[i] = u8::from_str_radix(pair, 16).ok()?;
         }
         Some(Self(bytes))
     }
@@ -302,6 +306,24 @@ mod tests {
         let zero = HashString::zero();
         assert!(zero.is_zero());
         assert_eq!(zero.to_hex(), "0000000000000000000000000000000000000000");
+    }
+
+    #[test]
+    fn test_from_hex_rejects_non_ascii_without_panic() {
+        // Fuzz crash (crash-998c50cf): a 40-byte string containing multibyte
+        // chars passed the length check, then byte-pair slicing split a char
+        // boundary and panicked. Must return None instead.
+        let mut s = String::from("0123456789abcdef0123456789abcdef012345"); // 38 ASCII
+        s.push('\u{e9}'); // 2 bytes -> 40 total
+        assert_eq!(HashString::from_hex(&s), None);
+
+        let mut s = String::from("0123456789abcdef0123456789abcdef01234"); // 37 ASCII
+        s.push('\u{20AC}'); // 3 bytes -> 40 total, straddles a pair boundary
+        assert_eq!(HashString::from_hex(&s), None);
+
+        let mut s = String::from("0123456789abcdef0123456789abcdef0123456789abcdef012345"); // 62
+        s.push('\u{e9}'); // 2 bytes -> 64 total
+        assert_eq!(Hash256::from_hex(&s), None);
     }
 
     #[test]

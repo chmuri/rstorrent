@@ -42,14 +42,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Windows is not supported: the daemon uses Unix sockets, signals and
-        # POSIX file APIs.
-        os: [ubuntu-latest, macos-latest]
+    name: test
+    # Windows and macOS are not built in CI: the daemon targets Linux
+    # (Unix sockets, signals and POSIX file APIs rule out Windows).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain
@@ -57,24 +53,16 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rstorrent-shared-test-${{ matrix.os }}"
+          shared-key: "rstorrent-shared-test"
           cache-all-crates: "true"
-      - name: Install protoc (Linux)
-        if: runner.os == 'Linux'
+      - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Install protoc (macOS)
-        if: runner.os == 'macOS'
-        run: brew install protobuf
       - name: Run tests
         run: cargo test --workspace --all-targets
 
   build:
-    name: build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust toolchain
@@ -82,14 +70,10 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rstorrent-shared-build-${{ matrix.os }}"
+          shared-key: "rstorrent-shared-build"
           cache-all-crates: "true"
-      - name: Install protoc (Linux)
-        if: runner.os == 'Linux'
+      - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Install protoc (macOS)
-        if: runner.os == 'macOS'
-        run: brew install protobuf
       - name: Build release binary
         run: cargo build --release -p rstorrent
 
