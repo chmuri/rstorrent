@@ -31,7 +31,7 @@ jobs:
       # Restore the corpus from the previous run so coverage accumulates across
       # nights; the key is per-run so a fresh corpus is always saved.
       - name: Restore fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: fuzz/corpus
           key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
@@ -45,7 +45,7 @@ jobs:
           done
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts
           path: fuzz/artifacts
