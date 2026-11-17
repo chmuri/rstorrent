@@ -88,7 +88,7 @@ getrandom = "0.4.3"
 crossbeam-queue = "0.3"
 rayon = "1.10"
 rustc-hash = "2.1"
-lru = "0.18"
+lru = "0.19"
 hickory-resolver = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
