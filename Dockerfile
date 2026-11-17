@@ -16,9 +16,9 @@ RUN case "$(uname -m)" in \
          x86_64) trunk_asset=trunk-x86_64-unknown-linux-musl.tar.gz; sccache_target=x86_64-unknown-linux-musl ;; \
          aarch64) trunk_asset=trunk-aarch64-unknown-linux-musl.tar.gz; sccache_target=aarch64-unknown-linux-musl ;; \
        esac \
-    && curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v0.22.1/$trunk_asset" \
+    && curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/trunk-rs/trunk/releases/download/v0.22.1/$trunk_asset" \
        | tar xz -C /usr/local/bin \
-    && curl -fsSL "https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-$sccache_target.tar.gz" \
+    && curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-$sccache_target.tar.gz" \
        | tar xz -C /usr/local/bin --strip-components=1 --wildcards '*/sccache' \
     && rustup target add wasm32-unknown-unknown
 
@@ -34,6 +34,7 @@ COPY crates/ ./crates/
 COPY ui/ ./ui/
 
 # Build the Leptos WebAssembly UI (ui/dist) that build.rs embeds into the binary.
+WORKDIR /build/ui
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
@@ -42,9 +43,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
              ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)" \
              SCCACHE_GHA_ENABLED=on; \
     fi \
-    && cd ui && trunk build --release
+    && trunk build --release
 
 # Build the release binary for rstorrent
+WORKDIR /build
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
@@ -53,7 +55,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
              ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)" \
              SCCACHE_GHA_ENABLED=on; \
     fi \
-    && cargo build --release -p rstorrent
+    && cargo build --release --locked -p rstorrent
 
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
