@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title id="htmlTitle">rstorrent — Nowoczesny, bezpieczny pamięciowo silnik BitTorrent w Rust</title>
-  <meta name="description" id="htmlMetaDesc" content="Nowoczesny, bezpieczny pamięciowo silnik BitTorrent napisany od podstaw w języku Rust. Tokio async runtime, gRPC API, zgodność z SCGI/ruTorrent, TUI (Ratatui) oraz wbudowany Web UI." />
+  <title id="htmlTitle">rstorrent — High-Performance Rust BitTorrent Engine</title>
+  <meta name="description" id="htmlMetaDesc" content="Modern, memory-safe BitTorrent engine written from scratch in Rust. Tokio async runtime, gRPC API, SCGI/ruTorrent compatibility, Ratatui TUI, and embedded Leptos Web UI." />
   <meta name="keywords" content="rstorrent, BitTorrent, Rust, Tokio, P2P, SCGI, ruTorrent, gRPC, Ratatui, TUI, Leptos, BitTorrent v2, Flood" />
   <meta name="author" content="chmuri" />
 
@@ -12,13 +12,13 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://chmuri.github.io/rstorrent/" />
   <meta property="og:title" content="rstorrent — High-Performance Rust BitTorrent Engine" />
-  <meta property="og:description" content="Nowoczesny, wielowątkowy silnik BitTorrent w Rust. Tokio async runtime, gRPC, SCGI, TUI i Web UI." />
+  <meta property="og:description" content="Modern, multithreaded BitTorrent engine in pure Rust. Tokio async runtime, gRPC, SCGI, TUI and Web UI." />
   <meta property="og:site_name" content="rstorrent" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="rstorrent — Rust BitTorrent Engine" />
-  <meta name="twitter:description" content="Nowoczesny, bezpieczny pamięciowo klient i silnik BitTorrent w Rust z obsługą 14 000+ torrentów w jednej sesji." />
+  <meta name="twitter:description" content="Modern, memory-safe BitTorrent client engine in Rust with stable operation across 14,000+ active torrents." />
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2306090f' stroke='%23f74c00' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%230284c7' stroke='%2300f0ff' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffffff'/%3E%3C/svg%3E" />
@@ -693,7 +693,6 @@
       line-height: 1.6;
     }
 
-    /* ARCHITEKTURA - STYLISTYKA ZAAWANSOWANA */
     .arch-filter-tabs {
       display: flex;
       flex-wrap: wrap;
@@ -808,7 +807,6 @@
       word-break: break-all;
     }
 
-    /* DIAGRAM PRZEPŁYWU DANYCH */
     .arch-flow-box {
       background: rgba(9, 14, 25, 0.85);
       border: 1px solid var(--border-subtle);
@@ -853,7 +851,6 @@
       line-height: 1.5;
     }
 
-    /* NIEZMIENNIKI ARCHITEKTURY */
     .invariants-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -881,7 +878,6 @@
       line-height: 1.55;
     }
 
-    /* BENCHMARK STATS */
     .benchmark-hero-box {
       background: linear-gradient(135deg, rgba(14, 23, 42, 0.95), rgba(6, 9, 15, 0.95));
       border: 1px solid var(--border-bright);
@@ -920,7 +916,6 @@
       line-height: 1.5;
     }
 
-    /* DOKUMENTACJA ZAKŁADKI (DOCS TABS) */
     .docs-tab-nav {
       display: flex;
       flex-wrap: wrap;
@@ -996,7 +991,6 @@
     .code-string { color: #38bdf8; }
     .code-fn { color: #34d399; }
 
-    /* TABELA SKRÓTÓW TUI */
     .key-table {
       width: 100%;
       border-collapse: collapse;
@@ -1102,13 +1096,13 @@
         <span>rstorrent</span>
       </a>
       <nav class="nav-links">
-        <a href="#features" data-i18n="nav_features">Cechy</a>
-        <a href="#architecture" data-i18n="nav_architecture">Architektura</a>
-        <a href="#benchmarks" data-i18n="nav_benchmarks">Wydajność</a>
-        <a href="#docs" data-i18n="nav_docs">Dokumentacja</a>
+        <a href="#features" data-i18n="nav_features">Features</a>
+        <a href="#architecture" data-i18n="nav_architecture">Architecture</a>
+        <a href="#benchmarks" data-i18n="nav_benchmarks">Performance</a>
+        <a href="#docs" data-i18n="nav_docs">Quickstart</a>
 
         <div class="lang-picker-wrap">
-          <select id="langSelect" class="lang-selector" aria-label="Wybierz język / Select language">
+          <select id="langSelect" class="lang-selector" aria-label="Select language">
           <option value="en">🇬🇧 English</option>
           <option value="pl">🇵🇱 Polski</option>
           <option value="de">🇩🇪 Deutsch</option>
@@ -1144,11 +1138,11 @@
         </div>
 
         <h1 class="hero-title">
-          <span data-i18n="hero_title_pre">Brama do sieci P2P napisana w</span> <span class="gradient-rust">Rust</span>.
+          <span data-i18n="hero_title_pre">Gateway to P2P networking written in</span> <span class="gradient-rust">Rust</span>.
         </h1>
 
         <p class="hero-subtitle" data-i18n="hero_subtitle">
-          Nowoczesny, wielowątkowy i bezpieczny pamięciowo silnik BitTorrent zaprojektowany z myślą o maksymalnej przepustowości, niskim narzucie pamięci oraz stabilnej obsłudze ponad 14 000 aktywnych zadań. Zgodny z protokołem SCGI (ruTorrent, Flood) oraz z natywnym API gRPC i wbudowanym Web UI.
+          Modern, multithreaded and memory-safe BitTorrent client engine designed for maximum throughput, low memory overhead, and stable operation across 14,000+ active torrents. Full SCGI compatibility (ruTorrent, Flood) with native gRPC API and embedded Web UI.
         </p>
 
         <!-- Szybka instalacja z zakładkami -->
@@ -1163,7 +1157,7 @@
               <span class="prompt-char">$</span>
               <code id="installCmdText">cargo install --git https://github.com/chmuri/rstorrent</code>
             </div>
-            <button class="copy-btn" id="copyCmdBtn" title="Kopiuj polecenie" data-i18n="copy_btn">Kopiuj</button>
+            <button class="copy-btn" id="copyCmdBtn" title="Copy command" data-i18n="copy_btn">Copy</button>
           </div>
         </div>
 
@@ -1171,51 +1165,51 @@
         <div class="cta-row">
           <a href="https://github.com/chmuri/rstorrent" target="_blank" rel="noopener" class="btn btn-primary">
             <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-            <span data-i18n="btn_github">Repozytorium GitHub</span>
+            <span data-i18n="btn_github">GitHub Repository</span>
           </a>
           <button id="heroDialTrigger" class="btn btn-secondary" data-i18n="btn_dial_hero">
-            ⚡ Inicjuj połączenie Swarm
+            ⚡ Dial Swarm Connection
           </button>
         </div>
 
         <!-- Panel telemetrii symulujący pracę węzła rtorrent -->
         <div class="telemetry-panel">
           <div class="telemetry-header">
-            <span data-i18n="telem_header">SWARM GATE // TELEMETRIA WĘZŁA</span>
+            <span data-i18n="telem_header">SWARM GATE // NODE TELEMETRY</span>
             <span class="telemetry-status-badge" id="gateStateText">STABILIZING...</span>
           </div>
           <div class="telemetry-grid">
             <div class="metric-card">
-              <div class="metric-label" data-i18n="telem_peers">Aktywne Peery (Swarm)</div>
+              <div class="metric-label" data-i18n="telem_peers">Active Peers (Swarm)</div>
               <div class="metric-value cyan" id="metricPeers">0 / 128</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label" data-i18n="telem_speed">Przepustowość P2P</div>
+              <div class="metric-label" data-i18n="telem_speed">P2P Throughput</div>
               <div class="metric-value orange" id="metricSpeed">0.0 MB/s</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label" data-i18n="telem_dht">Węzły DHT (Kademlia)</div>
+              <div class="metric-label" data-i18n="telem_dht">DHT Nodes (Kademlia)</div>
               <div class="metric-value" id="metricDht">0 nodes</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label" data-i18n="telem_interfaces">Interfejsy sterujące</div>
+              <div class="metric-label" data-i18n="telem_interfaces">Control Interfaces</div>
               <div class="metric-value green" id="metricSockets">gRPC • SCGI • TUI • WEB</div>
             </div>
           </div>
 
           <div class="sparkline-wrapper">
-            <span class="sparkline-label" data-i18n="telem_sparkline">TRANSFER LIVE</span>
+            <span class="sparkline-label" data-i18n="telem_sparkline">LIVE TRANSFER</span>
             <canvas id="sparklineCanvas"></canvas>
           </div>
 
           <div class="telemetry-log" id="telemetryLog" data-i18n="telem_boot">
-            [BOOT] Inicjalizacja rdzenia Tokio runtime...
+            [BOOT] Initializing Tokio async runtime core...
           </div>
         </div>
       </section>
 
       <!-- Prawa strona: Interaktywna animacja Swarm Gate -->
-      <section class="gate-stage" aria-label="Animacja Swarm Gate">
+      <section class="gate-stage" aria-label="Swarm Gate Animation">
         <div class="gate-wrapper" id="gateWrapper">
           <div class="gate-halo"></div>
           <div class="surge-ring" id="surgeRing"></div>
@@ -1225,13 +1219,13 @@
 
         <div class="gate-controls">
           <button class="ctrl-btn dial-active" id="btnDial">
-            <span data-i18n="btn_dial_gate">▶ DIAL SWARM (Połącz)</span>
+            <span data-i18n="btn_dial_gate">▶ DIAL SWARM (Connect)</span>
           </button>
           <button class="ctrl-btn" id="btnBurst">
-            <span data-i18n="btn_burst">⚡ INJECT PEERS (Impuls)</span>
+            <span data-i18n="btn_burst">⚡ INJECT PEERS (Burst)</span>
           </button>
           <button class="ctrl-btn" id="btnSoundToggle" title="Audio FX Toggle">
-            <span id="soundIcon">🔇</span> <span data-i18n="btn_sound">DŹWIĘK FX:</span> <span id="soundStatusText">WYŁ</span>
+            <span id="soundIcon">🔇</span> <span data-i18n="btn_sound">AUDIO FX:</span> <span id="soundStatusText">OFF</span>
           </button>
           <button class="ctrl-btn" id="btnReset">
             <span data-i18n="btn_reset">↺ RESET GATE</span>
@@ -1243,10 +1237,10 @@
     <!-- SEKCJA CECH -->
     <section id="features" class="section-container">
       <div class="section-header">
-        <span class="section-tag" data-i18n="feat_tag">Technologia &amp; Wydajność</span>
-        <h2 class="section-title" data-i18n="feat_title">Architektura nowej generacji dla BitTorrent</h2>
+        <span class="section-tag" data-i18n="feat_tag">Technology &amp; Performance</span>
+        <h2 class="section-title" data-i18n="feat_title">Next-Generation BitTorrent Architecture</h2>
         <p class="section-desc" data-i18n="feat_desc">
-          Zaprojektowany od zera w Rust w celu wyeliminowania problemów historycznych klientów: wycieków pamięci, blokad wątków I/O i awarii przy tysiącach aktywnych połączeń.
+          Built from scratch in Rust to eliminate the legacy bugs of historical clients: memory leaks, I/O thread stalls, and crashes under heavy multithreaded load.
         </p>
       </div>
 
@@ -1255,7 +1249,7 @@
           <div class="feature-icon">⚡</div>
           <h3 class="feature-name" data-i18n="f1_title">Tokio Async &amp; Zero-Segfault</h3>
           <p class="feature-body" data-i18n="f1_desc">
-            Wielowątkowy asynchroniczny runtime Tokio z nieblokującym I/O dyskowym. Pełne bezpieczeństwo pamięci i odporność na uszkodzenia buforów sieciowych.
+            Multithreaded Tokio async runtime with non-blocking positional disk I/O. Full memory safety and resilience to malformed network buffers.
           </p>
         </div>
 
@@ -1263,7 +1257,7 @@
           <div class="feature-icon">🧩</div>
           <h3 class="feature-name" data-i18n="f2_title">SIMD Rarest-First &amp; Dynamic Endgame</h3>
           <p class="feature-body" data-i18n="f2_desc">
-            Operacje bitfield O(N/64) z wykorzystaniem sprzętowych instrukcji POPCNT/CLZ. Klasyfikacja prędkości peerów, selekcja najrzadszych części i natychmiastowy globalny broadcast CANCEL w trybie endgame.
+            O(N/64) bitfield operations using hardware POPCNT/CLZ instructions. Peer speed classification, rarest-first piece priority, and instant global CANCEL broadcast in endgame mode.
           </p>
         </div>
 
@@ -1271,15 +1265,15 @@
           <div class="feature-icon">🌊</div>
           <h3 class="feature-name" data-i18n="f3_title">Zero-Copy BufferPool &amp; BDP Tuning</h3>
           <p class="feature-body" data-i18n="f3_desc">
-            Bezblokowa arena buforów 16 KiB oparta o crossbeam-queue, zero-copy parser Bencode oraz adaptacyjna głębokość kolejki żądań Q w przedziale 4..512 kalibrowana względem RTT i pasma.
+            Lock-free 16 KiB buffer arena via crossbeam-queue, zero-copy Bencode parsing, and adaptive request queue depth (Q 4..512) tuned to peer RTT and bandwidth.
           </p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">🛡️</div>
-          <h3 class="feature-name" data-i18n="f4_title">Wielowątkowy Hash Piece (Rayon)</h3>
+          <h3 class="feature-name" data-i18n="f4_title">Multithreaded Piece Hashing (Rayon)</h3>
           <p class="feature-body" data-i18n="f4_desc">
-            Kalkulacja sum SHA-1 oraz drzew Merkle SHA-256 (BitTorrent v2) oddelegowana do puli Rayon, dzięki czemu weryfikacja danych nie blokuje wątków asynchronicznych Tokio.
+            Offloaded SHA-1 and BitTorrent v2 SHA-256 Merkle tree hashing to Rayon thread pool, preventing disk validation from starving Tokio executor threads.
           </p>
         </div>
 
@@ -1287,15 +1281,15 @@
           <div class="feature-icon">🔌</div>
           <h3 class="feature-name" data-i18n="f5_title">SCGI, XML-RPC &amp; JSON-RPC</h3>
           <p class="feature-body" data-i18n="f5_desc">
-            Pełna kompatybilność protokołu SCGI przez gniazda UNIX lub TCP. Płynna integracja z ruTorrent, Flood oraz skryptami ekosystemu rTorrent dzięki obszernej mapie komend.
+            Complete SCGI protocol compatibility over UNIX sockets or TCP. Seamless integration with ruTorrent, Flood, pyrosimple, and existing rTorrent tooling.
           </p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">📡</div>
-          <h3 class="feature-name" data-i18n="f6_title">Natywne gRPC &amp; Terminal TUI</h3>
+          <h3 class="feature-name" data-i18n="f6_title">Native gRPC &amp; Terminal TUI</h3>
           <p class="feature-body" data-i18n="f6_desc">
-            Wydajne API gRPC (Tonic rtorrent.v1) ze strumieniowaniem zdarzeń oraz nowoczesny interfejs TUI w terminalu (Ratatui/Crossterm) z dedykowanym klientem zdalnym rtorrent-tui.
+            High-performance Tonic rtorrent.v1 gRPC API with telemetry streaming, paired with an interactive terminal TUI (Ratatui/Crossterm) and remote rtorrent-tui client.
           </p>
         </div>
 
@@ -1303,41 +1297,41 @@
           <div class="feature-icon">🌐</div>
           <h3 class="feature-name" data-i18n="f7_title">BitTorrent v1 &amp; v2 (BEP Suite)</h3>
           <p class="feature-body" data-i18n="f7_desc">
-            Pełne wsparcie dla Kademlia DHT (IPv4/IPv6 BEP 5/32), PEX (BEP 11), Fast Extension (BEP 6), uTP z LEDBAT (BEP 29), szyfrowania MSE/PE, WebSeed oraz torrentów hybrydowych v2.
+            Full support for Kademlia DHT (IPv4/IPv6 BEP 5/32), PEX (BEP 11), Fast Extension (BEP 6), uTP with LEDBAT (BEP 29), MSE/PE encryption, and BitTorrent v2 (BEP 52).
           </p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">💻</div>
-          <h3 class="feature-name" data-i18n="f8_title">Wbudowany Web UI (Leptos / Wasm)</h3>
+          <h3 class="feature-name" data-i18n="f8_title">Embedded Web UI (Leptos / Wasm)</h3>
           <p class="feature-body" data-i18n="f8_desc">
-            Opcjonalny serwer REST + WebSocket oparty o Axum z osadzoną aplikacją SPA napisaną w Rust (Leptos WebAssembly), autoryzacją Bearer token i bezpośrednim podglądem stanu węzła.
+            Opt-in Axum REST + WebSocket server with an embedded single-page app written in Rust (Leptos WebAssembly), Bearer token auth, and real-time node inspection.
           </p>
         </div>
       </div>
     </section>
 
-    <!-- SEKCJA ARCHITEKTURY - ROZSZERZONA O 5 WARSTW, PRZEPŁYW DANYCH I NIEZMIENNIKI -->
+    <!-- SEKCJA ARCHITEKTURY - ROZSZERZONA I W PEŁNI PRZETŁUMACZONA -->
     <section id="architecture" class="section-container">
       <div class="section-header">
-        <span class="section-tag" data-i18n="arch_tag">Modularny Workspace</span>
-        <h2 class="section-title" data-i18n="arch_title">16 wyspecjalizowanych skrzyń (crates)</h2>
+        <span class="section-tag" data-i18n="arch_tag">Modular Workspace</span>
+        <h2 class="section-title" data-i18n="arch_title">16 Specialized Crates</h2>
         <p class="section-desc" data-i18n="arch_subtitle">
-          Modularna architektura 16 skrzyń podzielonych na 5 wyspecjalizowanych warstw z rygorystycznymi gwarancjami bezpieczeństwa pamięci.
+          Modular architecture across 16 crates and 5 distinct layers with compiler-enforced memory safety guarantees.
         </p>
       </div>
 
       <!-- Filtry warstw architektonicznych -->
       <div class="arch-filter-tabs">
-        <button class="arch-filter-btn active" data-layer="all" data-i18n="arch_layer_all">Wszystkie warstwy (16)</button>
-        <button class="arch-filter-btn" data-layer="foundation" data-i18n="arch_layer_foundation">Fundament (3)</button>
-        <button class="arch-filter-btn" data-layer="network" data-i18n="arch_layer_network">Sieć &amp; P2P (5)</button>
-        <button class="arch-filter-btn" data-layer="engine" data-i18n="arch_layer_engine">Rdzeń Silnika (2)</button>
-        <button class="arch-filter-btn" data-layer="rpc" data-i18n="arch_layer_rpc">RPC &amp; Sterowanie (3)</button>
-        <button class="arch-filter-btn" data-layer="ui" data-i18n="arch_layer_ui">Interfejsy UI (3)</button>
+        <button class="arch-filter-btn active" data-layer="all" data-i18n="arch_layer_all">All Layers (16)</button>
+        <button class="arch-filter-btn" data-layer="foundation" data-i18n="arch_layer_foundation">Foundation (3)</button>
+        <button class="arch-filter-btn" data-layer="network" data-i18n="arch_layer_network">Transport &amp; P2P (5)</button>
+        <button class="arch-filter-btn" data-layer="engine" data-i18n="arch_layer_engine">Core Engine (2)</button>
+        <button class="arch-filter-btn" data-layer="rpc" data-i18n="arch_layer_rpc">RPC &amp; Control (3)</button>
+        <button class="arch-filter-btn" data-layer="ui" data-i18n="arch_layer_ui">UI &amp; CLI (3)</button>
       </div>
 
-      <!-- Matryca skrzyń Cargo Workspace -->
+      <!-- Matryca 16 skrzyń Cargo Workspace w pełni tłumaczona -->
       <div class="crate-matrix">
         <!-- Foundation -->
         <div class="crate-item" data-crate-layer="foundation">
@@ -1348,7 +1342,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Podstawowe typy danych: parser/serializer Bencode zero-copy, ułamkowy licznik pasma Rate, Bitfield i HashString.</div>
+          <div class="crate-desc" data-i18n="crate_lt_common_desc">Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.</div>
           <div class="crate-modules">bencode, object, bitfield, rate, hash_string</div>
         </div>
 
@@ -1360,7 +1354,7 @@
               <span class="crate-tag">ISOLATED</span>
             </div>
           </div>
-          <div class="crate-desc">Prymitywy systemowe OS: pliki blokad (.lock), bezpieczny wrapper mmap/fadvise, harmonogram i inotify watch directory.</div>
+          <div class="crate-desc" data-i18n="crate_lt_sys_desc">OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.</div>
           <div class="crate-modules">mmap, poll, log_buffer, scheduler, lockfile, watch</div>
         </div>
 
@@ -1372,7 +1366,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Kryptografia P2P: przyspieszany sprzętowo SHA-1, szyfr RC4 z discard-1024, wymiana kluczy Diffie-Hellman 768-bit (MSE/PE).</div>
+          <div class="crate-desc" data-i18n="crate_lt_crypto_desc">P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).</div>
           <div class="crate-modules">sha1, rc4, diffie_hellman, pe_crypto</div>
         </div>
 
@@ -1385,7 +1379,7 @@
               <span class="crate-tag">ISOLATED</span>
             </div>
           </div>
-          <div class="crate-desc">Warstwa gniazd Tokio TCP/UDP, obsługa dual-stack IPv4/IPv6, grupy dławienia pasma (throttle) i tunele SOCKS5/HTTP proxy.</div>
+          <div class="crate-desc" data-i18n="crate_lt_net_desc">Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.</div>
           <div class="crate-modules">socket, address, throttle, proxy, dns, poller</div>
         </div>
 
@@ -1397,7 +1391,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Maszyna stanów protokołu wire: negocjacja MSE/PE, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11) i LTEP (BEP 10).</div>
+          <div class="crate-desc" data-i18n="crate_lt_protocol_desc">Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).</div>
           <div class="crate-modules">wire, handshake, extensions, pex, ltep</div>
         </div>
 
@@ -1409,7 +1403,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Klient trackerów HTTP/HTTPS oraz UDP (BEP 15) ze scrape, obsługą wielopoziomowych tierów (BEP 12) i backoffem.</div>
+          <div class="crate-desc" data-i18n="crate_lt_tracker_desc">HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.</div>
           <div class="crate-modules">http_tracker, udp_tracker, scrape, tiers</div>
         </div>
 
@@ -1421,7 +1415,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Tablica routingu Kademlia Mainline DHT (BEP 5/32), bootstrapping węzłów, tokeny zapytań, sample_infohashes i persystencja.</div>
+          <div class="crate-desc" data-i18n="crate_lt_dht_desc">Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.</div>
           <div class="crate-modules">routing_table, node, bootstrap, token, nodes6</div>
         </div>
 
@@ -1433,7 +1427,7 @@
               <span class="crate-tag">ISOLATED</span>
             </div>
           </div>
-          <div class="crate-desc">Zarządzanie blokami chunków, pozycjonowany I/O dysku, kolejka HashQueue i szybkie wznawianie sesji (.libtorrent_resume).</div>
+          <div class="crate-desc" data-i18n="crate_lt_storage_desc">Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).</div>
           <div class="crate-modules">memory_chunk, chunk_list, file_list, hash_queue, resume</div>
         </div>
 
@@ -1446,7 +1440,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Koordynator cyklu życia pobierania: selektor kawałków rarest-first, grupy choking/unchoke, delegator prędkości i dynamic endgame.</div>
+          <div class="crate-desc" data-i18n="crate_lt_engine_desc">Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.</div>
           <div class="crate-modules">download_main, choke_manager, selector, delegator</div>
         </div>
 
@@ -1458,7 +1452,7 @@
               <span class="crate-tag">ISOLATED</span>
             </div>
           </div>
-          <div class="crate-desc">Nadzorca sesji klienta: widoki pobierania (main, active, stopped), harmonogram zadań, grupy priorytetów i persystencja stanu.</div>
+          <div class="crate-desc" data-i18n="crate_rt_core_desc">Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.</div>
           <div class="crate-modules">session_manager, download_list, views, schedule</div>
         </div>
 
@@ -1471,7 +1465,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Silnik DSL komend rTorrent (~1000 metod), rejestr wywołań XML-RPC i JSON-RPC 2.0 oraz mostek skryptowy Lua (rtorrent.lua).</div>
+          <div class="crate-desc" data-i18n="crate_rt_rpc_desc">rTorrent command DSL engine (~1000 methods), XML-RPC &amp; JSON-RPC 2.0 registry, and embedded Lua scripting bridge.</div>
           <div class="crate-modules">command_map, dsl_parser, xmlrpc, jsonrpc, lua_bridge</div>
         </div>
 
@@ -1483,7 +1477,7 @@
               <span class="crate-tag">ISOLATED</span>
             </div>
           </div>
-          <div class="crate-desc">Nieblokujący serwer protokołu SCGI na gniazdach UNIX oraz TCP z obsługą keep-alive dla ruTorrent i Flood.</div>
+          <div class="crate-desc" data-i18n="crate_rt_scgi_desc">Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.</div>
           <div class="crate-modules">scgi_listener, request_parser, connection_pool</div>
         </div>
 
@@ -1495,7 +1489,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Wysokowydajny serwis gRPC rtorrent.v1 (TorrentService, SystemService) ze strumieniowaniem telemetrii i zdarzeń w czasie rzeczywistym.</div>
+          <div class="crate-desc" data-i18n="crate_rt_grpc_desc">High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.</div>
           <div class="crate-modules">torrent_service, push_stream, auth_interceptor</div>
         </div>
 
@@ -1508,7 +1502,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Natywny interfejs terminalowy (Ratatui/Crossterm): responsywny bufor płótna, баланс klatek, widoki inspekcji i obsługa myszy.</div>
+          <div class="crate-desc" data-i18n="crate_rt_tui_desc">Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.</div>
           <div class="crate-modules">canvas_buffer, widgets, event_loop, view_switcher</div>
         </div>
 
@@ -1520,7 +1514,7 @@
               <span class="crate-tag safety">SAFE</span>
             </div>
           </div>
-          <div class="crate-desc">Samodzielna binarka rtorrent-tui: zdalne sterowanie demonem rtorrent przez gRPC/TLS na dowolnym hoście sieciowym.</div>
+          <div class="crate-desc" data-i18n="crate_rt_tui_client_desc">Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.</div>
           <div class="crate-modules">grpc_client_bridge, view_model, remote_terminal</div>
         </div>
 
@@ -1532,63 +1526,63 @@
               <span class="crate-tag">ISOLATED</span>
             </div>
           </div>
-          <div class="crate-desc">Główny punkt wejścia CLI, obsługa sygnałów POSIX, supervisor cyklu życia i kompatybilność binarna z symlinkiem rtorrent.</div>
+          <div class="crate-desc" data-i18n="crate_rstorrent_desc">Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.</div>
           <div class="crate-modules">cli_args, supervisor, signal_handler, daemon_mode</div>
         </div>
       </div>
 
-      <!-- Przepływ danych i cykl życia torrenta -->
+      <!-- Przepływ danych i cykl życia torrenta w pełni tłumaczony -->
       <div class="arch-flow-box">
-        <h3 class="section-title" style="font-size: 1.4rem;" data-i18n="arch_flow_title">Przepływ Danych &amp; Cykl Życia Torrenta</h3>
+        <h3 class="section-title" style="font-size: 1.4rem;" data-i18n="arch_flow_title">Dataflow &amp; Torrent Lifecycle</h3>
         <p class="section-desc" style="font-size: 0.92rem;" data-i18n="arch_flow_desc">
-          Ścisły nieblokujący potok: asynchroniczny reaktor Tokio dla sieci oraz odizolowane pule wątków Rayon dla operacji dyskowych i weryfikacji sum kontrolnych.
+          Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.
         </p>
 
         <div class="flow-steps">
           <div class="flow-step-card">
-            <div class="flow-step-num">ETAP 01 // METADATA</div>
-            <div class="flow-step-title">Parsowanie i Konstrukcja</div>
-            <div class="flow-step-body">Bencode parser (lt-common) bez kopiowania przetwarza plik .torrent lub magnet (ut_metadata BEP 9) w TorrentMetadata i obiekt sesji.</div>
+            <div class="flow-step-num" data-i18n="flow_step1_num">STAGE 01 // METADATA</div>
+            <div class="flow-step-title" data-i18n="flow_step1_title">Parsing &amp; Construction</div>
+            <div class="flow-step-body" data-i18n="flow_step1_desc">Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.</div>
           </div>
           <div class="flow-step-card">
-            <div class="flow-step-num">ETAP 02 // SWARM PEERING</div>
-            <div class="flow-step-title">Odkrywanie i Łączenie</div>
-            <div class="flow-step-body">Reaktor lt-net i lt-tracker zgłaszają się do trackerów (HTTP/UDP), a lt-dht przeszukuje tablicę Kademlia w celu pobrania puli peerów.</div>
+            <div class="flow-step-num" data-i18n="flow_step2_num">STAGE 02 // SWARM PEERING</div>
+            <div class="flow-step-title" data-i18n="flow_step2_title">Discovery &amp; Handshake</div>
+            <div class="flow-step-body" data-i18n="flow_step2_desc">Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.</div>
           </div>
           <div class="flow-step-card">
-            <div class="flow-step-num">ETAP 03 // BDP PIPELINING</div>
-            <div class="flow-step-title">Transfer Rarest-First</div>
-            <div class="flow-step-body">Algorytm SIMD wybiera najrzadsze kawałki, kolejkuje zapytania do peerów z adaptacyjną głębokością Q (4..512) i pobiera bloki 16 KiB.</div>
+            <div class="flow-step-num" data-i18n="flow_step3_num">STAGE 03 // BDP PIPELINING</div>
+            <div class="flow-step-title" data-i18n="flow_step3_title">Rarest-First Transfer</div>
+            <div class="flow-step-body" data-i18n="flow_step3_desc">SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.</div>
           </div>
           <div class="flow-step-card">
-            <div class="flow-step-num">ETAP 04 // RAYON HASHING</div>
-            <div class="flow-step-title">Weryfikacja &amp; Zapis</div>
-            <div class="flow-step-body">Kompletny chunk trafia do puli Rayon do weryfikacji SHA-1/256. Po sprawdzeniu zapisywany jest pozycjonowanie na dysku bez blokowania sieci.</div>
+            <div class="flow-step-num" data-i18n="flow_step4_num">STAGE 04 // RAYON HASHING</div>
+            <div class="flow-step-title" data-i18n="flow_step4_title">Validation &amp; Storage</div>
+            <div class="flow-step-body" data-i18n="flow_step4_desc">Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.</div>
           </div>
         </div>
       </div>
 
-      <!-- Trzy Niezmienniki Architektury -->
-      <h3 class="section-title" style="font-size: 1.35rem; margin-bottom: 1.5rem;" data-i18n="arch_invariants_title">Główne Niezmienniki Architektury</h3>
+      <!-- Trzy Niezmienniki Architektury w pełni tłumaczone -->
+      <h3 class="section-title" style="font-size: 1.35rem; margin-bottom: 1.5rem;" data-i18n="arch_invariants_title">Core Architectural Invariants</h3>
       <div class="invariants-grid">
         <div class="invariant-card">
-          <div class="invariant-title" data-i18n="arch_inv1_title">Asynchroniczny Reaktor Sieci + Odizolowane I/O Dysku</div>
+          <div class="invariant-title" data-i18n="arch_inv1_title">Async Network Reactor + Isolated Disk Pool</div>
           <div class="invariant-desc" data-i18n="arch_inv1_desc">
-            Reaktor Tokio obsługuje gniazda P2P, DHT i trackery bez blokad. Odczyty/zapisy plików oraz hashowanie SHA-1/256 oddelegowano do Rayon, dzięki czemu wątki Tokio nigdy nie ulegają głodzeniu.
+            Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.
           </div>
         </div>
 
         <div class="invariant-card">
-          <div class="invariant-title" data-i18n="arch_inv2_title">Weryfikowane przez kompilator granice bezpieczeństwa</div>
+          <div class="invariant-title" data-i18n="arch_inv2_title">Compiler-Enforced Safety Boundaries</div>
           <div class="invariant-desc" data-i18n="arch_inv2_desc">
-            Rygorystyczna reguła unsafe_code = deny w 9 wyższych skrzyniach. Niskopoziomowy kod unsafe ograniczono wyłącznie do prymitywów lt-sys oraz bezpiecznych adapterów mmap.
+            Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.
           </div>
         </div>
 
         <div class="invariant-card">
-          <div class="invariant-title" data-i18n="arch_inv3_title">Bajtowy model danych Bencode bez paniki UTF-8</div>
+          <div class="invariant-title" data-i18n="arch_inv3_title">Byte-Oriented Binary Bencode Model</div>
           <div class="invariant-desc" data-i18n="arch_inv3_desc">
-            Klucze i ciągi bencode przechowywane są jako bufory bajtowe (Bytes / Vec<u8>), co uniemożliwia awarię silnika przy nieprawidłowo zakodowanych nazwach plików z zewnętrznych trackerów.
+            Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.
           </div>
         </div>
       </div>
@@ -1597,56 +1591,55 @@
     <!-- SEKCJA SKALOWALNOŚCI & BENCHMARKS -->
     <section id="benchmarks" class="section-container">
       <div class="section-header">
-        <span class="section-tag" data-i18n="bench_tag">Pomiary &amp; Skalowalność</span>
-        <h2 class="section-title" data-i18n="bench_title">Sprawdzony przy ponad 14 000 aktywnych torrentów</h2>
+        <span class="section-tag" data-i18n="bench_tag">Benchmarks &amp; Scalability</span>
+        <h2 class="section-title" data-i18n="bench_title">Battle-Tested Across 14,000+ Active Torrents</h2>
         <p class="section-desc" data-i18n="bench_desc">
-          Zoptymalizowane struktury danych eliminują wąskie gardła w skrajnych scenariuszach seedyfikacji wielotysięcznych zbiorów danych.
+          Optimized memory layouts and lock-free concurrency structures eliminate bottlenecks during massive seeding sessions.
         </p>
       </div>
 
       <div class="benchmark-hero-box">
         <div>
-          <div class="bench-stat-title" data-i18n="b1_title">Skala sesji</div>
+          <div class="bench-stat-title" data-i18n="b1_title">Session Scale</div>
           <div class="bench-stat-val accent">14 000+</div>
-          <div class="bench-stat-desc" data-i18n="b1_desc">Aktywnych zadań w pojedynczym procesie rtorrent z zachowaniem natychmiastowej responsywności UI.</div>
+          <div class="bench-stat-desc" data-i18n="b1_desc">Active torrents in a single daemon process while maintaining instant UI responsiveness.</div>
         </div>
         <div>
-          <div class="bench-stat-title" data-i18n="b2_title">Czas wyszukiwania</div>
+          <div class="bench-stat-title" data-i18n="b2_title">Lookup Time</div>
           <div class="bench-stat-val">O(1)</div>
-          <div class="bench-stat-desc" data-i18n="b2_desc">Indeksowanie hashy w pamięci z dedykowaną pamięcią podręczną DNS dla serwerów trackerów.</div>
+          <div class="bench-stat-desc" data-i18n="b2_desc">In-memory hash index with dedicated DNS cache for tracker announces.</div>
         </div>
         <div>
-          <div class="bench-stat-title" data-i18n="b3_title">Narzut pamięci</div>
+          <div class="bench-stat-title" data-i18n="b3_title">Memory Footprint</div>
           <div class="bench-stat-val accent">&lt; 35%</div>
-          <div class="bench-stat-desc" data-i18n="b3_desc">Zużycia RAM w porównaniu do klasycznego demona w C++ dzięki zwięzłym reprezentacjom bitowym.</div>
+          <div class="bench-stat-desc" data-i18n="b3_desc">RAM usage compared to legacy C++ daemons thanks to compact bitfields.</div>
         </div>
         <div>
-          <div class="bench-stat-title" data-i18n="b4_title">Wznawianie sesji</div>
+          <div class="bench-stat-title" data-i18n="b4_title">Session Restore</div>
           <div class="bench-stat-val">Parallel</div>
-          <div class="bench-stat-desc" data-i18n="b4_desc">Równoległe odczytywanie stanu sesji .libtorrent_resume z automatycznym ograniczeniem liczby workerów dyskowych.</div>
+          <div class="bench-stat-desc" data-i18n="b4_desc">Parallel reading of .libtorrent_resume files with bounded disk workers.</div>
         </div>
       </div>
     </section>
 
-    <!-- SEKCJA DOKUMENTACJI - ROZBUDOWANE ZAKŁADKI: CLI, CONFIG, KEYBINDINGS, INTEGRACJE -->
+    <!-- SEKCJA DOKUMENTACJI W PEŁNI TŁUMACZONA -->
     <section id="docs" class="section-container">
       <div class="section-header">
-        <span class="section-tag" data-i18n="docs_tag">Dokumentacja Techniczna</span>
-        <h2 class="section-title" data-i18n="docs_title">Uruchomienie, Konfiguracja &amp; Integracje</h2>
+        <span class="section-tag" data-i18n="docs_tag">Quickstart</span>
+        <h2 class="section-title" data-i18n="docs_title">Installation &amp; Deployment</h2>
         <p class="section-desc" data-i18n="docs_desc">
-          Kompletny podręcznik administratora: parametry startowe, konfiguracja ~/.rtorrent.rc, sterowanie TUI oraz integracja z ruTorrent i Flood.
+          Select the most convenient deployment method for your server or desktop workstation.
         </p>
       </div>
 
-      <!-- Nawigacja zakładek dokumentacji -->
       <div class="docs-tab-nav">
-        <button class="doc-tab-btn active" data-doc-pane="cli" data-i18n="doc_tab_cli">CLI &amp; Wdrożenie</button>
-        <button class="doc-tab-btn" data-doc-pane="rc" data-i18n="doc_tab_rc">Konfiguracja .rtorrent.rc</button>
-        <button class="doc-tab-btn" data-doc-pane="keys" data-i18n="doc_tab_keys">Skróty klawiszowe TUI</button>
+        <button class="doc-tab-btn active" data-doc-pane="cli" data-i18n="doc_tab_cli">CLI &amp; Deployment</button>
+        <button class="doc-tab-btn" data-doc-pane="rc" data-i18n="doc_tab_rc">.rtorrent.rc Config</button>
+        <button class="doc-tab-btn" data-doc-pane="keys" data-i18n="doc_tab_keys">TUI Keybindings</button>
         <button class="doc-tab-btn" data-doc-pane="web" data-i18n="doc_tab_web">ruTorrent &amp; Web UI</button>
       </div>
 
-      <!-- ZAKŁADKA 1: CLI & WDROŻENIE -->
+      <!-- ZAKŁADKA 1: CLI -->
       <div class="doc-pane active" id="pane-cli">
         <div class="code-block">
           <div class="code-header">
@@ -1654,19 +1647,19 @@
             <span>BASH</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># Uruchomienie standardowe w terminalu z interaktywnym TUI</span>
-<span class="code-fn">rstorrent</span> [opcje] [ścieżki_do_plików_torrent | linki_magnet | adresy_url]
+<span class="code-comment"># 1. Launch interactive terminal TUI</span>
+<span class="code-fn">rstorrent</span> [options] [torrent-files | magnet-uris | urls]
 
-<span class="code-comment"># Uruchomienie w tle jako demon systemowy (dla serwerów headless / kontenerów)</span>
+<span class="code-comment"># 2. Run as headless server daemon</span>
 <span class="code-fn">rstorrent</span> --daemon -s ~/.rstorrent/session
 
-<span class="code-comment"># Uruchomienie z pominięciem ładowania pliku .rtorrent.rc</span>
+<span class="code-comment"># 3. Launch without loading .rtorrent.rc</span>
 <span class="code-fn">rstorrent</span> -n -o directory.default.set=~/Downloads
 
-<span class="code-comment"># Nadpisanie parametrów konfiguracyjnych w wierszu poleceń (-o key=value)</span>
+<span class="code-comment"># 4. Override configuration options via command line (-o key=value)</span>
 <span class="code-fn">rstorrent</span> -o network.port_range.set=50000-50000 -o network.scgi.open_port=127.0.0.1:5000
 
-<span class="code-comment"># Zdalne sterowanie demonem rtorrent za pomocą lekkiego klienta rtorrent-tui</span>
+<span class="code-comment"># 5. Remote control daemon using lightweight rtorrent-tui client</span>
 <span class="code-fn">rstorrent-tui</span> --connect 127.0.0.1:50051
           </div>
         </div>
@@ -1693,130 +1686,129 @@
         </div>
       </div>
 
-      <!-- ZAKŁADKA 2: CONFIG ~/.rtorrent.rc -->
+      <!-- ZAKŁADKA 2: CONFIG -->
       <div class="doc-pane" id="pane-rc">
         <div class="code-block">
           <div class="code-header">
-            <span>KOMPLETNY PRZYKŁAD KONFIGURACJI: ~/.rtorrent.rc</span>
+            <span>ANNOTATED CONFIGURATION: ~/.rtorrent.rc</span>
             <span>CONF</span>
           </div>
           <div class="code-content">
 <span class="code-comment"># ====================================================================</span>
-<span class="code-comment"># rtorrent — Wzorcowy plik konfiguracyjny (~/.rtorrent.rc)</span>
+<span class="code-comment"># rtorrent — Configuration Reference (~/.rtorrent.rc)</span>
 <span class="code-comment"># ====================================================================</span>
 
-<span class="code-comment"># 1. Ścieżki katalogów</span>
+<span class="code-comment"># 1. Directory paths</span>
 <span class="code-fn">directory.default.set</span> = ~/Downloads
 <span class="code-fn">session.path.set</span>      = ~/.rstorrent/session
 
-<span class="code-comment"># 2. Zakresy portów sieciowych P2P i Kademlia DHT</span>
+<span class="code-comment"># 2. Network port ranges for P2P and Kademlia DHT</span>
 <span class="code-fn">network.port_range.set</span> = 50000-50000
 <span class="code-fn">dht.port.set</span>           = 6881
 <span class="code-fn">dht.mode.set</span>           = auto
 
-<span class="code-comment"># 3. Limity przepustowości (w KiB/s; 0 oznacza brak limitu)</span>
+<span class="code-comment"># 3. Bandwidth throttle limits (in KiB/s; 0 is unlimited)</span>
 <span class="code-fn">throttle.global_down.max_rate.set_kb</span> = 0
 <span class="code-fn">throttle.global_up.max_rate.set_kb</span>   = 10240
 
-<span class="code-comment"># 4. Automatyczny katalog obserwowany (Watch Directory inotify)</span>
-<span class="code-comment"># Automatycznie ładuje i uruchamia nowe pliki *.torrent wrzucone do folderu</span>
+<span class="code-comment"># 4. Inotify watch directory: automatically load and start new .torrent files</span>
 <span class="code-fn">schedule2</span> = watch_directory,5,5,"load.start=~/.rstorrent/watch/*.torrent"
 
-<span class="code-comment"># 5. Konfiguracja serwera SCGI (dla ruTorrent / Flood)</span>
-<span class="code-comment"># Opcja A: bezpieczne gniazdo lokalne UNIX</span>
+<span class="code-comment"># 5. SCGI Server for ruTorrent and Flood</span>
+<span class="code-comment"># Option A: UNIX domain socket (Recommended for local / shared volume)</span>
 <span class="code-fn">network.scgi.open_local</span> = ~/.rstorrent/session/rtorrent.sock
 
-<span class="code-comment"># Opcja B: gniazdo TCP (np. dla połączeń z sieci kontenerów Docker)</span>
+<span class="code-comment"># Option B: TCP port (e.g. for container network)</span>
 <span class="code-comment"># network.scgi.open_port = 127.0.0.1:5000</span>
 
-<span class="code-comment"># 6. Optymalizacja workerów dyskowych i hashowania (zgodnie z rstorrent.default.rc)</span>
-<span class="code-comment"># storage.disk_threads = 4        # 4 wątki dla szybkich macierzy NVMe</span>
-<span class="code-comment"># storage.hash_concurrency = 4    # współbieżne zadania sprawdzania sum kontrolnych</span>
-<span class="code-comment"># storage.max_open_files = 1024   # maksymalna liczba otwartych deskryptorów</span>
+<span class="code-comment"># 6. Disk worker and hashing tuning</span>
+<span class="code-comment"># storage.disk_threads = 4        # 4 threads for NVMe storage arrays</span>
+<span class="code-comment"># storage.hash_concurrency = 4    # concurrent piece verification tasks</span>
+<span class="code-comment"># storage.max_open_files = 1024   # maximum open file descriptors</span>
           </div>
         </div>
       </div>
 
-      <!-- ZAKŁADKA 3: TUI KEYBINDINGS -->
+      <!-- ZAKŁADKA 3: KEYBINDINGS W PEŁNI TŁUMACZONA -->
       <div class="doc-pane" id="pane-keys">
         <table class="key-table">
           <thead>
             <tr>
-              <th style="width: 220px;">Skrót Klawiszowy</th>
-              <th>Działanie w Terminalu (Ratatui TUI)</th>
-              <th>Tryb Pracy</th>
+              <th style="width: 220px;" data-i18n="key_th_shortcut">Key Shortcut</th>
+              <th data-i18n="key_th_action">Terminal Action (Ratatui TUI)</th>
+              <th data-i18n="key_th_mode">Mode</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><span class="key-badge">1</span> .. <span class="key-badge">7</span> lub <span class="key-badge">&larr;</span> <span class="key-badge">&rarr;</span></td>
-              <td>Przełączanie widoków pobierania: Wszystkie, Nazwy, Pobierane, Wysyłane, Aktywne, Zatrzymane, Błędy</td>
-              <td>Nawigacja</td>
+              <td><span class="key-badge">1</span> .. <span class="key-badge">7</span> / <span class="key-badge">&larr;</span> <span class="key-badge">&rarr;</span></td>
+              <td data-i18n="key_act_views">Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error</td>
+              <td data-i18n="mode_nav">Navigation</td>
             </tr>
             <tr>
-              <td><span class="key-badge">&uarr;</span> <span class="key-badge">&darr;</span> lub <span class="key-badge">j</span> <span class="key-badge">k</span></td>
-              <td>Przewijanie kursora listy zadań (pełna obsługa nawigacji w stylu Vim)</td>
-              <td>Normal</td>
+              <td><span class="key-badge">&uarr;</span> <span class="key-badge">&darr;</span> / <span class="key-badge">j</span> <span class="key-badge">k</span></td>
+              <td data-i18n="key_act_scroll">Scroll torrent list (Full Vim-style j/k alongside arrow keys)</td>
+              <td data-i18n="mode_normal">Normal</td>
             </tr>
             <tr>
-              <td><span class="key-badge">Space</span> lub <span class="key-badge">Ctrl+A</span></td>
-              <td>Wizualne zaznaczanie jednego lub wielu zadań do operacji zbiorczych (Visual Select)</td>
-              <td>Visual</td>
+              <td><span class="key-badge">Space</span> / <span class="key-badge">Ctrl+A</span></td>
+              <td data-i18n="key_act_select">Visually multi-select one or more torrents for batch operations</td>
+              <td data-i18n="mode_visual">Visual</td>
             </tr>
             <tr>
               <td><span class="key-badge">s</span></td>
-              <td>Uruchomienie (Start) zaznaczonych torrentów</td>
-              <td>Akcja</td>
+              <td data-i18n="key_act_start">Start selected torrent downloads/seeding</td>
+              <td data-i18n="mode_action">Action</td>
             </tr>
             <tr>
               <td><span class="key-badge">p</span></td>
-              <td>Wstrzymanie (Pause / Stop) zaznaczonych transferów</td>
-              <td>Akcja</td>
+              <td data-i18n="key_act_pause">Pause or stop selected active transfers</td>
+              <td data-i18n="mode_action">Action</td>
             </tr>
             <tr>
               <td><span class="key-badge">x</span></td>
-              <td>Usunięcie zadania z sesji (z oknem potwierdzenia usunięcia danych lub samego zadania)</td>
-              <td>Modal</td>
+              <td data-i18n="key_act_remove">Remove torrent with confirmation modal (keep or delete data)</td>
+              <td data-i18n="mode_modal">Modal</td>
             </tr>
             <tr>
               <td><span class="key-badge">r</span></td>
-              <td>Wymuszenie ponownej weryfikacji sum kontrolnych kawałków (Rehash)</td>
-              <td>Akcja</td>
+              <td data-i18n="key_act_recheck">Force recheck and rehash chunk verification</td>
+              <td data-i18n="mode_action">Action</td>
             </tr>
             <tr>
-              <td><span class="key-badge">Enter</span> lub <span class="key-badge">i</span></td>
-              <td>Otwarcie panelu szczegółów zadania (Inspektor: pliki, lista peerów, trackery, chunk map)</td>
-              <td>Inspektor</td>
+              <td><span class="key-badge">Enter</span> / <span class="key-badge">i</span></td>
+              <td data-i18n="key_act_inspect">Open inspector panel: file list, peer connections, trackers, chunk map</td>
+              <td data-i18n="mode_inspect">Inspector</td>
             </tr>
             <tr>
               <td><span class="key-badge">a</span> <span class="key-badge">s</span> <span class="key-badge">d</span></td>
-              <td>Zwiększenie limitu wysyłania (Upload) odpowiednio o +1, +5, +50 KB/s</td>
-              <td>Throttling</td>
+              <td data-i18n="key_act_up_throttle">Increase upload bandwidth limit by +1, +5, +50 KB/s</td>
+              <td data-i18n="mode_throttle">Throttling</td>
             </tr>
             <tr>
               <td><span class="key-badge">z</span> <span class="key-badge">x</span> <span class="key-badge">c</span></td>
-              <td>Zmniejszenie limitu wysyłania (Upload) odpowiednio o -1, -5, -50 KB/s</td>
-              <td>Throttling</td>
+              <td data-i18n="key_act_down_throttle">Decrease upload bandwidth limit by -1, -5, -50 KB/s</td>
+              <td data-i18n="mode_throttle">Throttling</td>
             </tr>
             <tr>
               <td><span class="key-badge">A</span> <span class="key-badge">S</span> <span class="key-badge">D</span></td>
-              <td>Zwiększenie limitu pobierania (Download) odpowiednio o +1, +5, +50 KB/s</td>
-              <td>Throttling</td>
+              <td data-i18n="key_act_dl_throttle">Increase download bandwidth limit by +1, +5, +50 KB/s</td>
+              <td data-i18n="mode_throttle">Throttling</td>
             </tr>
             <tr>
               <td><span class="key-badge">Z</span> <span class="key-badge">X</span> <span class="key-badge">C</span></td>
-              <td>Zmniejszenie limitu pobierania (Download) odpowiednio o -1, -5, -50 KB/s</td>
-              <td>Throttling</td>
+              <td data-i18n="key_act_dldown_throttle">Decrease download bandwidth limit by -1, -5, -50 KB/s</td>
+              <td data-i18n="mode_throttle">Throttling</td>
             </tr>
             <tr>
-              <td><span class="key-badge">/</span> lub <span class="key-badge">f</span></td>
-              <td>Wyszukiwanie i filtrowanie listy zadań w czasie rzeczywistym (Fuzzy Filter)</td>
-              <td>Filtr</td>
+              <td><span class="key-badge">/</span> / <span class="key-badge">f</span></td>
+              <td data-i18n="key_act_filter">Real-time fuzzy search and filter torrent list</td>
+              <td data-i18n="mode_filter">Filter</td>
             </tr>
             <tr>
               <td><span class="key-badge">?</span></td>
-              <td>Wyświetlenie pełnej ściągawki ze skrótami klawiszowymi (Help Modal)</td>
-              <td>Pomoc</td>
+              <td data-i18n="key_act_help">Display interactive keyboard shortcut cheatsheet</td>
+              <td data-i18n="mode_help">Help</td>
             </tr>
           </tbody>
         </table>
@@ -1830,23 +1822,21 @@
             <span>PHP</span>
           </div>
           <div class="code-content">
-<span class="code-comment">// ruTorrent - konfiguracja połączenia z rtorrent w conf/config.php</span>
+<span class="code-comment">// ruTorrent connection settings in conf/config.php</span>
 
-<span class="code-comment">// Metoda 1: Połączenie przez gniazdo UNIX domain socket (Zalecane pod kątem wydajności i bezpieczeństwa)</span>
+<span class="code-comment">// Method 1: UNIX Domain Socket (Recommended for security and performance)</span>
 $scgi_port = 0;
 $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rtorrent.sock"</span>;
 
-<span class="code-comment">// Metoda 2: Połączenie sieciowe SCGI TCP (np. między kontenerami)</span>
+<span class="code-comment">// Method 2: SCGI TCP Socket</span>
 <span class="code-comment">// $scgi_port = 5000;</span>
 <span class="code-comment">// $scgi_host = "127.0.0.1";</span>
-
-<span class="code-comment">// Zgodność XML-RPC: rstorrent udostępnia pełną mapę komend rtorrent.</span>
           </div>
         </div>
 
         <div class="code-block">
           <div class="code-header">
-            <span>NGINX // REVERSE PROXY SCGI DLA RUTORRENT</span>
+            <span>NGINX // REVERSE PROXY SCGI LOCATION</span>
             <span>NGINX</span>
           </div>
           <div class="code-content">
@@ -1861,14 +1851,14 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
 
         <div class="code-block">
           <div class="code-header">
-            <span>GRPC REMOTE TUI // STEROWANIE ZDALNE</span>
+            <span>GRPC REMOTE TUI // NETWORK CLI CONTROL</span>
             <span>BASH</span>
           </div>
           <div class="code-content">
-<span class="code-comment"># Uruchom demon rtorrent z otwartym portem gRPC</span>
+<span class="code-comment"># 1. Start daemon with gRPC server enabled</span>
 <span class="code-fn">rstorrent</span> --daemon --grpc-port 50051
 
-<span class="code-comment"># Połącz zdalnego klienta TUI z dowolnego komputera przez sieć</span>
+<span class="code-comment"># 2. Connect client from any machine over TCP/TLS</span>
 <span class="code-fn">rstorrent-tui</span> --connect 192.168.1.100:50051
           </div>
         </div>
@@ -1880,21 +1870,21 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
   <footer>
     <div class="footer-content">
       <div>
-        <p><strong>rstorrent</strong> &mdash; <span data-i18n="footer_desc">Nowoczesny silnik BitTorrent w języku Rust.</span></p>
-        <p style="margin-top: 0.35rem; font-size: 0.78rem;" data-i18n="footer_license">Licencja GNU GPL v2+ &bull; Autor: @chmuri</p>
+        <p><strong>rstorrent</strong> &mdash; <span data-i18n="footer_desc">Modern BitTorrent client &amp; engine written in pure Rust.</span></p>
+        <p style="margin-top: 0.35rem; font-size: 0.78rem;" data-i18n="footer_license">GNU GPL v2+ License &bull; Author: @chmuri</p>
       </div>
       <div class="footer-links">
-        <a href="https://github.com/chmuri/rstorrent" target="_blank" rel="noopener" data-i18n="btn_github">Repozytorium GitHub</a>
+        <a href="https://github.com/chmuri/rstorrent" target="_blank" rel="noopener" data-i18n="btn_github">GitHub Repository</a>
         <a href="https://github.com/chmuri/rstorrent/releases" target="_blank" rel="noopener">Releases</a>
         <a href="https://github.com/chmuri/rstorrent/issues" target="_blank" rel="noopener">Issues</a>
-        <a href="https://github.com/chmuri/rstorrent/blob/main/docs/scalability.md" target="_blank" rel="noopener" data-i18n="footer_scalability">Skalowalność</a>
+        <a href="https://github.com/chmuri/rstorrent/blob/main/docs/scalability.md" target="_blank" rel="noopener" data-i18n="footer_scalability">Scalability Report</a>
       </div>
     </div>
   </footer>
 
   <script>
     /**
-     * I18N System & Swarm Gate Visualization
+     * Complete I18N System & Swarm Gate Visualization
      */
     const I18N = {
   "en": {
@@ -1969,22 +1959,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Modern BitTorrent client & engine written in pure Rust.",
     "footer_license": "GNU GPL v2+ License • Author: @chmuri",
     "footer_scalability": "Scalability Report",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -1996,7 +2014,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "pl": {
     "page_title": "rstorrent — Nowoczesny, bezpieczny pamięciowo silnik BitTorrent w Rust",
@@ -2070,15 +2114,36 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Nowoczesny silnik BitTorrent w języku Rust.",
     "footer_license": "Licencja GNU GPL v2+ • Autor: @chmuri",
     "footer_scalability": "Raport skalowalności",
-    "arch_subtitle": "Modularna architektura 16 skrzyń podzielonych na 5 wyspecjalizowanych warstw",
+    "crate_lt_common_desc": "Podstawowe typy danych: parser/serializer Bencode zero-copy, ułamkowy licznik pasma Rate, Bitfield i HashString.",
+    "crate_lt_sys_desc": "Prymitywy systemowe OS: pliki blokad (.lock), bezpieczny wrapper mmap/fadvise, harmonogram i inotify watch directory.",
+    "crate_lt_crypto_desc": "Kryptografia P2P: przyspieszany sprzętowo SHA-1, szyfr RC4 z discard-1024, wymiana kluczy Diffie-Hellman 768-bit (MSE/PE).",
+    "crate_lt_net_desc": "Warstwa gniazd Tokio TCP/UDP, obsługa dual-stack IPv4/IPv6, grupy dławienia pasma (throttle) i tunele SOCKS5/HTTP proxy.",
+    "crate_lt_protocol_desc": "Maszyna stanów protokołu wire: negocjacja MSE/PE, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11) i LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "Klient trackerów HTTP/HTTPS oraz UDP (BEP 15) ze scrape, obsługą wielopoziomowych tierów (BEP 12) i backoffem.",
+    "crate_lt_dht_desc": "Tablica routingu Kademlia Mainline DHT (BEP 5/32), bootstrapping węzłów, tokeny zapytań, sample_infohashes i persystencja.",
+    "crate_lt_storage_desc": "Zarządzanie blokami chunków, pozycjonowany I/O dysku, kolejka HashQueue i szybkie wznawianie sesji (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Koordynator cyklu życia pobierania: selektor kawałków rarest-first, grupy choking/unchoke, delegator prędkości i dynamic endgame.",
+    "crate_rt_core_desc": "Nadzorca sesji klienta: widoki pobierania (main, active, stopped), harmonogram zadań, grupy priorytetów i persystencja stanu.",
+    "crate_rt_rpc_desc": "Silnik DSL komend rTorrent (~1000 metod), rejestr wywołań XML-RPC i JSON-RPC 2.0 oraz mostek skryptowy Lua (rtorrent.lua).",
+    "crate_rt_scgi_desc": "Nieblokujący serwer protokołu SCGI na gniazdach UNIX oraz TCP z obsługą keep-alive dla ruTorrent i Flood.",
+    "crate_rt_grpc_desc": "Wysokowydajny serwis gRPC rtorrent.v1 (TorrentService, SystemService) ze strumieniowaniem telemetrii i zdarzeń w czasie rzeczywistym.",
+    "crate_rt_tui_desc": "Natywny interfejs terminalowy (Ratatui/Crossterm): responsywny bufor płótna, balans klatek, widoki inspekcji i obsługa myszy.",
+    "crate_rt_tui_client_desc": "Samodzielna binarka rtorrent-tui: zdalne sterowanie demonem rtorrent przez gRPC/TLS na dowolnym hoście sieciowym.",
+    "crate_rstorrent_desc": "Główny punkt wejścia CLI, obsługa sygnałów POSIX, supervisor cyklu życia i kompatybilność binarna z symlinkiem rtorrent.",
+    "flow_step1_num": "ETAP 01 // METADANE",
+    "flow_step1_title": "Parsowanie i Konstrukcja",
+    "flow_step1_desc": "Parser Bencode zero-copy przetwarza plik .torrent lub magnet (ut_metadata BEP 9) w obiekt sesji bez niepotrzebnych alokacji.",
+    "flow_step2_num": "ETAP 02 // PEERING ROJU",
+    "flow_step2_title": "Odkrywanie i Łączenie",
+    "flow_step2_desc": "Reaktor sieci ogłasza się trackerom HTTP/UDP, a moduł DHT przeszukuje Kademlię w celu zestawienia puli połączeń.",
+    "flow_step3_num": "ETAP 03 // PIPELINING BDP",
+    "flow_step3_title": "Transfer Rarest-First",
+    "flow_step3_desc": "Algorytm SIMD wybiera najrzadsze części, kolejkując zapytania (Q 4..512) adaptacyjnie do przepustowości i RTT peera.",
+    "flow_step4_num": "ETAP 04 // HASHOWANIE RAYON",
+    "flow_step4_title": "Weryfikacja i Zapis",
+    "flow_step4_desc": "Pobrany chunk weryfikowany jest w puli Rayon (SHA-1/256), a następnie zapisywany nieblokująco na dysku.",
     "arch_flow_title": "Przepływ Danych & Cykl Życia Torrenta",
     "arch_flow_desc": "Ścisły nieblokujący potok: asynchroniczny reaktor Tokio dla sieci oraz odizolowane pule wątków Rayon dla operacji dyskowych i weryfikacji sum kontrolnych.",
-    "arch_layer_all": "Wszystkie warstwy (16)",
-    "arch_layer_foundation": "Fundament (3)",
-    "arch_layer_network": "Sieć & P2P (5)",
-    "arch_layer_engine": "Rdzeń Silnika (2)",
-    "arch_layer_rpc": "RPC & Sterowanie (3)",
-    "arch_layer_ui": "Interfejsy UI (3)",
     "arch_invariants_title": "Główne Niezmienniki Architektury",
     "arch_inv1_title": "Asynchroniczny Reaktor Sieci + Odizolowane I/O Dysku",
     "arch_inv1_desc": "Reaktor Tokio obsługuje gniazda P2P, DHT i trackery bez blokad. Odczyty/zapisy plików oraz hashowanie SHA-1/256 oddelegowano do Rayon, dzięki czemu wątki Tokio nigdy nie ulegają głodzeniu.",
@@ -2086,6 +2151,13 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "arch_inv2_desc": "Rygorystyczna reguła unsafe_code = deny w 9 wyższych skrzyniach. Niskopoziomowy kod unsafe ograniczono wyłącznie do prymitywów lt-sys oraz bezpiecznych adapterów mmap.",
     "arch_inv3_title": "Bajtowy model danych Bencode bez paniki UTF-8",
     "arch_inv3_desc": "Klucze i ciągi bencode przechowywane są jako bufory bajtowe (Bytes / Vec<u8>), co uniemożliwia awarię silnika przy nieprawidłowo zakodowanych nazwach plików z zewnętrznych trackerów.",
+    "arch_subtitle": "Modularna architektura 16 skrzyń podzielonych na 5 wyspecjalizowanych warstw",
+    "arch_layer_all": "Wszystkie warstwy (16)",
+    "arch_layer_foundation": "Fundament (3)",
+    "arch_layer_network": "Sieć & P2P (5)",
+    "arch_layer_engine": "Rdzeń Silnika (2)",
+    "arch_layer_rpc": "RPC & Sterowanie (3)",
+    "arch_layer_ui": "Interfejsy UI (3)",
     "doc_tab_cli": "CLI & Wdrożenie",
     "doc_tab_rc": "Konfiguracja .rtorrent.rc",
     "doc_tab_keys": "Skróty klawiszowe TUI",
@@ -2097,7 +2169,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Nawigacja w Terminalu i Ergonomia Sterowania",
     "doc_keys_desc": "Pełna obsługa klawiszy strzałek obok nawigacji Vim (j/k/h/l), wizualne zaznaczanie wielu elementów (Spacja) oraz dedykowane okna modalne.",
     "doc_web_title": "Podłączenie Frontendów: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Bezproblemowa współpraca z klasycznymi interfejsami przez gniazdo UNIX socket / TCP SCGI lub natywne strumienie gRPC Tonic."
+    "doc_web_desc": "Bezproblemowa współpraca z klasycznymi interfejsami przez gniazdo UNIX socket / TCP SCGI lub natywne strumienie gRPC Tonic.",
+    "key_th_shortcut": "Skrót Klawiszowy",
+    "key_th_action": "Działanie w Terminalu (Ratatui TUI)",
+    "key_th_mode": "Tryb Pracy",
+    "key_act_views": "Przełączanie widoków pobierania: Wszystkie, Nazwy, Pobierane, Wysyłane, Aktywne, Zatrzymane, Błędy",
+    "key_act_scroll": "Przewijanie kursora listy zadań (pełna obsługa nawigacji w stylu Vim j/k)",
+    "key_act_select": "Wizualne zaznaczanie jednego lub wielu zadań do operacji zbiorczych (Visual Select)",
+    "key_act_start": "Uruchomienie (Start) zaznaczonych torrentów",
+    "key_act_pause": "Wstrzymanie (Pause / Stop) zaznaczonych transferów",
+    "key_act_remove": "Usunięcie zadania z sesji (z oknem potwierdzenia usunięcia danych lub samego zadania)",
+    "key_act_recheck": "Wymuszenie ponownej weryfikacji sum kontrolnych kawałków (Rehash)",
+    "key_act_inspect": "Otwarcie panelu szczegółów zadania (Inspektor: pliki, lista peerów, trackery, chunk map)",
+    "key_act_up_throttle": "Zwiększenie limitu wysyłania (Upload) odpowiednio o +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Zmniejszenie limitu wysyłania (Upload) odpowiednio o -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Zwiększenie limitu pobierania (Download) odpowiednio o +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Zmniejszenie limitu pobierania (Download) odpowiednio o -1, -5, -50 KB/s",
+    "key_act_filter": "Wyszukiwanie i filtrowanie listy zadań w czasie rzeczywistym (Fuzzy Filter)",
+    "key_act_help": "Wyświetlenie pełnej ściągawki ze skrótami klawiszowymi (Help Modal)",
+    "mode_nav": "Nawigacja",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Akcja",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspektor",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filtr",
+    "mode_help": "Pomoc"
   },
   "de": {
     "page_title": "rstorrent — Hochleistungs-BitTorrent-Engine in Rust",
@@ -2171,34 +2269,88 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Moderne BitTorrent-Engine geschrieben in reinem Rust.",
     "footer_license": "GNU GPL v2+ Lizenz • Autor: @chmuri",
     "footer_scalability": "Skalierungsbericht",
-    "arch_subtitle": "Modulare Architektur aufgeteilt in 16 Crates und 5 Schichten",
-    "arch_flow_title": "Datenfluss & Torrent-Lebenszyklus",
-    "arch_flow_desc": "Nicht-blockierende Pipeline: Asynchrones Netzwerk via Tokio und isolierte Rayon-Threadpools für Disk-I/O und Hashing.",
-    "arch_layer_all": "Alle Schichten (16)",
-    "arch_layer_foundation": "Fundament (3)",
-    "arch_layer_network": "Netzwerk & P2P (5)",
-    "arch_layer_engine": "Kern-Engine (2)",
-    "arch_layer_rpc": "RPC & Steuerung (3)",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Zentrale Architekturprinzipien",
-    "arch_inv1_title": "Asynchroner Netzwerk-Reaktor + Isolierter Disk-Pool",
-    "arch_inv1_desc": "Tokio-Reaktor bedient Sockets und DHT ohne Wartezeiten. Disk-I/O und Hashing laufen separat in Rayon-Threads.",
-    "arch_inv2_title": "Strikte Speichersicherheits-Grenzen",
-    "arch_inv2_desc": "unsafe_code = deny in allen höheren Crates. Unsafe-Code ist streng auf lt-sys und mmap begrenzt.",
-    "arch_inv3_title": "Byte-orientiertes Bencode-Datenmodell",
-    "arch_inv3_desc": "Bencode-Schlüssel werden als Byte-Buffer verarbeitet, wodurch UTF-8-Inkompatibilitäten ausgeschlossen sind.",
     "doc_tab_cli": "CLI & Deployment",
-    "doc_tab_rc": ".rtorrent.rc Konfiguration",
-    "doc_tab_keys": "TUI Tastaturkürzel",
-    "doc_tab_web": "ruTorrent & Web-UI",
-    "doc_cli_title": "Kommandozeilen-Interface & Daemon-Modi",
-    "doc_cli_desc": "Interaktives TUI starten, als Daemon im Hintergrund ausführen oder mit remote rtorrent-tui steuern.",
-    "doc_rc_title": "Kommentierte Konfigurationsreferenz",
-    "doc_rc_desc": "Standard-Syntax mit voller Befehls-DSL: Sitzungspfade, Portbereiche, Bandbreitendrosselung und Watch-Verzeichnis.",
-    "doc_keys_title": "Interaktive Terminalnavigation",
-    "doc_keys_desc": "Ergonomische Bedienung mit Pfeiltasten und Vim-Shortcuts (j/k/h/l) sowie visueller Mehrfachauswahl.",
-    "doc_web_title": "Frontend-Integrationen: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Verbinde Web-UIs via SCGI UNIX-Socket oder TCP, oder nutze moderne Tonic gRPC-Streams."
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "fr": {
     "page_title": "rstorrent — Moteur BitTorrent haute performance en Rust",
@@ -2272,34 +2424,88 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Moteur BitTorrent moderne écrit en pur Rust.",
     "footer_license": "Licence GNU GPL v2+ • Auteur : @chmuri",
     "footer_scalability": "Rapport d'évolutivité",
-    "arch_subtitle": "Architecture modulaire structurée en 16 crates et 5 couches",
-    "arch_flow_title": "Flux de Données & Cycle de Vie des Torrents",
-    "arch_flow_desc": "Pipeline non bloquant : réseau piloté par Tokio async et opérations disque déportées sur des pools de threads Rayon.",
-    "arch_layer_all": "Toutes les couches (16)",
-    "arch_layer_foundation": "Fondation (3)",
-    "arch_layer_network": "Réseau & P2P (5)",
-    "arch_layer_engine": "Moteur Central (2)",
-    "arch_layer_rpc": "RPC & Contrôle (3)",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Invariants Fondamentaux de Conception",
-    "arch_inv1_title": "Réacteur Réseau Asynchrone + Pool Disque Isolé",
-    "arch_inv1_desc": "Tokio gère les sockets P2P et le DHT sans blocage. Les écritures disque et hachages SHA sont délégués à Rayon.",
-    "arch_inv2_title": "Sécurité Garantie par le Compilateur",
-    "arch_inv2_desc": "Règle stricte unsafe_code = deny dans les couches supérieures, isolant le code non sécurisé dans lt-sys.",
-    "arch_inv3_title": "Modèle de Données Bencode Orienté Octets",
-    "arch_inv3_desc": "Les données Bencode sont traitées sous forme de tampons d'octets, évitant tout crash lié à un encodage UTF-8 corrompu.",
-    "doc_tab_cli": "CLI & Déploiement",
-    "doc_tab_rc": "Configuration .rtorrent.rc",
-    "doc_tab_keys": "Raccourcis TUI",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
     "doc_tab_web": "ruTorrent & Web UI",
-    "doc_cli_title": "Interface en Ligne de Commande & Modes Démon",
-    "doc_cli_desc": "Lancez rtorrent en mode interactif avec TUI, en démon serveur ou via le client distant rtorrent-tui.",
-    "doc_rc_title": "Fichier de Configuration Commenté",
-    "doc_rc_desc": "Syntaxe ~/.rtorrent.rc complète : chemins de session, ports, limitation de bande passante et watch directory inotify.",
-    "doc_keys_title": "Navigation Terminal & Ergonomie",
-    "doc_keys_desc": "Support simultané des flèches directionnelles et des raccourcis Vim (j/k/h/l) avec sélection multiple.",
-    "doc_web_title": "Intégration d'Interfaces : ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connectez vos interfaces favorites via socket UNIX SCGI ou flux gRPC Tonic haute performance."
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "es": {
     "page_title": "rstorrent — Motor BitTorrent de alto rendimiento en Rust",
@@ -2373,34 +2579,88 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Motor BitTorrent moderno escrito en Rust puro.",
     "footer_license": "Licencia GNU GPL v2+ • Autor: @chmuri",
     "footer_scalability": "Informe de escalabilidad",
-    "arch_subtitle": "Arquitectura modular estructurada en 16 crates y 5 capas",
-    "arch_flow_title": "Flujo de Datos y Ciclo de Vida del Torrent",
-    "arch_flow_desc": "Canalización no bloqueante: red impulsada por Tokio y operaciones de disco delegadas a hilos de Rayon.",
-    "arch_layer_all": "Todas las capas (16)",
-    "arch_layer_foundation": "Base (3)",
-    "arch_layer_network": "Red y P2P (5)",
-    "arch_layer_engine": "Motor Principal (2)",
-    "arch_layer_rpc": "RPC y Control (3)",
-    "arch_layer_ui": "UI y CLI (3)",
-    "arch_invariants_title": "Invariantes de Arquitectura",
-    "arch_inv1_title": "Reactor de Red Asíncrono + Pool de Disco Aislado",
-    "arch_inv1_desc": "Tokio gestiona sockets P2P y DHT sin demoras. Las escrituras de disco y cálculo de hash se procesan en hilos Rayon.",
-    "arch_inv2_title": "Seguridad Verificada por el Compilador",
-    "arch_inv2_desc": "Regla estricta unsafe_code = deny en todos los componentes superiores. Código no seguro aislado en lt-sys.",
-    "arch_inv3_title": "Modelo de Datos Bencode Orientado a Bytes",
-    "arch_inv3_desc": "Claves Bencode almacenadas como búferes de bytes sin asumir UTF-8 para evitar errores de análisis.",
-    "doc_tab_cli": "CLI y Despliegue",
-    "doc_tab_rc": "Configuración .rtorrent.rc",
-    "doc_tab_keys": "Atajos de Teclado TUI",
-    "doc_tab_web": "ruTorrent y Web UI",
-    "doc_cli_title": "Opciones de Línea de Comandos y Modos Demonio",
-    "doc_cli_desc": "Ejecute interactivamente con TUI, en segundo plano como servicio demonio o con el cliente remoto rtorrent-tui.",
-    "doc_rc_title": "Referencia de Configuración ~/.rtorrent.rc",
-    "doc_rc_desc": "Sintaxis estándar de comandos: rutas de sesión, límites de ancho de banda y monitor de directorio watch.",
-    "doc_keys_title": "Controles de Terminal y Ergonomía",
-    "doc_keys_desc": "Esquema ergonómico: cursores estándar y teclas Vim (j/k/h/l) con selección múltiple mediante barra espaciadora.",
-    "doc_web_title": "Integración con Frontends: ruTorrent, Flood y gRPC",
-    "doc_web_desc": "Conexión fluida con interfaces web mediante sockets UNIX SCGI o flujo de telemetría gRPC Tonic."
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "pt": {
     "page_title": "rstorrent — Motor BitTorrent de Alto Desempenho em Rust",
@@ -2474,22 +2734,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Motor BitTorrent moderno escrito em Rust puro.",
     "footer_license": "Licença GNU GPL v2+ • Autor: @chmuri",
     "footer_scalability": "Relatório de escalabilidade",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -2501,7 +2789,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "it": {
     "page_title": "rstorrent — Motore BitTorrent ad alte prestazioni in Rust",
@@ -2575,22 +2889,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Motore BitTorrent moderno scritto in puro Rust.",
     "footer_license": "Licenza GNU GPL v2+ • Autore: @chmuri",
     "footer_scalability": "Rapporto di scalabilità",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -2602,7 +2944,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "nl": {
     "page_title": "rstorrent — Hoogwaardige BitTorrent-engine in Rust",
@@ -2676,22 +3044,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Moderne BitTorrent-engine geschreven in pure Rust.",
     "footer_license": "GNU GPL v2+ Licentie • Auteur: @chmuri",
     "footer_scalability": "Schaalbaarheidsrapport",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -2703,7 +3099,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "tr": {
     "page_title": "rstorrent — Rust ile Yazılmış Yüksek Performanslı BitTorrent Motoru",
@@ -2777,22 +3199,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Saf Rust ile yazılmış modern BitTorrent motoru.",
     "footer_license": "GNU GPL v2+ Lisansı • Geliştirici: @chmuri",
     "footer_scalability": "Ölçeklenebilirlik Raporu",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -2804,7 +3254,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "uk": {
     "page_title": "rstorrent — Високопродуктивний рушій BitTorrent на Rust",
@@ -2878,22 +3354,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Сучасний рушій BitTorrent, написаний на чистому Rust.",
     "footer_license": "Ліцензія GNU GPL v2+ • Автор: @chmuri",
     "footer_scalability": "Звіт про масштабованість",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -2905,7 +3409,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "ru": {
     "page_title": "rstorrent — Высокопроизводительный движок BitTorrent на Rust",
@@ -2979,34 +3509,88 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "Современный движок BitTorrent, написанный на чистом Rust.",
     "footer_license": "Лицензия GNU GPL v2+ • Автор: @chmuri",
     "footer_scalability": "Отчет о масштабируемости",
-    "arch_subtitle": "Модульная архитектура из 16 крейтов, разделенных на 5 уровней",
-    "arch_flow_title": "Поток Данных & Жизненный Цикл Торрента",
-    "arch_flow_desc": "Строго неблокирующий конвейер: асинхронный реактор Tokio для сети и изолированные пулы потоков Rayon для операций ввода-вывода и хэширования.",
-    "arch_layer_all": "Все уровни (16)",
-    "arch_layer_foundation": "Фундамент (3)",
-    "arch_layer_network": "Сеть & P2P (5)",
-    "arch_layer_engine": "Ядро Движка (2)",
-    "arch_layer_rpc": "RPC & Управление (3)",
-    "arch_layer_ui": "Интерфейсы UI (3)",
-    "arch_invariants_title": "Ключевые Принципы Архитектуры",
-    "arch_inv1_title": "Асинхронный Реактор Сети + Изолированный Пул Диска",
-    "arch_inv1_desc": "Реактор Tokio обрабатывает сокеты P2P и DHT без задержек. Запись на диск и вычисление SHA-1/256 переданы Rayon.",
-    "arch_inv2_title": "Контролируемые Компилятором Границы Безопасности",
-    "arch_inv2_desc": "Строгое правило unsafe_code = deny на всех верхних уровнях. Небезопасный код изолирован исключительно в lt-sys.",
-    "arch_inv3_title": "Байт-ориентированная Модель Данных Bencode",
-    "arch_inv3_desc": "Ключи и строки Bencode хранятся как байтовые буферы (Bytes / Vec<u8>), предотвращая сбои из-за некорректного UTF-8.",
-    "doc_tab_cli": "CLI & Развертывание",
-    "doc_tab_rc": "Конфигурация .rtorrent.rc",
-    "doc_tab_keys": "Горячие клавиши TUI",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
     "doc_tab_web": "ruTorrent & Web UI",
-    "doc_cli_title": "Параметры Командной Строки и Режимы Демона",
-    "doc_cli_desc": "Запуск в интерактивном режиме TUI, запуск в фоновом режиме демона (--daemon) или подключение клиента rtorrent-tui по gRPC.",
-    "doc_rc_title": "Справочник Конфигурации ~/.rtorrent.rc",
-    "doc_rc_desc": "Полная поддержка синтаксиса команд rTorrent: пути сессии, диапазоны портов, ограничение скорости и автозагрузка из папки.",
-    "doc_keys_title": "Управление в Терминале и Горячие Клавиши",
-    "doc_keys_desc": "Эргономичная навигация: стрелки и клавиши Vim (j/k/h/l), групповое выделение (Пробел) и модальные окна.",
-    "doc_web_title": "Подключение Веб-Интерфейсов: ruTorrent, Flood и gRPC",
-    "doc_web_desc": "Интеграция через неблокирующий SCGI сокет UNIX/TCP либо современные потоки gRPC Tonic."
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "zh": {
     "page_title": "rstorrent — 基于 Rust 的高性能 BitTorrent 引擎",
@@ -3080,34 +3664,88 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "采用纯 Rust 编写的现代化 BitTorrent 客户端引擎。",
     "footer_license": "GNU GPL v2+ 开源协议 • 作者: @chmuri",
     "footer_scalability": "扩展性深度报告",
-    "arch_subtitle": "跨 16 个 Crates 与 5 个抽象层级的现代模块化架构",
-    "arch_flow_title": "数据流向与种子生命周期",
-    "arch_flow_desc": "严格的非阻塞异步管道：网络 I/O 由 Tokio 异步反应器驱动，磁盘与分块哈希计算完全卸载至独立 Rayon 线程池。",
-    "arch_layer_all": "全部层级 (16)",
-    "arch_layer_foundation": "系统与基础层 (3)",
-    "arch_layer_network": "传输与协议栈 (5)",
-    "arch_layer_engine": "核心引擎层 (2)",
-    "arch_layer_rpc": "RPC与控制层 (3)",
-    "arch_layer_ui": "终端界面与CLI (3)",
-    "arch_invariants_title": "核心设计不变性原则",
-    "arch_inv1_title": "异步网络核心 + 独立磁盘工作池",
-    "arch_inv1_desc": "Tokio 异步反应器全速处理 P2P 套接字与 DHT 查询，磁盘定向读写与 SHA 校验由 Rayon 线程并发分流，永不阻塞网络反应堆。",
-    "arch_inv2_title": "编译器强制内存安全隔离",
-    "arch_inv2_desc": "在所有上层 crate 中强制启用 unsafe_code = deny。所有底层硬件操作严格限定在 lt-sys 及 safe mmap 适配层中。",
-    "arch_inv3_title": "面向字节的二进制 Bencode 模型",
-    "arch_inv3_desc": "Bencode 键值直接作为字节缓冲（Bytes / Vec<u8>）处理，不预先假设有效 UTF-8，杜绝脏元数据引发的引擎 Panic。",
-    "doc_tab_cli": "CLI 与部署",
-    "doc_tab_rc": ".rtorrent.rc 配置指南",
-    "doc_tab_keys": "TUI 终端快捷键",
-    "doc_tab_web": "ruTorrent 与 Web UI 接入",
-    "doc_cli_title": "命令行参数与运行模式",
-    "doc_cli_desc": "支持交互式终端 TUI 模式、后台无头守护进程模式（--daemon），以及轻量级远程 gRPC 客户端 rtorrent-tui。",
-    "doc_rc_title": "标准配置文件 ~/.rtorrent.rc 详尽参考",
-    "doc_rc_desc": "完整支持经典 rTorrent 命令 DSL 语法：会话存储路径、P2P 端口范围、速度限制分组及 inotify 自动监控目录。",
-    "doc_keys_title": "交互式终端控制与快捷键速查",
-    "doc_keys_desc": "双模操作体验：全面支持方向键导航与 Vim 模态移动（j/k/h/l），配合空格键（Space）实现快速批量多选。",
-    "doc_web_title": "Web 前端接入：ruTorrent、Flood 与 gRPC",
-    "doc_web_desc": "支持通过 UNIX Domain Socket 或 TCP 暴露 SCGI 接口，或使用现代 Tonic gRPC 协议流式传输节点状态。"
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "ja": {
     "page_title": "rstorrent — Rustで書かれた高性能BitTorrentエンジン",
@@ -3181,34 +3819,88 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "純粋なRustで書かれたモダンなBitTorrentクライアントエンジン。",
     "footer_license": "GNU GPL v2+ ライセンス • 作者: @chmuri",
     "footer_scalability": "スケーラビリティ詳細レポート",
-    "arch_subtitle": "16個のCratesと5つの抽象レイヤーに分割されたモジュール構造",
-    "arch_flow_title": "データフローとトレントライフサイクル",
-    "arch_flow_desc": "完全非同期パイプライン：Tokio非同期リアクターがネットワークI/Oを処理し、ディスクI/Oとハッシュ検証は独立したRayonプールで実行。",
-    "arch_layer_all": "全レイヤー (16)",
-    "arch_layer_foundation": "基礎層 (3)",
-    "arch_layer_network": "トランスポート & P2P (5)",
-    "arch_layer_engine": "エンジン中核 (2)",
-    "arch_layer_rpc": "RPC & 制御 (3)",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "中核となる設計方針",
-    "arch_inv1_title": "非同期ネットワーク + 独立ディスクI/Oプール",
-    "arch_inv1_desc": "TokioリアクターがP2PソケットとDHT通信をノンブロッキングで実行。ディスク検証はRayonプールに委譲され処理を妨げません。",
-    "arch_inv2_title": "コンパイラによる厳格なメモリ安全境界",
-    "arch_inv2_desc": "上位の主要Crateすべてに unsafe_code = deny を強制。低レベルなunsafeコードはlt-sysとmmap内部に完全に隔離されています。",
-    "arch_inv3_title": "バイト指向Bencodeデータモデル",
-    "arch_inv3_desc": "Bencodeキーと値をバイトバッファとして扱うことで、不正なUTF-8文字を含むトレントメタデータによるクラッシュを防止。",
-    "doc_tab_cli": "CLI & 起動方法",
-    "doc_tab_rc": ".rtorrent.rc 設定ファイル",
-    "doc_tab_keys": "TUI ショートカット一覧",
-    "doc_tab_web": "ruTorrent & Web連携",
-    "doc_cli_title": "CLI起動オプションとデーモンモード",
-    "doc_cli_desc": "端末TUIによる直接操作、サーバー向けバックグラウンド実行（--daemon）、および遠隔操作クライアントrtorrent-tuiに対応。",
-    "doc_rc_title": "設定ファイル ~/.rtorrent.rc の詳細解説",
-    "doc_rc_desc": "セッション保存先、待ち受けポート、帯域制限、inotifyを用いた自動読み込みディレクトリ（watch directory）の設定例。",
-    "doc_keys_title": "ターミナル操作とショートカットキー",
-    "doc_keys_desc": "標準カーソルキーとVimスタイル（j/k/h/l）を両立。スペースキーによる複数選択にも対応。",
-    "doc_web_title": "Webフロントエンド連携: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "SCGI UNIXソケットまたはTCP接続を介してruTorrentやFloodと連携可能。さらに高速なTonic gRPCも標準サポート。"
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   },
   "ko": {
     "page_title": "rstorrent — Rust 기반 고성능 BitTorrent 엔진",
@@ -3282,22 +3974,50 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "footer_desc": "순수 Rust로 작성된 현대적인 BitTorrent 클라이언트 엔진.",
     "footer_license": "GNU GPL v2+ 라이선스 • 개발자: @chmuri",
     "footer_scalability": "확장성 상세 보고서",
-    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "crate_lt_common_desc": "Fundamental data types: zero-copy Bencode parser/serializer, fractional Rate counter, Bitfield, and HashString.",
+    "crate_lt_sys_desc": "OS system primitives: lockfiles (.lock), safe mmap/fadvise wrapper, scheduler, and inotify watch directory.",
+    "crate_lt_crypto_desc": "P2P cryptography: hardware-accelerated SHA-1, RC4 cipher with discard-1024, Diffie-Hellman 768-bit key exchange (MSE/PE).",
+    "crate_lt_net_desc": "Tokio async TCP/UDP socket layer, IPv4/IPv6 dual-stack, bandwidth throttling groups, and SOCKS5/HTTP proxy support.",
+    "crate_lt_protocol_desc": "Wire protocol state machine: MSE/PE negotiation, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11), and LTEP (BEP 10).",
+    "crate_lt_tracker_desc": "HTTP/HTTPS and UDP (BEP 15) tracker client with scraping, multi-tier fallback (BEP 12), and backoff logic.",
+    "crate_lt_dht_desc": "Mainline Kademlia DHT routing table (BEP 5/32), node bootstrap, query tokens, sample_infohashes, and persistence.",
+    "crate_lt_storage_desc": "Chunk block allocation, positional asynchronous disk I/O, HashQueue verification, and fast-resume (.libtorrent_resume).",
+    "crate_lt_engine_desc": "Download lifecycle coordinator: rarest-first piece picker, choking/unchoke groups, speed delegator, and dynamic endgame.",
+    "crate_rt_core_desc": "Client session supervisor: download views (main, active, stopped), task scheduler, priority groups, and state persistence.",
+    "crate_rt_rpc_desc": "rTorrent command DSL engine (~1000 methods), XML-RPC & JSON-RPC 2.0 registry, and embedded Lua scripting bridge.",
+    "crate_rt_scgi_desc": "Non-blocking SCGI protocol server over UNIX domain sockets or TCP with keep-alive for ruTorrent and Flood.",
+    "crate_rt_grpc_desc": "High-performance Tonic gRPC rtorrent.v1 service (TorrentService, SystemService) with real-time event streaming.",
+    "crate_rt_tui_desc": "Native terminal interface (Ratatui/Crossterm): responsive canvas buffer, frame balancing, inspector views, and mouse support.",
+    "crate_rt_tui_client_desc": "Standalone rtorrent-tui binary: remotely manage headless rtorrent daemon over gRPC/TLS from any client host.",
+    "crate_rstorrent_desc": "Main CLI binary entrypoint, POSIX signal handling, lifecycle supervisor, and backward-compatible rtorrent symlink.",
+    "flow_step1_num": "STAGE 01 // METADATA",
+    "flow_step1_title": "Parsing & Construction",
+    "flow_step1_desc": "Zero-copy Bencode parser converts .torrent or magnet metadata into session objects without unnecessary allocations.",
+    "flow_step2_num": "STAGE 02 // SWARM PEERING",
+    "flow_step2_title": "Discovery & Handshake",
+    "flow_step2_desc": "Reactor announces to HTTP/UDP trackers while DHT queries Kademlia to assemble an active peer connection pool.",
+    "flow_step3_num": "STAGE 03 // BDP PIPELINING",
+    "flow_step3_title": "Rarest-First Transfer",
+    "flow_step3_desc": "SIMD bitfield selects rarest chunks, dynamically pipelining requests (Q 4..512) tuned to peer RTT and bandwidth.",
+    "flow_step4_num": "STAGE 04 // RAYON HASHING",
+    "flow_step4_title": "Validation & Storage",
+    "flow_step4_desc": "Completed chunk verified by Rayon worker pool then written to disk via positional non-blocking I/O.",
     "arch_flow_title": "Dataflow & Torrent Lifecycle",
     "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates. Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
     "arch_layer_all": "All Layers (16)",
     "arch_layer_foundation": "Foundation (3)",
     "arch_layer_network": "Transport & P2P (5)",
     "arch_layer_engine": "Core Engine (2)",
     "arch_layer_rpc": "RPC & Control (3)",
     "arch_layer_ui": "UI & CLI (3)",
-    "arch_invariants_title": "Core Architectural Invariants",
-    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
-    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
-    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
-    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
-    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
-    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
     "doc_tab_cli": "CLI & Deployment",
     "doc_tab_rc": ".rtorrent.rc Config",
     "doc_tab_keys": "TUI Keybindings",
@@ -3309,7 +4029,33 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
     "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
     "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
     "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
-    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream.",
+    "key_th_shortcut": "Key Shortcut",
+    "key_th_action": "Terminal Action (Ratatui TUI)",
+    "key_th_mode": "Mode",
+    "key_act_views": "Switch download views: All, Name, Downloading, Seeding, Active, Stopped, Error",
+    "key_act_scroll": "Scroll torrent list (Full Vim-style j/k alongside arrow keys)",
+    "key_act_select": "Visually multi-select one or more torrents for batch operations",
+    "key_act_start": "Start selected torrent downloads/seeding",
+    "key_act_pause": "Pause or stop selected active transfers",
+    "key_act_remove": "Remove torrent with confirmation modal (keep or delete data)",
+    "key_act_recheck": "Force recheck and rehash chunk verification",
+    "key_act_inspect": "Open inspector panel: file list, peer connections, trackers, chunk map",
+    "key_act_up_throttle": "Increase upload bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_down_throttle": "Decrease upload bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_dl_throttle": "Increase download bandwidth limit by +1, +5, +50 KB/s",
+    "key_act_dldown_throttle": "Decrease download bandwidth limit by -1, -5, -50 KB/s",
+    "key_act_filter": "Real-time fuzzy search and filter torrent list",
+    "key_act_help": "Display interactive keyboard shortcut cheatsheet",
+    "mode_nav": "Navigation",
+    "mode_normal": "Normal",
+    "mode_visual": "Visual",
+    "mode_action": "Action",
+    "mode_modal": "Modal",
+    "mode_inspect": "Inspector",
+    "mode_throttle": "Throttling",
+    "mode_filter": "Filter",
+    "mode_help": "Help"
   }
 };
 
@@ -3366,6 +4112,7 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
       const metaDesc = document.getElementById('htmlMetaDesc');
       if (metaDesc) metaDesc.setAttribute('content', t('page_desc'));
 
+      // Update EVERY single element with data-i18n attribute
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
         const text = t(key);
@@ -3959,7 +4706,7 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
         document.body.removeChild(temp);
       }
 
-      // Obsługa filtrów warstw w sekcji Architektury
+      // Layer filtering
       const archFilterBtns = document.querySelectorAll('.arch-filter-btn');
       const crateItems = document.querySelectorAll('.crate-item');
 
@@ -3980,7 +4727,7 @@ $scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rto
         });
       });
 
-      // Obsługa zakładek w sekcji Dokumentacji
+      // Documentation tab switcher
       const docTabBtns = document.querySelectorAll('.doc-tab-btn');
       const docPanes = document.querySelectorAll('.doc-pane');
 
