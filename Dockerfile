@@ -33,6 +33,10 @@ RUN case "$(uname -m)" in \
 # results-receiver endpoint only speaks V2. Without it sccache silently fails
 # every cache operation and falls back to disk.
 
+# No shared cargo-registry cache mount: a single mount is shared across the
+# amd64/arm64 builds, so concurrent cargo unpacks race on .cargo-ok (EEXIST).
+# Downloads carry from the trunk step to the cargo step via per-platform layers.
+
 # Copy project workspace definition and source code (ui/ is a workspace member)
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
@@ -40,8 +44,7 @@ COPY ui/ ./ui/
 
 # Build the Leptos WebAssembly UI (ui/dist) that build.rs embeds into the binary.
 WORKDIR /build/ui
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=secret,id=ACTIONS_RESULTS_URL \
+RUN --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
     --mount=type=secret,id=ACTIONS_CACHE_SERVICE_V2 \
     if [ "$(uname -m)" = x86_64 ] && [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
@@ -55,8 +58,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # Build the release binary for rstorrent
 WORKDIR /build
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=secret,id=ACTIONS_RESULTS_URL \
+RUN --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
     --mount=type=secret,id=ACTIONS_CACHE_SERVICE_V2 \
     if [ "$(uname -m)" = x86_64 ] && [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
