@@ -26,6 +26,10 @@ RUN case "$(uname -m)" in \
 # crate recompiles only it and its dependents. In CI the cache is backed by the
 # GitHub Actions cache (credentials mounted as secrets in the build steps below);
 # without them sccache falls back to its local on-disk cache.
+# ACTIONS_CACHE_SERVICE_V2 must also reach the build container: opendal picks the
+# cache protocol (V1 legacy REST vs V2 twirp) from that flag, and the runner's
+# results-receiver endpoint only speaks V2. Without it sccache silently fails
+# every cache operation and falls back to disk.
 ENV RUSTC_WRAPPER=sccache
 
 # Copy project workspace definition and source code (ui/ is a workspace member)
@@ -38,9 +42,11 @@ WORKDIR /build/ui
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
+    --mount=type=secret,id=ACTIONS_CACHE_SERVICE_V2 \
     if [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
       export ACTIONS_RESULTS_URL="$(cat /run/secrets/ACTIONS_RESULTS_URL)" \
              ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)" \
+             ACTIONS_CACHE_SERVICE_V2="$(cat /run/secrets/ACTIONS_CACHE_SERVICE_V2 2>/dev/null)" \
              SCCACHE_GHA_ENABLED=on; \
     fi \
     && trunk build --release
@@ -50,12 +56,15 @@ WORKDIR /build
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
+    --mount=type=secret,id=ACTIONS_CACHE_SERVICE_V2 \
     if [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
       export ACTIONS_RESULTS_URL="$(cat /run/secrets/ACTIONS_RESULTS_URL)" \
              ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)" \
+             ACTIONS_CACHE_SERVICE_V2="$(cat /run/secrets/ACTIONS_CACHE_SERVICE_V2 2>/dev/null)" \
              SCCACHE_GHA_ENABLED=on; \
     fi \
-    && cargo build --release --locked -p rstorrent
+    && cargo build --release --locked -p rstorrent \
+    && sccache --show-stats
 
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
