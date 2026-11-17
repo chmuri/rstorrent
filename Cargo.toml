@@ -109,7 +109,7 @@ axum = { version = "0.8", default-features = false, features = ["tokio", "http1"
 # clashes with tonic's ring provider and breaks rustls auto-determination.
 axum-server = { version = "0.9", default-features = false, features = ["tls-rustls-ring"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 proptest = "1"
 loom = "0.7"
 
