@@ -23,14 +23,15 @@ RUN case "$(uname -m)" in \
     && rustup target add wasm32-unknown-unknown
 
 # sccache caches individual rustc invocations by content hash, so bumping one
-# crate recompiles only it and its dependents. In CI the cache is backed by the
-# GitHub Actions cache (credentials mounted as secrets in the build steps below);
-# without them sccache falls back to its local on-disk cache.
+# crate recompiles only it and its dependents. It is enabled per build step on
+# amd64 only: the sccache server fails to start under QEMU arm64 emulation
+# ("failed to fill whole buffer"), so arm64 builds use plain rustc. In CI the
+# cache is backed by the GitHub Actions cache (credentials mounted as secrets in
+# the build steps below); without them sccache falls back to its on-disk cache.
 # ACTIONS_CACHE_SERVICE_V2 must also reach the build container: opendal picks the
 # cache protocol (V1 legacy REST vs V2 twirp) from that flag, and the runner's
 # results-receiver endpoint only speaks V2. Without it sccache silently fails
 # every cache operation and falls back to disk.
-ENV RUSTC_WRAPPER=sccache
 
 # Copy project workspace definition and source code (ui/ is a workspace member)
 COPY Cargo.toml Cargo.lock ./
@@ -43,8 +44,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
     --mount=type=secret,id=ACTIONS_CACHE_SERVICE_V2 \
-    if [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
-      export ACTIONS_RESULTS_URL="$(cat /run/secrets/ACTIONS_RESULTS_URL)" \
+    if [ "$(uname -m)" = x86_64 ] && [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
+      export RUSTC_WRAPPER=sccache \
+             ACTIONS_RESULTS_URL="$(cat /run/secrets/ACTIONS_RESULTS_URL)" \
              ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)" \
              ACTIONS_CACHE_SERVICE_V2="$(cat /run/secrets/ACTIONS_CACHE_SERVICE_V2 2>/dev/null)" \
              SCCACHE_GHA_ENABLED=on; \
@@ -57,14 +59,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=secret,id=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
     --mount=type=secret,id=ACTIONS_CACHE_SERVICE_V2 \
-    if [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
-      export ACTIONS_RESULTS_URL="$(cat /run/secrets/ACTIONS_RESULTS_URL)" \
+    if [ "$(uname -m)" = x86_64 ] && [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then \
+      export RUSTC_WRAPPER=sccache \
+             ACTIONS_RESULTS_URL="$(cat /run/secrets/ACTIONS_RESULTS_URL)" \
              ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN)" \
              ACTIONS_CACHE_SERVICE_V2="$(cat /run/secrets/ACTIONS_CACHE_SERVICE_V2 2>/dev/null)" \
              SCCACHE_GHA_ENABLED=on; \
     fi \
     && cargo build --release --locked -p rstorrent \
-    && sccache --show-stats
+    && if [ "$(uname -m)" = x86_64 ] && [ -f /run/secrets/ACTIONS_RUNTIME_TOKEN ]; then sccache --show-stats; fi
 
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
