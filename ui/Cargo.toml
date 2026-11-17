@@ -9,8 +9,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-leptos = { version = "0.7", features = ["csr"] }
-leptos_router = { version = "0.7" }
+leptos = { version = "0.8", features = ["csr"] }
+leptos_router = { version = "0.8" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 gloo-net = { version = "0.7", features = ["http", "websocket"] }
