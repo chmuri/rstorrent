@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   dependabot-automerge:
-    name: "Auto-approve and merge on CI success"
+    name: "Auto-merge on CI success"
     runs-on: ubuntu-latest
     # No checkout happens here, so `gh` cannot infer the repo from a git
     # remote. Point it at the repository explicitly or every `gh pr ...`
@@ -33,13 +33,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: "Approve and Merge Pull Request"
+      # No review approval here: the repo blocks GitHub Actions from approving
+      # PRs, and main is unprotected so approval is not required to merge.
+      - name: "Merge Pull Request"
         if: steps.pr.outputs.pr_number != ''
         run: |
           PR="${{ steps.pr.outputs.pr_number }}"
-          echo "Approving PR #$PR after green CI verification..."
-          gh pr review --approve "$PR" --body "Approved automatically: CI tests and checks passed cleanly on this dependency update."
-          echo "Merging PR #$PR..."
+          echo "Merging PR #$PR after green CI verification..."
           gh pr merge --squash --delete-branch "$PR"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
