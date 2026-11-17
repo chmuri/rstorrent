@@ -17,7 +17,11 @@ COPY ui/ ./ui/
 # Install Trunk and build the Leptos WebAssembly UI (ui/dist) that build.rs
 # embeds into the binary. Use the static musl builds: the gnu prebuilts require
 # GLIBC_2.39, newer than rust:bookworm's 2.36.
-RUN case "$(uname -m)" in \
+# Cache mounts survive COPY-layer invalidation (e.g. a Cargo.lock bump), so
+# unchanged crates are reused instead of recompiling the whole workspace.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/ui/target \
+    case "$(uname -m)" in \
          x86_64) asset=trunk-x86_64-unknown-linux-musl.tar.gz ;; \
          aarch64) asset=trunk-aarch64-unknown-linux-musl.tar.gz ;; \
        esac \
@@ -27,7 +31,9 @@ RUN case "$(uname -m)" in \
     && cd ui && trunk build --release
 
 # Build the release binary for rstorrent
-RUN cargo build --release -p rstorrent
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release -p rstorrent
 
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
