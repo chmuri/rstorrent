@@ -6,6 +6,7 @@
 [![License: GPL v2+](https://img.shields.io/badge/License-GPL%20v2%2B-blue.svg)](LICENSE)
 [![Rust: 2021](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-informational.svg)](#supported-platforms)
+[![Pages](https://img.shields.io/badge/website-GitHub%20Pages-00f0ff.svg)](https://chmuri.github.io/rstorrent/)
 
 ## About
 

@@ -1,0 +1,4016 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title id="htmlTitle">rstorrent — Nowoczesny, bezpieczny pamięciowo silnik BitTorrent w Rust</title>
+  <meta name="description" id="htmlMetaDesc" content="Nowoczesny, bezpieczny pamięciowo silnik BitTorrent napisany od podstaw w języku Rust. Tokio async runtime, gRPC API, zgodność z SCGI/ruTorrent, TUI (Ratatui) oraz wbudowany Web UI." />
+  <meta name="keywords" content="rstorrent, BitTorrent, Rust, Tokio, P2P, SCGI, ruTorrent, gRPC, Ratatui, TUI, Leptos, BitTorrent v2, Flood" />
+  <meta name="author" content="chmuri" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://chmuri.github.io/rstorrent/" />
+  <meta property="og:title" content="rstorrent — High-Performance Rust BitTorrent Engine" />
+  <meta property="og:description" content="Nowoczesny, wielowątkowy silnik BitTorrent w Rust. Tokio async runtime, gRPC, SCGI, TUI i Web UI." />
+  <meta property="og:site_name" content="rstorrent" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="rstorrent — Rust BitTorrent Engine" />
+  <meta name="twitter:description" content="Nowoczesny, bezpieczny pamięciowo klient i silnik BitTorrent w Rust z obsługą 14 000+ torrentów w jednej sesji." />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2306090f' stroke='%23f74c00' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%230284c7' stroke='%2300f0ff' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffffff'/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg-obsidian: #06090f;
+      --bg-card: rgba(11, 17, 29, 0.78);
+      --bg-card-hover: rgba(15, 23, 42, 0.92);
+      --border-subtle: rgba(56, 189, 248, 0.18);
+      --border-bright: rgba(0, 240, 255, 0.45);
+      --cyan-glow: #00f0ff;
+      --cyan-deep: #0284c7;
+      --rust-orange: #f74c00;
+      --rust-amber: #ff8c00;
+      --emerald-ok: #10b981;
+      --purple-accent: #a855f7;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg-obsidian);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      background-image:
+        radial-gradient(circle at 68% 30%, rgba(2, 132, 199, 0.14) 0%, transparent 55%),
+        radial-gradient(circle at 20% 15%, rgba(247, 76, 0, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.07) 0%, transparent 50%),
+        linear-gradient(rgba(14, 165, 233, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(14, 165, 233, 0.035) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.12) 0px,
+        rgba(0, 0, 0, 0.12) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    .topbar-wrapper {
+      position: sticky;
+      top: 0;
+      background: rgba(6, 9, 15, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      z-index: 100;
+    }
+
+    .topbar {
+      width: 100%;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 0.85rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--rust-orange), #b91c1c);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 16px rgba(247, 76, 0, 0.45);
+      font-size: 0.95rem;
+      color: #fff;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--cyan-glow);
+    }
+
+    .lang-picker-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .lang-selector {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      border-radius: 6px;
+      padding: 0.38rem 0.65rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s ease;
+      box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.04);
+    }
+
+    .lang-selector:hover, .lang-selector:focus {
+      border-color: var(--cyan-glow);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+    }
+
+    .lang-selector option {
+      background: #0b111d;
+      color: #f1f5f9;
+      font-family: var(--font-sans);
+    }
+
+    .nav-badge-gh {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.38rem 0.8rem;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--cyan-glow) !important;
+      transition: all 0.2s;
+    }
+
+    .nav-badge-gh:hover {
+      background: rgba(0, 240, 255, 0.2);
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+    }
+
+    .hero-container {
+      width: 100%;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 2.75rem 2rem 3.5rem 2rem;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 2.75rem;
+      align-items: center;
+    }
+
+    .hero-content {
+      display: flex;
+      flex-direction: column;
+      gap: 1.4rem;
+      z-index: 5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      width: fit-content;
+      padding: 0.35rem 0.85rem;
+      border-radius: 999px;
+      background: rgba(247, 76, 0, 0.12);
+      border: 1px solid rgba(247, 76, 0, 0.4);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #ff9e73;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--rust-orange);
+      box-shadow: 0 0 8px var(--rust-orange);
+      animation: pulseDot 2s infinite;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+
+    h1.hero-title {
+      font-size: clamp(2.4rem, 4vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .gradient-rust {
+      background: linear-gradient(90deg, #ffffff 10%, var(--cyan-glow) 55%, var(--rust-orange) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      font-size: 1.05rem;
+      line-height: 1.68;
+      color: var(--text-muted);
+      max-width: 60ch;
+    }
+
+    .install-wrapper {
+      max-width: 540px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .install-tabs {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .install-tab-btn {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .install-tab-btn.active {
+      background: rgba(9, 14, 24, 0.95);
+      border-color: var(--border-subtle);
+      border-bottom-color: transparent;
+      color: var(--cyan-glow);
+    }
+
+    .install-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(9, 14, 24, 0.95);
+      border: 1px solid var(--border-subtle);
+      border-radius: 0 8px 8px 8px;
+      padding: 0.75rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.04);
+    }
+
+    .install-cmd {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+      white-space: nowrap;
+      scrollbar-width: none;
+    }
+
+    .install-cmd::-webkit-scrollbar {
+      display: none;
+    }
+
+    .prompt-char {
+      color: var(--rust-orange);
+      user-select: none;
+    }
+
+    .copy-btn {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--cyan-glow);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+      background: rgba(0, 240, 255, 0.24);
+      color: #ffffff;
+    }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.75rem 1.4rem;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--rust-orange), #d93800);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(247, 76, 0, 0.35);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 26px rgba(247, 76, 0, 0.55);
+    }
+
+    .btn-secondary {
+      background: rgba(15, 23, 42, 0.85);
+      border-color: var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--cyan-glow);
+      color: var(--cyan-glow);
+      background: rgba(0, 240, 255, 0.08);
+    }
+
+    .telemetry-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+      font-family: var(--font-mono);
+      backdrop-filter: blur(10px);
+      max-width: 560px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+    }
+
+    .telemetry-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 0.65rem;
+      margin-bottom: 0.85rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .telemetry-status-badge {
+      color: var(--cyan-glow);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .metric-card {
+      background: rgba(6, 10, 18, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+    }
+
+    .metric-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .metric-value {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-top: 0.2rem;
+    }
+
+    .metric-value.cyan { color: var(--cyan-glow); }
+    .metric-value.orange { color: var(--rust-amber); }
+    .metric-value.green { color: var(--emerald-ok); }
+
+    .sparkline-wrapper {
+      margin-bottom: 0.85rem;
+      background: rgba(3, 7, 14, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .sparkline-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    #sparklineCanvas {
+      width: 100%;
+      max-width: 280px;
+      height: 28px;
+    }
+
+    .telemetry-log {
+      font-size: 0.75rem;
+      color: #7dd3fc;
+      background: rgba(3, 7, 14, 0.85);
+      padding: 0.55rem 0.75rem;
+      border-radius: 6px;
+      border-left: 2px solid var(--cyan-glow);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .gate-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .gate-wrapper {
+      position: relative;
+      width: min(88vw, 520px);
+      aspect-ratio: 1 / 1;
+      display: grid;
+      place-items: center;
+    }
+
+    .gate-halo {
+      position: absolute;
+      inset: 6%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 240, 255, 0.16) 0%, rgba(247, 76, 0, 0.06) 55%, transparent 72%);
+      filter: blur(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+      pointer-events: none;
+    }
+
+    .gate-wrapper.active .gate-halo {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+
+    #vortexCanvas {
+      position: absolute;
+      width: 68%;
+      height: 68%;
+      border-radius: 50%;
+      z-index: 2;
+      box-shadow: inset 0 0 35px rgba(0, 0, 0, 0.95);
+    }
+
+    #gateSvg {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      z-index: 3;
+      overflow: visible;
+    }
+
+    .gate-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.65rem;
+      z-index: 6;
+    }
+
+    .ctrl-btn {
+      background: rgba(11, 17, 29, 0.92);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.55rem 0.95rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .ctrl-btn:hover {
+      border-color: var(--cyan-glow);
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
+    }
+
+    .ctrl-btn.dial-active {
+      border-color: var(--rust-orange);
+      color: #ffb38a;
+      box-shadow: 0 0 16px rgba(247, 76, 0, 0.3);
+    }
+
+    .surge-ring {
+      position: absolute;
+      width: 68%;
+      height: 68%;
+      border-radius: 50%;
+      border: 3px solid var(--cyan-glow);
+      opacity: 0;
+      transform: scale(0.4);
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    .surge-ring.flash {
+      animation: surgeWave 0.95s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes surgeWave {
+      0% {
+        opacity: 0.95;
+        transform: scale(0.35);
+        box-shadow: 0 0 40px var(--cyan-glow), inset 0 0 40px var(--cyan-glow);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(1.38);
+        box-shadow: 0 0 0px transparent;
+      }
+    }
+
+    .section-container {
+      width: 100%;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 4.5rem 2rem;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .section-header {
+      margin-bottom: 2.5rem;
+      max-width: 820px;
+    }
+
+    .section-tag {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--rust-orange);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    .section-title {
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-desc {
+      font-size: 1.05rem;
+      line-height: 1.65;
+      color: var(--text-muted);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1.75rem;
+      transition: all 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-bright);
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(0, 240, 255, 0.1);
+    }
+
+    .feature-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--border-bright), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .feature-card:hover::before {
+      opacity: 1;
+    }
+
+    .feature-icon {
+      font-size: 1.6rem;
+      color: var(--cyan-glow);
+    }
+
+    .feature-name {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .feature-body {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ARCHITEKTURA - STYLISTYKA ZAAWANSOWANA */
+    .arch-filter-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .arch-filter-btn {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .arch-filter-btn:hover {
+      border-color: var(--cyan-glow);
+      color: var(--cyan-glow);
+    }
+
+    .arch-filter-btn.active {
+      background: rgba(14, 165, 233, 0.18);
+      border-color: var(--cyan-glow);
+      color: #ffffff;
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.25);
+    }
+
+    .crate-matrix {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .crate-item {
+      background: rgba(9, 14, 25, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 10px;
+      padding: 1.25rem;
+      font-family: var(--font-mono);
+      transition: all 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .crate-item:hover {
+      border-color: var(--cyan-glow);
+      background: rgba(14, 23, 42, 0.95);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .crate-item.dimmed {
+      opacity: 0.25;
+      transform: scale(0.98);
+    }
+
+    .crate-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .crate-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--cyan-glow);
+    }
+
+    .crate-badges {
+      display: flex;
+      gap: 0.35rem;
+    }
+
+    .crate-tag {
+      font-size: 0.65rem;
+      padding: 0.18rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      text-transform: uppercase;
+    }
+
+    .crate-tag.safety {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.25);
+    }
+
+    .crate-desc {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      font-family: var(--font-sans);
+    }
+
+    .crate-modules {
+      font-size: 0.72rem;
+      color: #7dd3fc;
+      background: rgba(3, 7, 14, 0.6);
+      padding: 0.35rem 0.5rem;
+      border-radius: 5px;
+      border-left: 2px solid var(--rust-orange);
+      word-break: break-all;
+    }
+
+    /* DIAGRAM PRZEPŁYWU DANYCH */
+    .arch-flow-box {
+      background: rgba(9, 14, 25, 0.85);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 2.25rem;
+      margin-bottom: 3rem;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.75rem;
+    }
+
+    .flow-step-card {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 10px;
+      padding: 1.25rem;
+      position: relative;
+    }
+
+    .flow-step-num {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--rust-orange);
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+
+    .flow-step-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.45rem;
+    }
+
+    .flow-step-body {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* NIEZMIENNIKI ARCHITEKTURY */
+    .invariants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .invariant-card {
+      background: rgba(11, 17, 29, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border-left: 3px solid var(--cyan-glow);
+    }
+
+    .invariant-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.6rem;
+    }
+
+    .invariant-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    /* BENCHMARK STATS */
+    .benchmark-hero-box {
+      background: linear-gradient(135deg, rgba(14, 23, 42, 0.95), rgba(6, 9, 15, 0.95));
+      border: 1px solid var(--border-bright);
+      border-radius: 14px;
+      padding: 2.25rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 2rem;
+      box-shadow: 0 16px 40px rgba(0, 240, 255, 0.08);
+      margin-bottom: 2rem;
+    }
+
+    .bench-stat-title {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    .bench-stat-val {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin: 0.35rem 0;
+      font-family: var(--font-mono);
+    }
+
+    .bench-stat-val.accent {
+      color: var(--cyan-glow);
+    }
+
+    .bench-stat-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* DOKUMENTACJA ZAKŁADKI (DOCS TABS) */
+    .docs-tab-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .doc-tab-btn {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 0.6rem 1.15rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .doc-tab-btn:hover {
+      border-color: var(--cyan-glow);
+      color: var(--cyan-glow);
+    }
+
+    .doc-tab-btn.active {
+      background: rgba(247, 76, 0, 0.14);
+      border-color: var(--rust-orange);
+      color: #ff9e73;
+      box-shadow: 0 0 16px rgba(247, 76, 0, 0.25);
+    }
+
+    .doc-pane {
+      display: none;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .doc-pane.active {
+      display: flex;
+    }
+
+    .code-block {
+      background: rgba(6, 10, 18, 0.95);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .code-header {
+      background: rgba(15, 23, 42, 0.92);
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .code-content {
+      padding: 1.25rem;
+      overflow-x: auto;
+      line-height: 1.6;
+      color: #e2e8f0;
+    }
+
+    .code-comment { color: #64748b; }
+    .code-keyword { color: #f43f5e; }
+    .code-string { color: #38bdf8; }
+    .code-fn { color: #34d399; }
+
+    /* TABELA SKRÓTÓW TUI */
+    .key-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      background: rgba(9, 14, 25, 0.7);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .key-table th, .key-table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .key-table th {
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .key-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 5px;
+      color: var(--cyan-glow);
+      font-weight: 700;
+    }
+
+    footer {
+      background: rgba(4, 7, 12, 0.95);
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      padding: 3.5rem 2rem 2.5rem 2rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .footer-content {
+      max-width: 1380px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--cyan-glow);
+    }
+
+    @media (max-width: 980px) {
+      .hero-container {
+        grid-template-columns: 1fr;
+        padding-top: 1.5rem;
+      }
+      .gate-stage {
+        order: -1;
+      }
+      .gate-wrapper {
+        width: min(86vw, 420px);
+      }
+      .topbar {
+        padding: 0.8rem 1.25rem;
+      }
+      .nav-links {
+        gap: 0.85rem;
+        font-size: 0.8rem;
+      }
+      .lang-selector {
+        padding: 0.25rem 0.4rem;
+        font-size: 0.72rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Pasek nawigacji z selektorem języków -->
+  <div class="topbar-wrapper">
+    <header class="topbar">
+      <a href="#" class="brand">
+        <span class="brand-icon">⚙</span>
+        <span>rstorrent</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features" data-i18n="nav_features">Cechy</a>
+        <a href="#architecture" data-i18n="nav_architecture">Architektura</a>
+        <a href="#benchmarks" data-i18n="nav_benchmarks">Wydajność</a>
+        <a href="#docs" data-i18n="nav_docs">Dokumentacja</a>
+
+        <div class="lang-picker-wrap">
+          <select id="langSelect" class="lang-selector" aria-label="Wybierz język / Select language">
+          <option value="en">🇬🇧 English</option>
+          <option value="pl">🇵🇱 Polski</option>
+          <option value="de">🇩🇪 Deutsch</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="pt">🇵🇹 Português</option>
+          <option value="it">🇮🇹 Italiano</option>
+          <option value="nl">🇳🇱 Nederlands</option>
+          <option value="tr">🇹🇷 Türkçe</option>
+          <option value="uk">🇺🇦 Українська</option>
+          <option value="ru">🇷🇺 Русский</option>
+          <option value="zh">🇨🇳 简体中文</option>
+          <option value="ja">🇯🇵 日本語</option>
+          <option value="ko">🇰🇷 한국어</option>
+          </select>
+        </div>
+
+        <a href="https://github.com/chmuri/rstorrent" target="_blank" rel="noopener" class="nav-badge-gh">
+          <svg width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span>GitHub ↗</span>
+        </a>
+      </nav>
+    </header>
+  </div>
+
+  <!-- Główna sekcja Hero -->
+  <main>
+    <div class="hero-container">
+      <section class="hero-content">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span data-i18n="status_pill">RUST ASYNC ENGINE • gRPC / SCGI / TUI / WEB</span>
+        </div>
+
+        <h1 class="hero-title">
+          <span data-i18n="hero_title_pre">Brama do sieci P2P napisana w</span> <span class="gradient-rust">Rust</span>.
+        </h1>
+
+        <p class="hero-subtitle" data-i18n="hero_subtitle">
+          Nowoczesny, wielowątkowy i bezpieczny pamięciowo silnik BitTorrent zaprojektowany z myślą o maksymalnej przepustowości, niskim narzucie pamięci oraz stabilnej obsłudze ponad 14 000 aktywnych zadań. Zgodny z protokołem SCGI (ruTorrent, Flood) oraz z natywnym API gRPC i wbudowanym Web UI.
+        </p>
+
+        <!-- Szybka instalacja z zakładkami -->
+        <div class="install-wrapper">
+          <div class="install-tabs">
+            <button class="install-tab-btn active" data-cmd="cargo install --git https://github.com/chmuri/rstorrent">Cargo</button>
+            <button class="install-tab-btn" data-cmd="docker run -d --net=host -v ~/.rstorrent:/session ghcr.io/chmuri/rstorrent:latest">Docker</button>
+            <button class="install-tab-btn" data-cmd="git clone https://github.com/chmuri/rstorrent.git &amp;&amp; cd rtorrent &amp;&amp; cargo build --release">Source</button>
+          </div>
+          <div class="install-box">
+            <div class="install-cmd">
+              <span class="prompt-char">$</span>
+              <code id="installCmdText">cargo install --git https://github.com/chmuri/rstorrent</code>
+            </div>
+            <button class="copy-btn" id="copyCmdBtn" title="Kopiuj polecenie" data-i18n="copy_btn">Kopiuj</button>
+          </div>
+        </div>
+
+        <!-- Główne przyciski -->
+        <div class="cta-row">
+          <a href="https://github.com/chmuri/rstorrent" target="_blank" rel="noopener" class="btn btn-primary">
+            <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+            <span data-i18n="btn_github">Repozytorium GitHub</span>
+          </a>
+          <button id="heroDialTrigger" class="btn btn-secondary" data-i18n="btn_dial_hero">
+            ⚡ Inicjuj połączenie Swarm
+          </button>
+        </div>
+
+        <!-- Panel telemetrii symulujący pracę węzła rtorrent -->
+        <div class="telemetry-panel">
+          <div class="telemetry-header">
+            <span data-i18n="telem_header">SWARM GATE // TELEMETRIA WĘZŁA</span>
+            <span class="telemetry-status-badge" id="gateStateText">STABILIZING...</span>
+          </div>
+          <div class="telemetry-grid">
+            <div class="metric-card">
+              <div class="metric-label" data-i18n="telem_peers">Aktywne Peery (Swarm)</div>
+              <div class="metric-value cyan" id="metricPeers">0 / 128</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label" data-i18n="telem_speed">Przepustowość P2P</div>
+              <div class="metric-value orange" id="metricSpeed">0.0 MB/s</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label" data-i18n="telem_dht">Węzły DHT (Kademlia)</div>
+              <div class="metric-value" id="metricDht">0 nodes</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label" data-i18n="telem_interfaces">Interfejsy sterujące</div>
+              <div class="metric-value green" id="metricSockets">gRPC • SCGI • TUI • WEB</div>
+            </div>
+          </div>
+
+          <div class="sparkline-wrapper">
+            <span class="sparkline-label" data-i18n="telem_sparkline">TRANSFER LIVE</span>
+            <canvas id="sparklineCanvas"></canvas>
+          </div>
+
+          <div class="telemetry-log" id="telemetryLog" data-i18n="telem_boot">
+            [BOOT] Inicjalizacja rdzenia Tokio runtime...
+          </div>
+        </div>
+      </section>
+
+      <!-- Prawa strona: Interaktywna animacja Swarm Gate -->
+      <section class="gate-stage" aria-label="Animacja Swarm Gate">
+        <div class="gate-wrapper" id="gateWrapper">
+          <div class="gate-halo"></div>
+          <div class="surge-ring" id="surgeRing"></div>
+          <canvas id="vortexCanvas"></canvas>
+          <svg id="gateSvg" viewBox="0 0 600 600"></svg>
+        </div>
+
+        <div class="gate-controls">
+          <button class="ctrl-btn dial-active" id="btnDial">
+            <span data-i18n="btn_dial_gate">▶ DIAL SWARM (Połącz)</span>
+          </button>
+          <button class="ctrl-btn" id="btnBurst">
+            <span data-i18n="btn_burst">⚡ INJECT PEERS (Impuls)</span>
+          </button>
+          <button class="ctrl-btn" id="btnSoundToggle" title="Audio FX Toggle">
+            <span id="soundIcon">🔇</span> <span data-i18n="btn_sound">DŹWIĘK FX:</span> <span id="soundStatusText">WYŁ</span>
+          </button>
+          <button class="ctrl-btn" id="btnReset">
+            <span data-i18n="btn_reset">↺ RESET GATE</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- SEKCJA CECH -->
+    <section id="features" class="section-container">
+      <div class="section-header">
+        <span class="section-tag" data-i18n="feat_tag">Technologia &amp; Wydajność</span>
+        <h2 class="section-title" data-i18n="feat_title">Architektura nowej generacji dla BitTorrent</h2>
+        <p class="section-desc" data-i18n="feat_desc">
+          Zaprojektowany od zera w Rust w celu wyeliminowania problemów historycznych klientów: wycieków pamięci, blokad wątków I/O i awarii przy tysiącach aktywnych połączeń.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3 class="feature-name" data-i18n="f1_title">Tokio Async &amp; Zero-Segfault</h3>
+          <p class="feature-body" data-i18n="f1_desc">
+            Wielowątkowy asynchroniczny runtime Tokio z nieblokującym I/O dyskowym. Pełne bezpieczeństwo pamięci i odporność na uszkodzenia buforów sieciowych.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🧩</div>
+          <h3 class="feature-name" data-i18n="f2_title">SIMD Rarest-First &amp; Dynamic Endgame</h3>
+          <p class="feature-body" data-i18n="f2_desc">
+            Operacje bitfield O(N/64) z wykorzystaniem sprzętowych instrukcji POPCNT/CLZ. Klasyfikacja prędkości peerów, selekcja najrzadszych części i natychmiastowy globalny broadcast CANCEL w trybie endgame.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌊</div>
+          <h3 class="feature-name" data-i18n="f3_title">Zero-Copy BufferPool &amp; BDP Tuning</h3>
+          <p class="feature-body" data-i18n="f3_desc">
+            Bezblokowa arena buforów 16 KiB oparta o crossbeam-queue, zero-copy parser Bencode oraz adaptacyjna głębokość kolejki żądań Q w przedziale 4..512 kalibrowana względem RTT i pasma.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3 class="feature-name" data-i18n="f4_title">Wielowątkowy Hash Piece (Rayon)</h3>
+          <p class="feature-body" data-i18n="f4_desc">
+            Kalkulacja sum SHA-1 oraz drzew Merkle SHA-256 (BitTorrent v2) oddelegowana do puli Rayon, dzięki czemu weryfikacja danych nie blokuje wątków asynchronicznych Tokio.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3 class="feature-name" data-i18n="f5_title">SCGI, XML-RPC &amp; JSON-RPC</h3>
+          <p class="feature-body" data-i18n="f5_desc">
+            Pełna kompatybilność protokołu SCGI przez gniazda UNIX lub TCP. Płynna integracja z ruTorrent, Flood oraz skryptami ekosystemu rTorrent dzięki obszernej mapie komend.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📡</div>
+          <h3 class="feature-name" data-i18n="f6_title">Natywne gRPC &amp; Terminal TUI</h3>
+          <p class="feature-body" data-i18n="f6_desc">
+            Wydajne API gRPC (Tonic rtorrent.v1) ze strumieniowaniem zdarzeń oraz nowoczesny interfejs TUI w terminalu (Ratatui/Crossterm) z dedykowanym klientem zdalnym rtorrent-tui.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3 class="feature-name" data-i18n="f7_title">BitTorrent v1 &amp; v2 (BEP Suite)</h3>
+          <p class="feature-body" data-i18n="f7_desc">
+            Pełne wsparcie dla Kademlia DHT (IPv4/IPv6 BEP 5/32), PEX (BEP 11), Fast Extension (BEP 6), uTP z LEDBAT (BEP 29), szyfrowania MSE/PE, WebSeed oraz torrentów hybrydowych v2.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💻</div>
+          <h3 class="feature-name" data-i18n="f8_title">Wbudowany Web UI (Leptos / Wasm)</h3>
+          <p class="feature-body" data-i18n="f8_desc">
+            Opcjonalny serwer REST + WebSocket oparty o Axum z osadzoną aplikacją SPA napisaną w Rust (Leptos WebAssembly), autoryzacją Bearer token i bezpośrednim podglądem stanu węzła.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEKCJA ARCHITEKTURY - ROZSZERZONA O 5 WARSTW, PRZEPŁYW DANYCH I NIEZMIENNIKI -->
+    <section id="architecture" class="section-container">
+      <div class="section-header">
+        <span class="section-tag" data-i18n="arch_tag">Modularny Workspace</span>
+        <h2 class="section-title" data-i18n="arch_title">16 wyspecjalizowanych skrzyń (crates)</h2>
+        <p class="section-desc" data-i18n="arch_subtitle">
+          Modularna architektura 16 skrzyń podzielonych na 5 wyspecjalizowanych warstw z rygorystycznymi gwarancjami bezpieczeństwa pamięci.
+        </p>
+      </div>
+
+      <!-- Filtry warstw architektonicznych -->
+      <div class="arch-filter-tabs">
+        <button class="arch-filter-btn active" data-layer="all" data-i18n="arch_layer_all">Wszystkie warstwy (16)</button>
+        <button class="arch-filter-btn" data-layer="foundation" data-i18n="arch_layer_foundation">Fundament (3)</button>
+        <button class="arch-filter-btn" data-layer="network" data-i18n="arch_layer_network">Sieć &amp; P2P (5)</button>
+        <button class="arch-filter-btn" data-layer="engine" data-i18n="arch_layer_engine">Rdzeń Silnika (2)</button>
+        <button class="arch-filter-btn" data-layer="rpc" data-i18n="arch_layer_rpc">RPC &amp; Sterowanie (3)</button>
+        <button class="arch-filter-btn" data-layer="ui" data-i18n="arch_layer_ui">Interfejsy UI (3)</button>
+      </div>
+
+      <!-- Matryca skrzyń Cargo Workspace -->
+      <div class="crate-matrix">
+        <!-- Foundation -->
+        <div class="crate-item" data-crate-layer="foundation">
+          <div class="crate-header">
+            <span class="crate-name">lt-common</span>
+            <div class="crate-badges">
+              <span class="crate-tag">FOUNDATION</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Podstawowe typy danych: parser/serializer Bencode zero-copy, ułamkowy licznik pasma Rate, Bitfield i HashString.</div>
+          <div class="crate-modules">bencode, object, bitfield, rate, hash_string</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="foundation">
+          <div class="crate-header">
+            <span class="crate-name">lt-sys</span>
+            <div class="crate-badges">
+              <span class="crate-tag">SYSTEM</span>
+              <span class="crate-tag">ISOLATED</span>
+            </div>
+          </div>
+          <div class="crate-desc">Prymitywy systemowe OS: pliki blokad (.lock), bezpieczny wrapper mmap/fadvise, harmonogram i inotify watch directory.</div>
+          <div class="crate-modules">mmap, poll, log_buffer, scheduler, lockfile, watch</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="foundation">
+          <div class="crate-header">
+            <span class="crate-name">lt-crypto</span>
+            <div class="crate-badges">
+              <span class="crate-tag">CRYPTO</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Kryptografia P2P: przyspieszany sprzętowo SHA-1, szyfr RC4 z discard-1024, wymiana kluczy Diffie-Hellman 768-bit (MSE/PE).</div>
+          <div class="crate-modules">sha1, rc4, diffie_hellman, pe_crypto</div>
+        </div>
+
+        <!-- Network & Protocols -->
+        <div class="crate-item" data-crate-layer="network">
+          <div class="crate-header">
+            <span class="crate-name">lt-net</span>
+            <div class="crate-badges">
+              <span class="crate-tag">TRANSPORT</span>
+              <span class="crate-tag">ISOLATED</span>
+            </div>
+          </div>
+          <div class="crate-desc">Warstwa gniazd Tokio TCP/UDP, obsługa dual-stack IPv4/IPv6, grupy dławienia pasma (throttle) i tunele SOCKS5/HTTP proxy.</div>
+          <div class="crate-modules">socket, address, throttle, proxy, dns, poller</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="network">
+          <div class="crate-header">
+            <span class="crate-name">lt-protocol</span>
+            <div class="crate-badges">
+              <span class="crate-tag">P2P PROTOCOL</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Maszyna stanów protokołu wire: negocjacja MSE/PE, Fast Extension (BEP 6), ut_metadata (BEP 9), PEX (BEP 11) i LTEP (BEP 10).</div>
+          <div class="crate-modules">wire, handshake, extensions, pex, ltep</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="network">
+          <div class="crate-header">
+            <span class="crate-name">lt-tracker</span>
+            <div class="crate-badges">
+              <span class="crate-tag">TRACKER</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Klient trackerów HTTP/HTTPS oraz UDP (BEP 15) ze scrape, obsługą wielopoziomowych tierów (BEP 12) i backoffem.</div>
+          <div class="crate-modules">http_tracker, udp_tracker, scrape, tiers</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="network">
+          <div class="crate-header">
+            <span class="crate-name">lt-dht</span>
+            <div class="crate-badges">
+              <span class="crate-tag">DHT KADEMLIA</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Tablica routingu Kademlia Mainline DHT (BEP 5/32), bootstrapping węzłów, tokeny zapytań, sample_infohashes i persystencja.</div>
+          <div class="crate-modules">routing_table, node, bootstrap, token, nodes6</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="network">
+          <div class="crate-header">
+            <span class="crate-name">lt-storage</span>
+            <div class="crate-badges">
+              <span class="crate-tag">STORAGE</span>
+              <span class="crate-tag">ISOLATED</span>
+            </div>
+          </div>
+          <div class="crate-desc">Zarządzanie blokami chunków, pozycjonowany I/O dysku, kolejka HashQueue i szybkie wznawianie sesji (.libtorrent_resume).</div>
+          <div class="crate-modules">memory_chunk, chunk_list, file_list, hash_queue, resume</div>
+        </div>
+
+        <!-- Engine Core -->
+        <div class="crate-item" data-crate-layer="engine">
+          <div class="crate-header">
+            <span class="crate-name">lt-engine</span>
+            <div class="crate-badges">
+              <span class="crate-tag">ENGINE</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Koordynator cyklu życia pobierania: selektor kawałków rarest-first, grupy choking/unchoke, delegator prędkości i dynamic endgame.</div>
+          <div class="crate-modules">download_main, choke_manager, selector, delegator</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="engine">
+          <div class="crate-header">
+            <span class="crate-name">rt-core</span>
+            <div class="crate-badges">
+              <span class="crate-tag">SESSION CORE</span>
+              <span class="crate-tag">ISOLATED</span>
+            </div>
+          </div>
+          <div class="crate-desc">Nadzorca sesji klienta: widoki pobierania (main, active, stopped), harmonogram zadań, grupy priorytetów i persystencja stanu.</div>
+          <div class="crate-modules">session_manager, download_list, views, schedule</div>
+        </div>
+
+        <!-- RPC & Control -->
+        <div class="crate-item" data-crate-layer="rpc">
+          <div class="crate-header">
+            <span class="crate-name">rt-rpc</span>
+            <div class="crate-badges">
+              <span class="crate-tag">COMMAND RPC</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Silnik DSL komend rTorrent (~1000 metod), rejestr wywołań XML-RPC i JSON-RPC 2.0 oraz mostek skryptowy Lua (rtorrent.lua).</div>
+          <div class="crate-modules">command_map, dsl_parser, xmlrpc, jsonrpc, lua_bridge</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="rpc">
+          <div class="crate-header">
+            <span class="crate-name">rt-scgi</span>
+            <div class="crate-badges">
+              <span class="crate-tag">SCGI SERVER</span>
+              <span class="crate-tag">ISOLATED</span>
+            </div>
+          </div>
+          <div class="crate-desc">Nieblokujący serwer protokołu SCGI na gniazdach UNIX oraz TCP z obsługą keep-alive dla ruTorrent i Flood.</div>
+          <div class="crate-modules">scgi_listener, request_parser, connection_pool</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="rpc">
+          <div class="crate-header">
+            <span class="crate-name">rt-grpc</span>
+            <div class="crate-badges">
+              <span class="crate-tag">GRPC TONIC</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Wysokowydajny serwis gRPC rtorrent.v1 (TorrentService, SystemService) ze strumieniowaniem telemetrii i zdarzeń w czasie rzeczywistym.</div>
+          <div class="crate-modules">torrent_service, push_stream, auth_interceptor</div>
+        </div>
+
+        <!-- UI & CLI -->
+        <div class="crate-item" data-crate-layer="ui">
+          <div class="crate-header">
+            <span class="crate-name">rt-tui</span>
+            <div class="crate-badges">
+              <span class="crate-tag">TERMINAL TUI</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Natywny interfejs terminalowy (Ratatui/Crossterm): responsywny bufor płótna, баланс klatek, widoki inspekcji i obsługa myszy.</div>
+          <div class="crate-modules">canvas_buffer, widgets, event_loop, view_switcher</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="ui">
+          <div class="crate-header">
+            <span class="crate-name">rt-tui-client</span>
+            <div class="crate-badges">
+              <span class="crate-tag">REMOTE CLIENT</span>
+              <span class="crate-tag safety">SAFE</span>
+            </div>
+          </div>
+          <div class="crate-desc">Samodzielna binarka rtorrent-tui: zdalne sterowanie demonem rtorrent przez gRPC/TLS na dowolnym hoście sieciowym.</div>
+          <div class="crate-modules">grpc_client_bridge, view_model, remote_terminal</div>
+        </div>
+
+        <div class="crate-item" data-crate-layer="ui">
+          <div class="crate-header">
+            <span class="crate-name">rstorrent</span>
+            <div class="crate-badges">
+              <span class="crate-tag">APP SUPERVISOR</span>
+              <span class="crate-tag">ISOLATED</span>
+            </div>
+          </div>
+          <div class="crate-desc">Główny punkt wejścia CLI, obsługa sygnałów POSIX, supervisor cyklu życia i kompatybilność binarna z symlinkiem rtorrent.</div>
+          <div class="crate-modules">cli_args, supervisor, signal_handler, daemon_mode</div>
+        </div>
+      </div>
+
+      <!-- Przepływ danych i cykl życia torrenta -->
+      <div class="arch-flow-box">
+        <h3 class="section-title" style="font-size: 1.4rem;" data-i18n="arch_flow_title">Przepływ Danych &amp; Cykl Życia Torrenta</h3>
+        <p class="section-desc" style="font-size: 0.92rem;" data-i18n="arch_flow_desc">
+          Ścisły nieblokujący potok: asynchroniczny reaktor Tokio dla sieci oraz odizolowane pule wątków Rayon dla operacji dyskowych i weryfikacji sum kontrolnych.
+        </p>
+
+        <div class="flow-steps">
+          <div class="flow-step-card">
+            <div class="flow-step-num">ETAP 01 // METADATA</div>
+            <div class="flow-step-title">Parsowanie i Konstrukcja</div>
+            <div class="flow-step-body">Bencode parser (lt-common) bez kopiowania przetwarza plik .torrent lub magnet (ut_metadata BEP 9) w TorrentMetadata i obiekt sesji.</div>
+          </div>
+          <div class="flow-step-card">
+            <div class="flow-step-num">ETAP 02 // SWARM PEERING</div>
+            <div class="flow-step-title">Odkrywanie i Łączenie</div>
+            <div class="flow-step-body">Reaktor lt-net i lt-tracker zgłaszają się do trackerów (HTTP/UDP), a lt-dht przeszukuje tablicę Kademlia w celu pobrania puli peerów.</div>
+          </div>
+          <div class="flow-step-card">
+            <div class="flow-step-num">ETAP 03 // BDP PIPELINING</div>
+            <div class="flow-step-title">Transfer Rarest-First</div>
+            <div class="flow-step-body">Algorytm SIMD wybiera najrzadsze kawałki, kolejkuje zapytania do peerów z adaptacyjną głębokością Q (4..512) i pobiera bloki 16 KiB.</div>
+          </div>
+          <div class="flow-step-card">
+            <div class="flow-step-num">ETAP 04 // RAYON HASHING</div>
+            <div class="flow-step-title">Weryfikacja &amp; Zapis</div>
+            <div class="flow-step-body">Kompletny chunk trafia do puli Rayon do weryfikacji SHA-1/256. Po sprawdzeniu zapisywany jest pozycjonowanie na dysku bez blokowania sieci.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trzy Niezmienniki Architektury -->
+      <h3 class="section-title" style="font-size: 1.35rem; margin-bottom: 1.5rem;" data-i18n="arch_invariants_title">Główne Niezmienniki Architektury</h3>
+      <div class="invariants-grid">
+        <div class="invariant-card">
+          <div class="invariant-title" data-i18n="arch_inv1_title">Asynchroniczny Reaktor Sieci + Odizolowane I/O Dysku</div>
+          <div class="invariant-desc" data-i18n="arch_inv1_desc">
+            Reaktor Tokio obsługuje gniazda P2P, DHT i trackery bez blokad. Odczyty/zapisy plików oraz hashowanie SHA-1/256 oddelegowano do Rayon, dzięki czemu wątki Tokio nigdy nie ulegają głodzeniu.
+          </div>
+        </div>
+
+        <div class="invariant-card">
+          <div class="invariant-title" data-i18n="arch_inv2_title">Weryfikowane przez kompilator granice bezpieczeństwa</div>
+          <div class="invariant-desc" data-i18n="arch_inv2_desc">
+            Rygorystyczna reguła unsafe_code = deny w 9 wyższych skrzyniach. Niskopoziomowy kod unsafe ograniczono wyłącznie do prymitywów lt-sys oraz bezpiecznych adapterów mmap.
+          </div>
+        </div>
+
+        <div class="invariant-card">
+          <div class="invariant-title" data-i18n="arch_inv3_title">Bajtowy model danych Bencode bez paniki UTF-8</div>
+          <div class="invariant-desc" data-i18n="arch_inv3_desc">
+            Klucze i ciągi bencode przechowywane są jako bufory bajtowe (Bytes / Vec<u8>), co uniemożliwia awarię silnika przy nieprawidłowo zakodowanych nazwach plików z zewnętrznych trackerów.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEKCJA SKALOWALNOŚCI & BENCHMARKS -->
+    <section id="benchmarks" class="section-container">
+      <div class="section-header">
+        <span class="section-tag" data-i18n="bench_tag">Pomiary &amp; Skalowalność</span>
+        <h2 class="section-title" data-i18n="bench_title">Sprawdzony przy ponad 14 000 aktywnych torrentów</h2>
+        <p class="section-desc" data-i18n="bench_desc">
+          Zoptymalizowane struktury danych eliminują wąskie gardła w skrajnych scenariuszach seedyfikacji wielotysięcznych zbiorów danych.
+        </p>
+      </div>
+
+      <div class="benchmark-hero-box">
+        <div>
+          <div class="bench-stat-title" data-i18n="b1_title">Skala sesji</div>
+          <div class="bench-stat-val accent">14 000+</div>
+          <div class="bench-stat-desc" data-i18n="b1_desc">Aktywnych zadań w pojedynczym procesie rtorrent z zachowaniem natychmiastowej responsywności UI.</div>
+        </div>
+        <div>
+          <div class="bench-stat-title" data-i18n="b2_title">Czas wyszukiwania</div>
+          <div class="bench-stat-val">O(1)</div>
+          <div class="bench-stat-desc" data-i18n="b2_desc">Indeksowanie hashy w pamięci z dedykowaną pamięcią podręczną DNS dla serwerów trackerów.</div>
+        </div>
+        <div>
+          <div class="bench-stat-title" data-i18n="b3_title">Narzut pamięci</div>
+          <div class="bench-stat-val accent">&lt; 35%</div>
+          <div class="bench-stat-desc" data-i18n="b3_desc">Zużycia RAM w porównaniu do klasycznego demona w C++ dzięki zwięzłym reprezentacjom bitowym.</div>
+        </div>
+        <div>
+          <div class="bench-stat-title" data-i18n="b4_title">Wznawianie sesji</div>
+          <div class="bench-stat-val">Parallel</div>
+          <div class="bench-stat-desc" data-i18n="b4_desc">Równoległe odczytywanie stanu sesji .libtorrent_resume z automatycznym ograniczeniem liczby workerów dyskowych.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEKCJA DOKUMENTACJI - ROZBUDOWANE ZAKŁADKI: CLI, CONFIG, KEYBINDINGS, INTEGRACJE -->
+    <section id="docs" class="section-container">
+      <div class="section-header">
+        <span class="section-tag" data-i18n="docs_tag">Dokumentacja Techniczna</span>
+        <h2 class="section-title" data-i18n="docs_title">Uruchomienie, Konfiguracja &amp; Integracje</h2>
+        <p class="section-desc" data-i18n="docs_desc">
+          Kompletny podręcznik administratora: parametry startowe, konfiguracja ~/.rtorrent.rc, sterowanie TUI oraz integracja z ruTorrent i Flood.
+        </p>
+      </div>
+
+      <!-- Nawigacja zakładek dokumentacji -->
+      <div class="docs-tab-nav">
+        <button class="doc-tab-btn active" data-doc-pane="cli" data-i18n="doc_tab_cli">CLI &amp; Wdrożenie</button>
+        <button class="doc-tab-btn" data-doc-pane="rc" data-i18n="doc_tab_rc">Konfiguracja .rtorrent.rc</button>
+        <button class="doc-tab-btn" data-doc-pane="keys" data-i18n="doc_tab_keys">Skróty klawiszowe TUI</button>
+        <button class="doc-tab-btn" data-doc-pane="web" data-i18n="doc_tab_web">ruTorrent &amp; Web UI</button>
+      </div>
+
+      <!-- ZAKŁADKA 1: CLI & WDROŻENIE -->
+      <div class="doc-pane active" id="pane-cli">
+        <div class="code-block">
+          <div class="code-header">
+            <span>CLI ARGUMENTS &amp; RUN MODES</span>
+            <span>BASH</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Uruchomienie standardowe w terminalu z interaktywnym TUI</span>
+<span class="code-fn">rstorrent</span> [opcje] [ścieżki_do_plików_torrent | linki_magnet | adresy_url]
+
+<span class="code-comment"># Uruchomienie w tle jako demon systemowy (dla serwerów headless / kontenerów)</span>
+<span class="code-fn">rstorrent</span> --daemon -s ~/.rstorrent/session
+
+<span class="code-comment"># Uruchomienie z pominięciem ładowania pliku .rtorrent.rc</span>
+<span class="code-fn">rstorrent</span> -n -o directory.default.set=~/Downloads
+
+<span class="code-comment"># Nadpisanie parametrów konfiguracyjnych w wierszu poleceń (-o key=value)</span>
+<span class="code-fn">rstorrent</span> -o network.port_range.set=50000-50000 -o network.scgi.open_port=127.0.0.1:5000
+
+<span class="code-comment"># Zdalne sterowanie demonem rtorrent za pomocą lekkiego klienta rtorrent-tui</span>
+<span class="code-fn">rstorrent-tui</span> --connect 127.0.0.1:50051
+          </div>
+        </div>
+
+        <div class="code-block">
+          <div class="code-header">
+            <span>DOCKER COMPOSE DEPLOYMENT</span>
+            <span>YAML</span>
+          </div>
+          <div class="code-content">
+<span class="code-keyword">services:</span>
+  <span class="code-keyword">rstorrent:</span>
+    <span class="code-keyword">image:</span> <span class="code-string">ghcr.io/chmuri/rstorrent:latest</span>
+    <span class="code-keyword">container_name:</span> rtorrent
+    <span class="code-keyword">network_mode:</span> <span class="code-string">host</span>
+    <span class="code-keyword">environment:</span>
+      - <span class="code-string">RUST_LOG=info</span>
+    <span class="code-keyword">volumes:</span>
+      - <span class="code-string">~/.rstorrent/session:/session</span>
+      - <span class="code-string">~/Downloads:/downloads</span>
+      - <span class="code-string">~/.rstorrent/watch:/watch</span>
+    <span class="code-keyword">restart:</span> <span class="code-string">unless-stopped</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ZAKŁADKA 2: CONFIG ~/.rtorrent.rc -->
+      <div class="doc-pane" id="pane-rc">
+        <div class="code-block">
+          <div class="code-header">
+            <span>KOMPLETNY PRZYKŁAD KONFIGURACJI: ~/.rtorrent.rc</span>
+            <span>CONF</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># ====================================================================</span>
+<span class="code-comment"># rtorrent — Wzorcowy plik konfiguracyjny (~/.rtorrent.rc)</span>
+<span class="code-comment"># ====================================================================</span>
+
+<span class="code-comment"># 1. Ścieżki katalogów</span>
+<span class="code-fn">directory.default.set</span> = ~/Downloads
+<span class="code-fn">session.path.set</span>      = ~/.rstorrent/session
+
+<span class="code-comment"># 2. Zakresy portów sieciowych P2P i Kademlia DHT</span>
+<span class="code-fn">network.port_range.set</span> = 50000-50000
+<span class="code-fn">dht.port.set</span>           = 6881
+<span class="code-fn">dht.mode.set</span>           = auto
+
+<span class="code-comment"># 3. Limity przepustowości (w KiB/s; 0 oznacza brak limitu)</span>
+<span class="code-fn">throttle.global_down.max_rate.set_kb</span> = 0
+<span class="code-fn">throttle.global_up.max_rate.set_kb</span>   = 10240
+
+<span class="code-comment"># 4. Automatyczny katalog obserwowany (Watch Directory inotify)</span>
+<span class="code-comment"># Automatycznie ładuje i uruchamia nowe pliki *.torrent wrzucone do folderu</span>
+<span class="code-fn">schedule2</span> = watch_directory,5,5,"load.start=~/.rstorrent/watch/*.torrent"
+
+<span class="code-comment"># 5. Konfiguracja serwera SCGI (dla ruTorrent / Flood)</span>
+<span class="code-comment"># Opcja A: bezpieczne gniazdo lokalne UNIX</span>
+<span class="code-fn">network.scgi.open_local</span> = ~/.rstorrent/session/rtorrent.sock
+
+<span class="code-comment"># Opcja B: gniazdo TCP (np. dla połączeń z sieci kontenerów Docker)</span>
+<span class="code-comment"># network.scgi.open_port = 127.0.0.1:5000</span>
+
+<span class="code-comment"># 6. Optymalizacja workerów dyskowych i hashowania (zgodnie z rstorrent.default.rc)</span>
+<span class="code-comment"># storage.disk_threads = 4        # 4 wątki dla szybkich macierzy NVMe</span>
+<span class="code-comment"># storage.hash_concurrency = 4    # współbieżne zadania sprawdzania sum kontrolnych</span>
+<span class="code-comment"># storage.max_open_files = 1024   # maksymalna liczba otwartych deskryptorów</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ZAKŁADKA 3: TUI KEYBINDINGS -->
+      <div class="doc-pane" id="pane-keys">
+        <table class="key-table">
+          <thead>
+            <tr>
+              <th style="width: 220px;">Skrót Klawiszowy</th>
+              <th>Działanie w Terminalu (Ratatui TUI)</th>
+              <th>Tryb Pracy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="key-badge">1</span> .. <span class="key-badge">7</span> lub <span class="key-badge">&larr;</span> <span class="key-badge">&rarr;</span></td>
+              <td>Przełączanie widoków pobierania: Wszystkie, Nazwy, Pobierane, Wysyłane, Aktywne, Zatrzymane, Błędy</td>
+              <td>Nawigacja</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">&uarr;</span> <span class="key-badge">&darr;</span> lub <span class="key-badge">j</span> <span class="key-badge">k</span></td>
+              <td>Przewijanie kursora listy zadań (pełna obsługa nawigacji w stylu Vim)</td>
+              <td>Normal</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">Space</span> lub <span class="key-badge">Ctrl+A</span></td>
+              <td>Wizualne zaznaczanie jednego lub wielu zadań do operacji zbiorczych (Visual Select)</td>
+              <td>Visual</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">s</span></td>
+              <td>Uruchomienie (Start) zaznaczonych torrentów</td>
+              <td>Akcja</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">p</span></td>
+              <td>Wstrzymanie (Pause / Stop) zaznaczonych transferów</td>
+              <td>Akcja</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">x</span></td>
+              <td>Usunięcie zadania z sesji (z oknem potwierdzenia usunięcia danych lub samego zadania)</td>
+              <td>Modal</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">r</span></td>
+              <td>Wymuszenie ponownej weryfikacji sum kontrolnych kawałków (Rehash)</td>
+              <td>Akcja</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">Enter</span> lub <span class="key-badge">i</span></td>
+              <td>Otwarcie panelu szczegółów zadania (Inspektor: pliki, lista peerów, trackery, chunk map)</td>
+              <td>Inspektor</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">a</span> <span class="key-badge">s</span> <span class="key-badge">d</span></td>
+              <td>Zwiększenie limitu wysyłania (Upload) odpowiednio o +1, +5, +50 KB/s</td>
+              <td>Throttling</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">z</span> <span class="key-badge">x</span> <span class="key-badge">c</span></td>
+              <td>Zmniejszenie limitu wysyłania (Upload) odpowiednio o -1, -5, -50 KB/s</td>
+              <td>Throttling</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">A</span> <span class="key-badge">S</span> <span class="key-badge">D</span></td>
+              <td>Zwiększenie limitu pobierania (Download) odpowiednio o +1, +5, +50 KB/s</td>
+              <td>Throttling</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">Z</span> <span class="key-badge">X</span> <span class="key-badge">C</span></td>
+              <td>Zmniejszenie limitu pobierania (Download) odpowiednio o -1, -5, -50 KB/s</td>
+              <td>Throttling</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">/</span> lub <span class="key-badge">f</span></td>
+              <td>Wyszukiwanie i filtrowanie listy zadań w czasie rzeczywistym (Fuzzy Filter)</td>
+              <td>Filtr</td>
+            </tr>
+            <tr>
+              <td><span class="key-badge">?</span></td>
+              <td>Wyświetlenie pełnej ściągawki ze skrótami klawiszowymi (Help Modal)</td>
+              <td>Pomoc</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ZAKŁADKA 4: INTEGRACJE WEB UI -->
+      <div class="doc-pane" id="pane-web">
+        <div class="code-block">
+          <div class="code-header">
+            <span>RUTORRENT // CONFIGURATION (config.php)</span>
+            <span>PHP</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment">// ruTorrent - konfiguracja połączenia z rtorrent w conf/config.php</span>
+
+<span class="code-comment">// Metoda 1: Połączenie przez gniazdo UNIX domain socket (Zalecane pod kątem wydajności i bezpieczeństwa)</span>
+$scgi_port = 0;
+$scgi_host = <span class="code-string">"unix:///home/user/.rstorrent/session/rtorrent.sock"</span>;
+
+<span class="code-comment">// Metoda 2: Połączenie sieciowe SCGI TCP (np. między kontenerami)</span>
+<span class="code-comment">// $scgi_port = 5000;</span>
+<span class="code-comment">// $scgi_host = "127.0.0.1";</span>
+
+<span class="code-comment">// Zgodność XML-RPC: rstorrent udostępnia pełną mapę komend rtorrent.</span>
+          </div>
+        </div>
+
+        <div class="code-block">
+          <div class="code-header">
+            <span>NGINX // REVERSE PROXY SCGI DLA RUTORRENT</span>
+            <span>NGINX</span>
+          </div>
+          <div class="code-content">
+<span class="code-keyword">location</span> /RPC2 {
+    <span class="code-fn">include</span> scgi_params;
+    <span class="code-fn">scgi_pass</span> unix:/home/user/.rstorrent/session/rtorrent.sock;
+    <span class="code-fn">scgi_read_timeout</span> 600s;
+    <span class="code-fn">scgi_send_timeout</span> 600s;
+}
+          </div>
+        </div>
+
+        <div class="code-block">
+          <div class="code-header">
+            <span>GRPC REMOTE TUI // STEROWANIE ZDALNE</span>
+            <span>BASH</span>
+          </div>
+          <div class="code-content">
+<span class="code-comment"># Uruchom demon rtorrent z otwartym portem gRPC</span>
+<span class="code-fn">rstorrent</span> --daemon --grpc-port 50051
+
+<span class="code-comment"># Połącz zdalnego klienta TUI z dowolnego komputera przez sieć</span>
+<span class="code-fn">rstorrent-tui</span> --connect 192.168.1.100:50051
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Stopka strony -->
+  <footer>
+    <div class="footer-content">
+      <div>
+        <p><strong>rstorrent</strong> &mdash; <span data-i18n="footer_desc">Nowoczesny silnik BitTorrent w języku Rust.</span></p>
+        <p style="margin-top: 0.35rem; font-size: 0.78rem;" data-i18n="footer_license">Licencja GNU GPL v2+ &bull; Autor: @chmuri</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/chmuri/rstorrent" target="_blank" rel="noopener" data-i18n="btn_github">Repozytorium GitHub</a>
+        <a href="https://github.com/chmuri/rstorrent/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/chmuri/rstorrent/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="https://github.com/chmuri/rstorrent/blob/main/docs/scalability.md" target="_blank" rel="noopener" data-i18n="footer_scalability">Skalowalność</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    /**
+     * I18N System & Swarm Gate Visualization
+     */
+    const I18N = {
+  "en": {
+    "page_title": "rstorrent — High-Performance Rust BitTorrent Engine",
+    "page_desc": "Modern, memory-safe BitTorrent engine written from scratch in Rust. Tokio async runtime, gRPC API, SCGI/ruTorrent compatibility, Ratatui TUI, and embedded Leptos Web UI.",
+    "nav_features": "Features",
+    "nav_architecture": "Architecture",
+    "nav_benchmarks": "Performance",
+    "nav_docs": "Quickstart",
+    "status_pill": "RUST ASYNC ENGINE • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Gateway to P2P networking written in",
+    "hero_subtitle": "Modern, multithreaded and memory-safe BitTorrent client engine designed for maximum throughput, low memory overhead, and stable operation across 14,000+ active torrents. Full SCGI compatibility (ruTorrent, Flood) with native gRPC API and embedded Web UI.",
+    "copy_btn": "Copy",
+    "copy_copied": "Copied!",
+    "btn_github": "GitHub Repository",
+    "btn_dial_hero": "⚡ Dial Swarm Connection",
+    "telem_header": "SWARM GATE // NODE TELEMETRY",
+    "telem_peers": "Active Peers (Swarm)",
+    "telem_speed": "P2P Throughput",
+    "telem_dht": "DHT Nodes (Kademlia)",
+    "telem_interfaces": "Control Interfaces",
+    "telem_sparkline": "LIVE TRANSFER",
+    "telem_boot": "[BOOT] Initializing Tokio async runtime core...",
+    "telem_dialing": "DIALING SWARM...",
+    "telem_online": "SWARM ONLINE // LOCKED",
+    "telem_idle": "STANDBY // IDLE",
+    "telem_log_dial": "[DIAL] Initiating P2P swarm tunnel (7 protocol stages)...",
+    "telem_log_online": "[OK] Swarm stabilized. High-speed block stream active.",
+    "telem_log_idle": "[IDLE] Gate in standby. Click DIAL SWARM to connect.",
+    "btn_dial_gate": "▶ DIAL SWARM (Connect)",
+    "btn_burst": "⚡ INJECT PEERS (Burst)",
+    "btn_sound": "AUDIO FX:",
+    "sound_on": "ON",
+    "sound_off": "OFF",
+    "btn_reset": "↺ RESET GATE",
+    "feat_tag": "Technology & Performance",
+    "feat_title": "Next-Generation BitTorrent Architecture",
+    "feat_desc": "Built from scratch in Rust to eliminate the legacy bugs of historical clients: memory leaks, I/O thread stalls, and crashes under heavy multithreaded load.",
+    "f1_title": "Tokio Async & Zero-Segfault",
+    "f1_desc": "Multithreaded Tokio async runtime with non-blocking positional disk I/O (write_all_at, read_exact_at). Full memory safety and resilience to malformed network buffers.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "O(N/64) bitfield operations using hardware POPCNT/CLZ instructions. Peer speed classification, rarest-first piece priority, and instant global CANCEL broadcast in endgame mode.",
+    "f3_title": "Zero-Copy BufferPool & BDP Tuning",
+    "f3_desc": "Lock-free 16 KiB buffer arena via crossbeam-queue, zero-copy Bencode parsing, and adaptive request queue depth (Q 4..512) tuned to peer RTT and bandwidth.",
+    "f4_title": "Multithreaded Piece Hashing (Rayon)",
+    "f4_desc": "Offloaded SHA-1 and BitTorrent v2 SHA-256 Merkle tree hashing to Rayon thread pool, preventing disk validation from starving Tokio executor threads.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Complete SCGI protocol compatibility over UNIX sockets or TCP. Seamless integration with ruTorrent, Flood, pyrosimple, and existing rTorrent tooling.",
+    "f6_title": "Native gRPC & Terminal TUI",
+    "f6_desc": "High-performance Tonic rtorrent.v1 gRPC API with telemetry streaming, paired with an interactive terminal TUI (Ratatui/Crossterm) and remote rtorrent-tui client.",
+    "f7_title": "BitTorrent v1 & v2 (BEP Suite)",
+    "f7_desc": "Full support for Kademlia DHT (IPv4/IPv6 BEP 5/32), PEX (BEP 11), Fast Extension (BEP 6), uTP with LEDBAT (BEP 29), MSE/PE encryption, and BitTorrent v2 (BEP 52).",
+    "f8_title": "Embedded Web UI (Leptos / Wasm)",
+    "f8_desc": "Opt-in Axum REST + WebSocket server with an embedded single-page app written in Rust (Leptos WebAssembly), Bearer token auth, and real-time node inspection.",
+    "arch_tag": "Modular Workspace",
+    "arch_title": "16 Specialized Crates",
+    "arch_desc": "The rtorrent workspace is partitioned into clean, decoupled crates with strict abstraction boundaries and compiler-enforced safety (unsafe_code = deny on higher layers).",
+    "bench_tag": "Benchmarks & Scalability",
+    "bench_title": "Battle-Tested Across 14,000+ Active Torrents",
+    "bench_desc": "Optimized memory layouts and lock-free concurrency structures eliminate bottlenecks during massive seeding sessions.",
+    "b1_title": "Session Scale",
+    "b1_desc": "Active torrents in a single daemon process while maintaining instant UI responsiveness.",
+    "b2_title": "Lookup Time",
+    "b2_desc": "In-memory hash index with dedicated DNS cache for tracker announces.",
+    "b3_title": "Memory Footprint",
+    "b3_desc": "RAM usage compared to legacy C++ daemons thanks to compact bitfields.",
+    "b4_title": "Session Restore",
+    "b4_desc": "Parallel reading of .libtorrent_resume files with bounded disk workers.",
+    "docs_tag": "Quickstart",
+    "docs_title": "Installation & Deployment",
+    "docs_desc": "Select the most convenient deployment method for your server or desktop workstation.",
+    "footer_desc": "Modern BitTorrent client & engine written in pure Rust.",
+    "footer_license": "GNU GPL v2+ License • Author: @chmuri",
+    "footer_scalability": "Scalability Report",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  },
+  "pl": {
+    "page_title": "rstorrent — Nowoczesny, bezpieczny pamięciowo silnik BitTorrent w Rust",
+    "page_desc": "Nowoczesny, bezpieczny pamięciowo silnik BitTorrent napisany od podstaw w języku Rust. Tokio async runtime, gRPC API, zgodność z SCGI/ruTorrent, TUI (Ratatui) oraz wbudowany Web UI.",
+    "nav_features": "Cechy",
+    "nav_architecture": "Architektura",
+    "nav_benchmarks": "Wydajność",
+    "nav_docs": "Szybki Start",
+    "status_pill": "RUST ASYNC ENGINE • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Brama do sieci P2P napisana w",
+    "hero_subtitle": "Nowoczesny, wielowątkowy i bezpieczny pamięciowo silnik BitTorrent zaprojektowany z myślą o maksymalnej przepustowości, niskim narzucie pamięci oraz stabilnej obsłudze ponad 14 000 aktywnych zadań. Zgodny z protokołem SCGI (ruTorrent, Flood) oraz z natywnym API gRPC i wbudowanym Web UI.",
+    "copy_btn": "Kopiuj",
+    "copy_copied": "Skopiowano!",
+    "btn_github": "Repozytorium GitHub",
+    "btn_dial_hero": "⚡ Inicjuj połączenie Swarm",
+    "telem_header": "SWARM GATE // TELEMETRIA WĘZŁA",
+    "telem_peers": "Aktywne Peery (Swarm)",
+    "telem_speed": "Przepustowość P2P",
+    "telem_dht": "Węzły DHT (Kademlia)",
+    "telem_interfaces": "Interfejsy sterujące",
+    "telem_sparkline": "TRANSFER LIVE",
+    "telem_boot": "[BOOT] Inicjalizacja rdzenia Tokio runtime...",
+    "telem_dialing": "DIALING SWARM...",
+    "telem_online": "SWARM ONLINE // LOCKED",
+    "telem_idle": "STANDBY // IDLE",
+    "telem_log_dial": "[DIAL] Rozpoczęto zestawianie tunelu P2P (7 etapów)...",
+    "telem_log_online": "[OK] Połączenie ustabilizowane. Strumień bloków aktywny.",
+    "telem_log_idle": "[IDLE] Brama w trybie oczekiwania. Kliknij DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Połącz)",
+    "btn_burst": "⚡ INJECT PEERS (Impuls)",
+    "btn_sound": "DŹWIĘK FX:",
+    "sound_on": "WŁ",
+    "sound_off": "WYŁ",
+    "btn_reset": "↺ RESET GATE",
+    "feat_tag": "Technologia & Wydajność",
+    "feat_title": "Architektura nowej generacji dla BitTorrent",
+    "feat_desc": "Zaprojektowany od zera w Rust w celu wyeliminowania problemów historycznych klientów: wycieków pamięci, blokad wątków I/O i awarii przy tysiącach aktywnych połączeń.",
+    "f1_title": "Tokio Async & Zero-Segfault",
+    "f1_desc": "Wielowątkowy asynchroniczny runtime Tokio z nieblokującym I/O dyskowym (write_all_at, read_exact_at). Pełne bezpieczeństwo pamięci i odporność na uszkodzenia buforów.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Operacje bitfield O(N/64) z wykorzystaniem sprzętowych instrukcji POPCNT/CLZ. Klasyfikacja prędkości peerów, selekcja najrzadszych części i natychmiastowy globalny CANCEL.",
+    "f3_title": "Zero-Copy BufferPool & BDP Tuning",
+    "f3_desc": "Bezblokowa arena buforów 16 KiB oparta o crossbeam-queue, zero-copy parser Bencode oraz adaptacyjna głębokość kolejki żądań Q w przedziale 4..512 kalibrowana do pasma.",
+    "f4_title": "Wielowątkowy Hash Piece (Rayon)",
+    "f4_desc": "Kalkulacja sum SHA-1 oraz drzew Merkle SHA-256 (BitTorrent v2) oddelegowana do puli Rayon, dzięki czemu weryfikacja danych nie blokuje wątków asynchronicznych Tokio.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Pełna kompatybilność protokołu SCGI przez gniazda UNIX lub TCP. Płynna integracja z ruTorrent, Flood oraz skryptami ekosystemu rTorrent dzięki obszernej mapie komend.",
+    "f6_title": "Natywne gRPC & Terminal TUI",
+    "f6_desc": "Wydajne API gRPC (Tonic rtorrent.v1) ze strumieniowaniem zdarzeń oraz nowoczesny interfejs TUI w terminalu (Ratatui/Crossterm) z dedykowanym klientem zdalnym rtorrent-tui.",
+    "f7_title": "BitTorrent v1 & v2 (BEP Suite)",
+    "f7_desc": "Pełne wsparcie dla Kademlia DHT (IPv4/IPv6 BEP 5/32), PEX (BEP 11), Fast Extension (BEP 6), uTP z LEDBAT (BEP 29), szyfrowania MSE/PE, WebSeed oraz torrentów hybrydowych v2.",
+    "f8_title": "Wbudowany Web UI (Leptos / Wasm)",
+    "f8_desc": "Opcjonalny serwer REST + WebSocket oparty o Axum z osadzoną aplikacją SPA napisaną w Rust (Leptos WebAssembly), autoryzacją Bearer token i bezpośrednim podglądem stanu węzła.",
+    "arch_tag": "Modularny Workspace",
+    "arch_title": "16 wyspecjalizowanych skrzyń (crates)",
+    "arch_desc": "Architektura rstorrent została podzielona na czyste, niezależne warstwy o ściśle określonych granicach abstrakcji i zasadach bezpieczeństwa kodu.",
+    "bench_tag": "Pomiary & Skalowalność",
+    "bench_title": "Sprawdzony przy ponad 14 000 aktywnych torrentów",
+    "bench_desc": "Zoptymalizowane struktury danych eliminują wąskie gardła w skrajnych scenariuszach seedyfikacji wielotysięcznych zbiorów danych.",
+    "b1_title": "Skala sesji",
+    "b1_desc": "Aktywnych zadań w pojedynczym procesie rtorrent z zachowaniem natychmiastowej responsywności UI.",
+    "b2_title": "Czas wyszukiwania",
+    "b2_desc": "Indeksowanie hashy w pamięci z dedykowaną pamięcią podręczną DNS dla serwerów trackerów.",
+    "b3_title": "Narzut pamięci",
+    "b3_desc": "Zużycia RAM w porównaniu do klasycznego demona w C++ dzięki zwięzłym reprezentacjom bitowym.",
+    "b4_title": "Wznawianie sesji",
+    "b4_desc": "Równoległe odczytywanie stanu sesji .libtorrent_resume z automatycznym ograniczeniem liczby workerów dyskowych.",
+    "docs_tag": "Szybki Start",
+    "docs_title": "Uruchomienie i konfiguracja",
+    "docs_desc": "Wybierz najwygodniejszy sposób wdrożenia na swoim serwerze lub stacji roboczej.",
+    "footer_desc": "Nowoczesny silnik BitTorrent w języku Rust.",
+    "footer_license": "Licencja GNU GPL v2+ • Autor: @chmuri",
+    "footer_scalability": "Raport skalowalności",
+    "arch_subtitle": "Modularna architektura 16 skrzyń podzielonych na 5 wyspecjalizowanych warstw",
+    "arch_flow_title": "Przepływ Danych & Cykl Życia Torrenta",
+    "arch_flow_desc": "Ścisły nieblokujący potok: asynchroniczny reaktor Tokio dla sieci oraz odizolowane pule wątków Rayon dla operacji dyskowych i weryfikacji sum kontrolnych.",
+    "arch_layer_all": "Wszystkie warstwy (16)",
+    "arch_layer_foundation": "Fundament (3)",
+    "arch_layer_network": "Sieć & P2P (5)",
+    "arch_layer_engine": "Rdzeń Silnika (2)",
+    "arch_layer_rpc": "RPC & Sterowanie (3)",
+    "arch_layer_ui": "Interfejsy UI (3)",
+    "arch_invariants_title": "Główne Niezmienniki Architektury",
+    "arch_inv1_title": "Asynchroniczny Reaktor Sieci + Odizolowane I/O Dysku",
+    "arch_inv1_desc": "Reaktor Tokio obsługuje gniazda P2P, DHT i trackery bez blokad. Odczyty/zapisy plików oraz hashowanie SHA-1/256 oddelegowano do Rayon, dzięki czemu wątki Tokio nigdy nie ulegają głodzeniu.",
+    "arch_inv2_title": "Weryfikowane przez kompilator granice bezpieczeństwa",
+    "arch_inv2_desc": "Rygorystyczna reguła unsafe_code = deny w 9 wyższych skrzyniach. Niskopoziomowy kod unsafe ograniczono wyłącznie do prymitywów lt-sys oraz bezpiecznych adapterów mmap.",
+    "arch_inv3_title": "Bajtowy model danych Bencode bez paniki UTF-8",
+    "arch_inv3_desc": "Klucze i ciągi bencode przechowywane są jako bufory bajtowe (Bytes / Vec<u8>), co uniemożliwia awarię silnika przy nieprawidłowo zakodowanych nazwach plików z zewnętrznych trackerów.",
+    "doc_tab_cli": "CLI & Wdrożenie",
+    "doc_tab_rc": "Konfiguracja .rtorrent.rc",
+    "doc_tab_keys": "Skróty klawiszowe TUI",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Interfejs CLI i Tryby Pracy Demona",
+    "doc_cli_desc": "Uruchom rtorrent interaktywnie z interfejsem TUI, jako bezgłowy demon serwerowy w tle lub podłącz dedykowanego zdalnego klienta rtorrent-tui przez gRPC.",
+    "doc_rc_title": "Wzorcowy Plik Konfiguracyjny ~/.rtorrent.rc",
+    "doc_rc_desc": "Pełna obsługa DSL komend: ścieżki sesji, zakresy portów, throttling pasma, gniazda SCGI oraz automatyczny watch directory inotify.",
+    "doc_keys_title": "Nawigacja w Terminalu i Ergonomia Sterowania",
+    "doc_keys_desc": "Pełna obsługa klawiszy strzałek obok nawigacji Vim (j/k/h/l), wizualne zaznaczanie wielu elementów (Spacja) oraz dedykowane okna modalne.",
+    "doc_web_title": "Podłączenie Frontendów: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Bezproblemowa współpraca z klasycznymi interfejsami przez gniazdo UNIX socket / TCP SCGI lub natywne strumienie gRPC Tonic."
+  },
+  "de": {
+    "page_title": "rstorrent — Hochleistungs-BitTorrent-Engine in Rust",
+    "page_desc": "Moderne, speichersichere BitTorrent-Engine von Grund auf in Rust geschrieben. Tokio Asynchron-Laufzeit, gRPC-API, SCGI/ruTorrent-Kompatibilität, Ratatui TUI und integriertes Web-UI.",
+    "nav_features": "Funktionen",
+    "nav_architecture": "Architektur",
+    "nav_benchmarks": "Leistung",
+    "nav_docs": "Schnellstart",
+    "status_pill": "RUST ASYNC ENGINE • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Gateway zum P2P-Netzwerk geschrieben in",
+    "hero_subtitle": "Moderne, multithreaded und speichersichere BitTorrent-Engine für maximalen Durchsatz, minimale Speichernutzung und stabilen Betrieb mit über 14.000 aktiven Torrents. Vollständig SCGI-kompatibel mit nativer gRPC-API.",
+    "copy_btn": "Kopieren",
+    "copy_copied": "Kopiert!",
+    "btn_github": "GitHub-Repository",
+    "btn_dial_hero": "⚡ Swarm-Verbindung initiieren",
+    "telem_header": "SWARM GATE // KNOTEN-TELEMETRIE",
+    "telem_peers": "Aktive Peers (Swarm)",
+    "telem_speed": "P2P-Durchsatz",
+    "telem_dht": "DHT-Knoten (Kademlia)",
+    "telem_interfaces": "Steuerschnittstellen",
+    "telem_sparkline": "LIVE-TRANSFER",
+    "telem_boot": "[BOOT] Initialisiere Tokio Asynchron-Laufzeit...",
+    "telem_dialing": "VERBINDE MIT SWARM...",
+    "telem_online": "SWARM ONLINE // GESPERRT",
+    "telem_idle": "STANDBY // BEREIT",
+    "telem_log_dial": "[DIAL] Starte P2P-Swarm-Tunnelung (7 Stufen)...",
+    "telem_log_online": "[OK] Verbindung stabilisiert. Datenblock-Stream aktiv.",
+    "telem_log_idle": "[IDLE] Tor im Standby. Klicke auf DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Verbinden)",
+    "btn_burst": "⚡ INJECT PEERS (Impuls)",
+    "btn_sound": "AUDIO-FX:",
+    "sound_on": "EIN",
+    "sound_off": "AUS",
+    "btn_reset": "↺ TOR ZURÜCKSETZEN",
+    "feat_tag": "Technologie & Leistung",
+    "feat_title": "BitTorrent-Architektur der nächsten Generation",
+    "feat_desc": "Von Grund auf in Rust entwickelt, um Speicherlecks, I/O-Blockaden und Abstürze historischer Clients zu eliminieren.",
+    "f1_title": "Tokio Async & Zero-Segfault",
+    "f1_desc": "Multithreaded Tokio-Laufzeit mit nicht-blockierendem Disk-I/O. Maximale Speichersicherheit und Robustheit gegenüber fehlerhaften Daten.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "O(N/64) Bitfield-Operationen mit Hardware POPCNT/CLZ. Peer-Geschwindigkeitsklassifikation und sofortiges globales CANCEL im Endgame.",
+    "f3_title": "Zero-Copy BufferPool & BDP Tuning",
+    "f3_desc": "Sperrenfreie 16-KiB-Buffer-Arena, Zero-Copy Bencode-Parser und adaptive Anfragetiefe basierend auf RTT und Bandbreite.",
+    "f4_title": "Multithreaded Piece Hashing (Rayon)",
+    "f4_desc": "Auslagerung von SHA-1 und BitTorrent v2 SHA-256 Merkle-Bäumen in Rayon-Threads, damit I/O-Laufzeiten nie blockieren.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Vollständige SCGI-Kompatibilität über UNIX-Sockets oder TCP. Reibungslose Integration mit ruTorrent, Flood und Skripten.",
+    "f6_title": "Natives gRPC & Terminal TUI",
+    "f6_desc": "Leistungsfähige gRPC-API mit Telemetrie-Streaming und interaktiver Ratatui-Terminal-Oberfläche sowie rtorrent-tui-Client.",
+    "f7_title": "BitTorrent v1 & v2 (BEP-Suite)",
+    "f7_desc": "Umfassende Unterstützung für Kademlia DHT, PEX, Fast Extension, uTP mit LEDBAT, MSE/PE-Verschlüsselung und Hybrids.",
+    "f8_title": "Integriertes Web-UI (Leptos / Wasm)",
+    "f8_desc": "Optionaler Axum REST + WebSocket Server mit integrierter Rust WebAssembly SPA und Bearer-Token-Authentifizierung.",
+    "arch_tag": "Modularer Workspace",
+    "arch_title": "16 Spezialisierte Crates",
+    "arch_desc": "Die Architektur ist in 16 modulare Crates unterteilt, die strikte Abstraktionen und Speichersicherheit garantieren.",
+    "bench_tag": "Benchmarks & Skalierbarkeit",
+    "bench_title": "Erprobt mit über 14.000 aktiven Torrents",
+    "bench_desc": "Optimierte Datenstrukturen verhindern Engpässe selbst in extremen Seeding-Szenarien.",
+    "b1_title": "Sitzungsgröße",
+    "b1_desc": "Aktive Torrents in einem einzigen Daemon-Prozess bei sofortiger Reaktionsfähigkeit.",
+    "b2_title": "Suchzeit",
+    "b2_desc": "Im Speicher gehaltene Hash-Indizes mit integriertem DNS-Cache für Tracker.",
+    "b3_title": "Speicherverbrauch",
+    "b3_desc": "Geringerer RAM-Verbrauch im Vergleich zu klassischen C++ Daemons dank dichter Bitfelder.",
+    "b4_title": "Wiederaufnahme",
+    "b4_desc": "Paralleles Laden von .libtorrent_resume Dateien mit begrenzten Worker-Threads.",
+    "docs_tag": "Schnellstart",
+    "docs_title": "Installation & Konfiguration",
+    "docs_desc": "Wähle die passende Bereitstellungsmethode für deinen Server oder Arbeitsplatz.",
+    "footer_desc": "Moderne BitTorrent-Engine geschrieben in reinem Rust.",
+    "footer_license": "GNU GPL v2+ Lizenz • Autor: @chmuri",
+    "footer_scalability": "Skalierungsbericht",
+    "arch_subtitle": "Modulare Architektur aufgeteilt in 16 Crates und 5 Schichten",
+    "arch_flow_title": "Datenfluss & Torrent-Lebenszyklus",
+    "arch_flow_desc": "Nicht-blockierende Pipeline: Asynchrones Netzwerk via Tokio und isolierte Rayon-Threadpools für Disk-I/O und Hashing.",
+    "arch_layer_all": "Alle Schichten (16)",
+    "arch_layer_foundation": "Fundament (3)",
+    "arch_layer_network": "Netzwerk & P2P (5)",
+    "arch_layer_engine": "Kern-Engine (2)",
+    "arch_layer_rpc": "RPC & Steuerung (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Zentrale Architekturprinzipien",
+    "arch_inv1_title": "Asynchroner Netzwerk-Reaktor + Isolierter Disk-Pool",
+    "arch_inv1_desc": "Tokio-Reaktor bedient Sockets und DHT ohne Wartezeiten. Disk-I/O und Hashing laufen separat in Rayon-Threads.",
+    "arch_inv2_title": "Strikte Speichersicherheits-Grenzen",
+    "arch_inv2_desc": "unsafe_code = deny in allen höheren Crates. Unsafe-Code ist streng auf lt-sys und mmap begrenzt.",
+    "arch_inv3_title": "Byte-orientiertes Bencode-Datenmodell",
+    "arch_inv3_desc": "Bencode-Schlüssel werden als Byte-Buffer verarbeitet, wodurch UTF-8-Inkompatibilitäten ausgeschlossen sind.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Konfiguration",
+    "doc_tab_keys": "TUI Tastaturkürzel",
+    "doc_tab_web": "ruTorrent & Web-UI",
+    "doc_cli_title": "Kommandozeilen-Interface & Daemon-Modi",
+    "doc_cli_desc": "Interaktives TUI starten, als Daemon im Hintergrund ausführen oder mit remote rtorrent-tui steuern.",
+    "doc_rc_title": "Kommentierte Konfigurationsreferenz",
+    "doc_rc_desc": "Standard-Syntax mit voller Befehls-DSL: Sitzungspfade, Portbereiche, Bandbreitendrosselung und Watch-Verzeichnis.",
+    "doc_keys_title": "Interaktive Terminalnavigation",
+    "doc_keys_desc": "Ergonomische Bedienung mit Pfeiltasten und Vim-Shortcuts (j/k/h/l) sowie visueller Mehrfachauswahl.",
+    "doc_web_title": "Frontend-Integrationen: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Verbinde Web-UIs via SCGI UNIX-Socket oder TCP, oder nutze moderne Tonic gRPC-Streams."
+  },
+  "fr": {
+    "page_title": "rstorrent — Moteur BitTorrent haute performance en Rust",
+    "page_desc": "Moteur BitTorrent moderne et sécurisé en mémoire écrit de zéro en Rust. Runtime asynchrone Tokio, API gRPC, compatibilité SCGI/ruTorrent, TUI Ratatui et interface Web intégrée.",
+    "nav_features": "Fonctionnalités",
+    "nav_architecture": "Architecture",
+    "nav_benchmarks": "Performances",
+    "nav_docs": "Démarrage",
+    "status_pill": "MOTEUR ASYNCHRONE RUST • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Portail vers le réseau P2P écrit en",
+    "hero_subtitle": "Moteur BitTorrent moderne, multithread et sûr en mémoire conçu pour un débit maximal, une empreinte mémoire réduite et plus de 14 000 torrents actifs. Compatibilité SCGI complète avec API gRPC native.",
+    "copy_btn": "Copier",
+    "copy_copied": "Copié !",
+    "btn_github": "Dépôt GitHub",
+    "btn_dial_hero": "⚡ Initier connexion Swarm",
+    "telem_header": "SWARM GATE // TÉLÉMÉTRIE DU NŒUD",
+    "telem_peers": "Pairs Actifs (Swarm)",
+    "telem_speed": "Débit P2P",
+    "telem_dht": "Nœuds DHT (Kademlia)",
+    "telem_interfaces": "Interfaces de contrôle",
+    "telem_sparkline": "TRANSFERT EN DIRECT",
+    "telem_boot": "[BOOT] Initialisation du runtime asynchrone Tokio...",
+    "telem_dialing": "CONNEXION AU SWARM...",
+    "telem_online": "SWARM EN LIGNE // VERROUILLÉ",
+    "telem_idle": "EN ATTENTE // INACTIF",
+    "telem_log_dial": "[DIAL] Établissement du tunnel P2P (7 étapes)...",
+    "telem_log_online": "[OK] Connexion stabilisée. Flux de blocs actif.",
+    "telem_log_idle": "[IDLE] Portail en veille. Cliquez sur DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Connecter)",
+    "btn_burst": "⚡ INJECT PEERS (Impulsion)",
+    "btn_sound": "EFFETS AUDIO :",
+    "sound_on": "ON",
+    "sound_off": "OFF",
+    "btn_reset": "↺ RÉINITIALISER",
+    "feat_tag": "Technologie & Performance",
+    "feat_title": "Architecture BitTorrent de nouvelle génération",
+    "feat_desc": "Conçu entièrement en Rust pour éliminer les fuites de mémoire et les blocages des clients historiques.",
+    "f1_title": "Tokio Async & Zéro Segfault",
+    "f1_desc": "Runtime Tokio multithread avec entrées/sorties disques asynchrones non bloquantes. Sécurité mémoire absolue.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Opérations bitfield O(N/64) avec instructions matérielles POPCNT/CLZ et émission CANCEL instantanée en fin de téléchargement.",
+    "f3_title": "BufferPool Zero-Copy & Tuning BDP",
+    "f3_desc": "Arène de tampons sans verrou 16 KiB, analyseur Bencode zéro-copie et file de requêtes adaptative calibrée sur le RTT.",
+    "f4_title": "Hachage de Pièces Multithread (Rayon)",
+    "f4_desc": "Calcul SHA-1 et arbres Merkle SHA-256 (BitTorrent v2) déportés sur Rayon sans bloquer l'exécuteur Tokio.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Compatibilité complète avec ruTorrent, Flood et les scripts de l'écosystème rTorrent.",
+    "f6_title": "gRPC Natif & Terminal TUI",
+    "f6_desc": "API gRPC Tonic ultra-rapide avec streaming télémétrique et interface terminal moderne Ratatui.",
+    "f7_title": "BitTorrent v1 & v2 (Suite BEP)",
+    "f7_desc": "Prise en charge complète de DHT Kademlia, PEX, Fast Extension, uTP LEDBAT et torrents hybrides v2.",
+    "f8_title": "Web UI Intégrée (Leptos / Wasm)",
+    "f8_desc": "Serveur REST + WebSocket Axum avec application WebAssembly intégrée en Rust et jeton Bearer.",
+    "arch_tag": "Espace de Travail Modulaire",
+    "arch_title": "16 Crates Spécialisées",
+    "arch_desc": "Le projet est découpé en 16 crates indépendantes garantissant une séparation stricte des responsabilités.",
+    "bench_tag": "Tests & Évolutivité",
+    "bench_title": "Éprouvé avec plus de 14 000 torrents actifs",
+    "bench_desc": "Structures de données optimisées éliminant les goulets d'étranglement même à grande échelle.",
+    "b1_title": "Échelle de session",
+    "b1_desc": "Torrents actifs dans un seul processus avec une réactivité d'interface instantanée.",
+    "b2_title": "Temps de recherche",
+    "b2_desc": "Index de hachage en mémoire avec cache DNS dédié pour les annonces de trackers.",
+    "b3_title": "Empreinte mémoire",
+    "b3_desc": "Utilisation de la RAM réduite par rapport aux démons C++ historiques grâce aux bitfields denses.",
+    "b4_title": "Restauration de session",
+    "b4_desc": "Lecture parallèle des fichiers .libtorrent_resume avec un nombre borné de workers disque.",
+    "docs_tag": "Démarrage Rapide",
+    "docs_title": "Installation & Déploiement",
+    "docs_desc": "Choisissez la méthode de déploiement idéale pour votre serveur ou machine de bureau.",
+    "footer_desc": "Moteur BitTorrent moderne écrit en pur Rust.",
+    "footer_license": "Licence GNU GPL v2+ • Auteur : @chmuri",
+    "footer_scalability": "Rapport d'évolutivité",
+    "arch_subtitle": "Architecture modulaire structurée en 16 crates et 5 couches",
+    "arch_flow_title": "Flux de Données & Cycle de Vie des Torrents",
+    "arch_flow_desc": "Pipeline non bloquant : réseau piloté par Tokio async et opérations disque déportées sur des pools de threads Rayon.",
+    "arch_layer_all": "Toutes les couches (16)",
+    "arch_layer_foundation": "Fondation (3)",
+    "arch_layer_network": "Réseau & P2P (5)",
+    "arch_layer_engine": "Moteur Central (2)",
+    "arch_layer_rpc": "RPC & Contrôle (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Invariants Fondamentaux de Conception",
+    "arch_inv1_title": "Réacteur Réseau Asynchrone + Pool Disque Isolé",
+    "arch_inv1_desc": "Tokio gère les sockets P2P et le DHT sans blocage. Les écritures disque et hachages SHA sont délégués à Rayon.",
+    "arch_inv2_title": "Sécurité Garantie par le Compilateur",
+    "arch_inv2_desc": "Règle stricte unsafe_code = deny dans les couches supérieures, isolant le code non sécurisé dans lt-sys.",
+    "arch_inv3_title": "Modèle de Données Bencode Orienté Octets",
+    "arch_inv3_desc": "Les données Bencode sont traitées sous forme de tampons d'octets, évitant tout crash lié à un encodage UTF-8 corrompu.",
+    "doc_tab_cli": "CLI & Déploiement",
+    "doc_tab_rc": "Configuration .rtorrent.rc",
+    "doc_tab_keys": "Raccourcis TUI",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Interface en Ligne de Commande & Modes Démon",
+    "doc_cli_desc": "Lancez rtorrent en mode interactif avec TUI, en démon serveur ou via le client distant rtorrent-tui.",
+    "doc_rc_title": "Fichier de Configuration Commenté",
+    "doc_rc_desc": "Syntaxe ~/.rtorrent.rc complète : chemins de session, ports, limitation de bande passante et watch directory inotify.",
+    "doc_keys_title": "Navigation Terminal & Ergonomie",
+    "doc_keys_desc": "Support simultané des flèches directionnelles et des raccourcis Vim (j/k/h/l) avec sélection multiple.",
+    "doc_web_title": "Intégration d'Interfaces : ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connectez vos interfaces favorites via socket UNIX SCGI ou flux gRPC Tonic haute performance."
+  },
+  "es": {
+    "page_title": "rstorrent — Motor BitTorrent de alto rendimiento en Rust",
+    "page_desc": "Motor BitTorrent moderno y seguro en memoria escrito desde cero en Rust. Runtime asíncrono Tokio, API gRPC, compatibilidad SCGI/ruTorrent, TUI Ratatui e interfaz web integrada.",
+    "nav_features": "Características",
+    "nav_architecture": "Arquitectura",
+    "nav_benchmarks": "Rendimiento",
+    "nav_docs": "Inicio Rápido",
+    "status_pill": "MOTOR ASÍNCRONO RUST • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Puerta de enlace a la red P2P escrita en",
+    "hero_subtitle": "Motor BitTorrent moderno, multihilo y seguro en memoria diseñado para máximo rendimiento, bajo uso de memoria y estabilidad con más de 14.000 torrents activos. Compatibilidad total con SCGI y API gRPC nativa.",
+    "copy_btn": "Copiar",
+    "copy_copied": "¡Copiado!",
+    "btn_github": "Repositorio GitHub",
+    "btn_dial_hero": "⚡ Iniciar conexión Swarm",
+    "telem_header": "SWARM GATE // TELEMETRÍA DEL NODO",
+    "telem_peers": "Pares Activos (Swarm)",
+    "telem_speed": "Rendimiento P2P",
+    "telem_dht": "Nodos DHT (Kademlia)",
+    "telem_interfaces": "Interfaces de control",
+    "telem_sparkline": "TRANSFERENCIA EN VIVO",
+    "telem_boot": "[BOOT] Inicializando núcleo asíncrono Tokio...",
+    "telem_dialing": "CONECTANDO AL ENJAMBRE...",
+    "telem_online": "ENJAMBRE EN LÍNEA // BLOQUEADO",
+    "telem_idle": "EN ESPERA // INACTIVO",
+    "telem_log_dial": "[DIAL] Estableciendo túnel P2P (7 etapas de protocolo)...",
+    "telem_log_online": "[OK] Conexión estabilizada. Flujo de bloques activo.",
+    "telem_log_idle": "[IDLE] Puerta en espera. Haz clic en DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Conectar)",
+    "btn_burst": "⚡ INJECT PEERS (Impulso)",
+    "btn_sound": "AUDIO FX:",
+    "sound_on": "ENCENDIDO",
+    "sound_off": "APAGADO",
+    "btn_reset": "↺ REINICIAR PUERTA",
+    "feat_tag": "Tecnología & Rendimiento",
+    "feat_title": "Arquitectura BitTorrent de nueva generación",
+    "feat_desc": "Diseñado desde cero en Rust para erradicar fugas de memoria y bloqueos de hilos I/O comunes en clientes históricos.",
+    "f1_title": "Tokio Async & Cero Segfaults",
+    "f1_desc": "Runtime multihilo Tokio con I/O de disco no bloqueante. Seguridad absoluta en memoria y resistencia a datos corruptos.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Operaciones bitfield O(N/64) con instrucciones de hardware POPCNT/CLZ y emisión global CANCEL instantánea.",
+    "f3_title": "BufferPool Zero-Copy & Ajuste BDP",
+    "f3_desc": "Gestión de búferes sin bloqueos de 16 KiB, análisis Bencode zero-copy y cola de peticiones adaptativa.",
+    "f4_title": "Hash de Piezas Multihilo (Rayon)",
+    "f4_desc": "Validación SHA-1 y SHA-256 Merkle delegada a hilos Rayon para no saturar el ejecutor Tokio.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Compatibilidad integral con ruTorrent, Flood y herramientas del ecosistema clásico de rTorrent.",
+    "f6_title": "gRPC Nativo & Terminal TUI",
+    "f6_desc": "API gRPC con telemetría en tiempo real e interfaz de terminal interactiva con Ratatui y Crossterm.",
+    "f7_title": "BitTorrent v1 & v2 (BEP Suite)",
+    "f7_desc": "Soporte completo para Kademlia DHT, PEX, Fast Extension, uTP LEDBAT y torrents híbridos v2.",
+    "f8_title": "Web UI Integrada (Leptos / Wasm)",
+    "f8_desc": "Servidor REST + WebSocket Axum con aplicación SPA compilada en Rust WebAssembly y token Bearer.",
+    "arch_tag": "Espacio de Trabajo Modular",
+    "arch_title": "16 Crates Especializadas",
+    "arch_desc": "Dividido en 16 crates independientes con límites de abstracción estrictos y seguridad verificada por el compilador.",
+    "bench_tag": "Pruebas & Escalabilidad",
+    "bench_title": "Probado con más de 14.000 torrents activos",
+    "bench_desc": "Estructuras de datos optimizadas que eliminan cuellos de botella en sesiones masivas de descarga y siembra.",
+    "b1_title": "Escala de sesión",
+    "b1_desc": "Torrents activos en un único proceso manteniendo respuesta instantánea de la interfaz.",
+    "b2_title": "Tiempo de búsqueda",
+    "b2_desc": "Índice hash en memoria con caché DNS dedicada para anuncios de trackers.",
+    "b3_title": "Uso de memoria",
+    "b3_desc": "Consumo de RAM reducido frente a demonios C++ tradicionales gracias a representaciones compactas.",
+    "b4_title": "Restauración de sesión",
+    "b4_desc": "Lectura concurrente de archivos .libtorrent_resume con limitación automática de workers.",
+    "docs_tag": "Inicio Rápido",
+    "docs_title": "Instalación y Despliegue",
+    "docs_desc": "Selecciona el método de instalación que mejor se adapte a tu entorno de trabajo o servidor.",
+    "footer_desc": "Motor BitTorrent moderno escrito en Rust puro.",
+    "footer_license": "Licencia GNU GPL v2+ • Autor: @chmuri",
+    "footer_scalability": "Informe de escalabilidad",
+    "arch_subtitle": "Arquitectura modular estructurada en 16 crates y 5 capas",
+    "arch_flow_title": "Flujo de Datos y Ciclo de Vida del Torrent",
+    "arch_flow_desc": "Canalización no bloqueante: red impulsada por Tokio y operaciones de disco delegadas a hilos de Rayon.",
+    "arch_layer_all": "Todas las capas (16)",
+    "arch_layer_foundation": "Base (3)",
+    "arch_layer_network": "Red y P2P (5)",
+    "arch_layer_engine": "Motor Principal (2)",
+    "arch_layer_rpc": "RPC y Control (3)",
+    "arch_layer_ui": "UI y CLI (3)",
+    "arch_invariants_title": "Invariantes de Arquitectura",
+    "arch_inv1_title": "Reactor de Red Asíncrono + Pool de Disco Aislado",
+    "arch_inv1_desc": "Tokio gestiona sockets P2P y DHT sin demoras. Las escrituras de disco y cálculo de hash se procesan en hilos Rayon.",
+    "arch_inv2_title": "Seguridad Verificada por el Compilador",
+    "arch_inv2_desc": "Regla estricta unsafe_code = deny en todos los componentes superiores. Código no seguro aislado en lt-sys.",
+    "arch_inv3_title": "Modelo de Datos Bencode Orientado a Bytes",
+    "arch_inv3_desc": "Claves Bencode almacenadas como búferes de bytes sin asumir UTF-8 para evitar errores de análisis.",
+    "doc_tab_cli": "CLI y Despliegue",
+    "doc_tab_rc": "Configuración .rtorrent.rc",
+    "doc_tab_keys": "Atajos de Teclado TUI",
+    "doc_tab_web": "ruTorrent y Web UI",
+    "doc_cli_title": "Opciones de Línea de Comandos y Modos Demonio",
+    "doc_cli_desc": "Ejecute interactivamente con TUI, en segundo plano como servicio demonio o con el cliente remoto rtorrent-tui.",
+    "doc_rc_title": "Referencia de Configuración ~/.rtorrent.rc",
+    "doc_rc_desc": "Sintaxis estándar de comandos: rutas de sesión, límites de ancho de banda y monitor de directorio watch.",
+    "doc_keys_title": "Controles de Terminal y Ergonomía",
+    "doc_keys_desc": "Esquema ergonómico: cursores estándar y teclas Vim (j/k/h/l) con selección múltiple mediante barra espaciadora.",
+    "doc_web_title": "Integración con Frontends: ruTorrent, Flood y gRPC",
+    "doc_web_desc": "Conexión fluida con interfaces web mediante sockets UNIX SCGI o flujo de telemetría gRPC Tonic."
+  },
+  "pt": {
+    "page_title": "rstorrent — Motor BitTorrent de Alto Desempenho em Rust",
+    "page_desc": "Motor BitTorrent moderno e com segurança de memória escrito do zero em Rust. Runtime assíncrono Tokio, API gRPC, compatibilidade SCGI/ruTorrent, TUI Ratatui e Web UI integrada.",
+    "nav_features": "Recursos",
+    "nav_architecture": "Arquitetura",
+    "nav_benchmarks": "Desempenho",
+    "nav_docs": "Início Rápido",
+    "status_pill": "MOTOR ASSÍNCRONO EM RUST • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Portal para a rede P2P escrito em",
+    "hero_subtitle": "Motor BitTorrent moderno, multithread e seguro em memória, projetado para máximo rendimento, baixo consumo de RAM e estabilidade para mais de 14.000 torrents ativos. Compatibilidade total com SCGI e API gRPC nativa.",
+    "copy_btn": "Copiar",
+    "copy_copied": "Copiado!",
+    "btn_github": "Repositório GitHub",
+    "btn_dial_hero": "⚡ Iniciar conexão Swarm",
+    "telem_header": "SWARM GATE // TELEMETRIA DO NÓ",
+    "telem_peers": "Peers Ativos (Swarm)",
+    "telem_speed": "Taxa de Transferência P2P",
+    "telem_dht": "Nós DHT (Kademlia)",
+    "telem_interfaces": "Interfaces de controle",
+    "telem_sparkline": "TRANSFERÊNCIA EM TEMPO REAL",
+    "telem_boot": "[BOOT] Inicializando núcleo assíncrono Tokio...",
+    "telem_dialing": "CONECTANDO AO ENXAME...",
+    "telem_online": "ENXAME ONLINE // BLOQUEADO",
+    "telem_idle": "EM ESPERA // INATIVO",
+    "telem_log_dial": "[DIAL] Estabelecendo túnel P2P (7 etapas de protocolo)...",
+    "telem_log_online": "[OK] Conexão estabilizada. Fluxo de blocos ativo.",
+    "telem_log_idle": "[IDLE] Portal em espera. Clique em DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Conectar)",
+    "btn_burst": "⚡ INJECT PEERS (Impulso)",
+    "btn_sound": "ÁUDIO FX:",
+    "sound_on": "LIGADO",
+    "sound_off": "DESLIGADO",
+    "btn_reset": "↺ REINICIAR PORTAL",
+    "feat_tag": "Tecnologia & Desempenho",
+    "feat_title": "Arquitetura BitTorrent de Nova Geração",
+    "feat_desc": "Construído do zero em Rust para erradicar vazamentos de memória e bloqueios de I/O presentes em clientes clássicos.",
+    "f1_title": "Tokio Async & Zero Segfaults",
+    "f1_desc": "Runtime multithread Tokio com I/O de disco não bloqueante e segurança estrita de memória.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Operações bitfield O(N/64) com instruções POPCNT/CLZ e cancelamento global instantâneo no modo endgame.",
+    "f3_title": "BufferPool Zero-Copy & Ajuste BDP",
+    "f3_desc": "Gerenciador de buffers de 16 KiB sem travas e fila de requisições adaptativa em função do RTT e largura de banda.",
+    "f4_title": "Hash de Blocos Multithread (Rayon)",
+    "f4_desc": "Verificação SHA-1 e SHA-256 Merkle delegada a threads Rayon para não sobrecarregar o executor assíncrono.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Compatibilidade com ruTorrent, Flood e ferramentas tradicionais do ecossistema rTorrent.",
+    "f6_title": "gRPC Nativo & TUI no Terminal",
+    "f6_desc": "API gRPC de alto desempenho com transmissão de telemetria e interface de terminal interativa Ratatui.",
+    "f7_title": "BitTorrent v1 & v2 (BEP Suite)",
+    "f7_desc": "Suporte completo para Kademlia DHT, PEX, Fast Extension, uTP LEDBAT e torrents híbridos v2.",
+    "f8_title": "Web UI Integrada (Leptos / Wasm)",
+    "f8_desc": "Servidor REST + WebSocket em Axum com aplicação WebAssembly embutida e autenticação Bearer token.",
+    "arch_tag": "Workspace Modular",
+    "arch_title": "16 Crates Especializadas",
+    "arch_desc": "Dividido em 16 crates independentes com limites de abstração estritos garantidos pelo compilador.",
+    "bench_tag": "Testes & Escalabilidade",
+    "bench_title": "Testado com mais de 14.000 torrents ativos",
+    "bench_desc": "Estruturas de dados otimizadas que eliminam gargalos em sessões massivas de compartilhamento.",
+    "b1_title": "Escala de sessão",
+    "b1_desc": "Torrents ativos em um único processo mantendo resposta instantânea da interface.",
+    "b2_title": "Tempo de busca",
+    "b2_desc": "Índice hash em memória com cache DNS dedicado para anúncios de trackers.",
+    "b3_title": "Uso de memória",
+    "b3_desc": "Uso de RAM substancialmente menor do que clientes tradicionais em C++.",
+    "b4_title": "Restauração de sessão",
+    "b4_desc": "Carregamento concorrente de arquivos .libtorrent_resume com controle de workers de disco.",
+    "docs_tag": "Início Rápido",
+    "docs_title": "Instalação e Uso",
+    "docs_desc": "Escolha a forma mais conveniente de executar no seu servidor ou computador pessoal.",
+    "footer_desc": "Motor BitTorrent moderno escrito em Rust puro.",
+    "footer_license": "Licença GNU GPL v2+ • Autor: @chmuri",
+    "footer_scalability": "Relatório de escalabilidade",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  },
+  "it": {
+    "page_title": "rstorrent — Motore BitTorrent ad alte prestazioni in Rust",
+    "page_desc": "Motore BitTorrent moderno e sicuro in memoria scritto da zero in Rust. Runtime asincrono Tokio, API gRPC, compatibilità SCGI/ruTorrent, TUI Ratatui e Web UI integrata.",
+    "nav_features": "Caratteristiche",
+    "nav_architecture": "Architettura",
+    "nav_benchmarks": "Prestazioni",
+    "nav_docs": "Guida Rapida",
+    "status_pill": "MOTORE ASINCRONO RUST • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Portale per la rete P2P scritto in",
+    "hero_subtitle": "Motore BitTorrent moderno, multithread e sicuro in memoria, progettato per il massimo throughput, ridotto consumo di RAM e oltre 14.000 torrent attivi. Piena compatibilità SCGI con API gRPC nativa.",
+    "copy_btn": "Copia",
+    "copy_copied": "Copiato!",
+    "btn_github": "Repository GitHub",
+    "btn_dial_hero": "⚡ Avvia connessione Swarm",
+    "telem_header": "SWARM GATE // TELEMETRIA NODO",
+    "telem_peers": "Peer Attivi (Swarm)",
+    "telem_speed": "Throughput P2P",
+    "telem_dht": "Nodi DHT (Kademlia)",
+    "telem_interfaces": "Interfacce di controllo",
+    "telem_sparkline": "TRASFERIMENTO LIVE",
+    "telem_boot": "[BOOT] Inizializzazione runtime asincrono Tokio...",
+    "telem_dialing": "CONNESSIONE ALLO SWARM...",
+    "telem_online": "SWARM ONLINE // BLOCCATO",
+    "telem_idle": "STANDBY // INATTIVO",
+    "telem_log_dial": "[DIAL] Apertura tunnel P2P (7 fasi di protocollo)...",
+    "telem_log_online": "[OK] Connessione stabilizzata. Flusso di blocchi attivo.",
+    "telem_log_idle": "[IDLE] Portale in standby. Fai clic su DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Connetti)",
+    "btn_burst": "⚡ INJECT PEERS (Impulso)",
+    "btn_sound": "EFFETTI AUDIO:",
+    "sound_on": "ON",
+    "sound_off": "OFF",
+    "btn_reset": "↺ RESET PORTALE",
+    "feat_tag": "Tecnologia & Prestazioni",
+    "feat_title": "Architettura BitTorrent di nuova generazione",
+    "feat_desc": "Progettato da zero in Rust per eliminare memory leak e blocchi di I/O presenti nei client storici.",
+    "f1_title": "Tokio Async & Zero Segfault",
+    "f1_desc": "Runtime multithread Tokio con I/O su disco non bloccante e totale sicurezza della memoria.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Operazioni bitfield O(N/64) con istruzioni hardware POPCNT/CLZ e cancellazione globale immediata nel finale.",
+    "f3_title": "BufferPool Zero-Copy & Regolazione BDP",
+    "f3_desc": "Arena di buffer da 16 KiB lock-free, parsing Bencode zero-copy e coda adattiva di richieste.",
+    "f4_title": "Hashing di Pezzi Multithread (Rayon)",
+    "f4_desc": "Calcolo SHA-1 e SHA-256 Merkle delegato a threadpool Rayon per mantenere libero il motore Tokio.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Integrazione impeccabile con ruTorrent, Flood e tutti gli strumenti esistenti per rTorrent.",
+    "f6_title": "gRPC Nativo & TUI da Terminale",
+    "f6_desc": "API gRPC ad alta efficienza e interfaccia terminale interattiva basata su Ratatui e Crossterm.",
+    "f7_title": "BitTorrent v1 & v2 (BEP Suite)",
+    "f7_desc": "Supporto completo per DHT Kademlia, PEX, Fast Extension, uTP LEDBAT e torrent ibridi v2.",
+    "f8_title": "Web UI Integrata (Leptos / Wasm)",
+    "f8_desc": "Server REST + WebSocket Axum con applicazione SPA compilata in WebAssembly e autenticazione token.",
+    "arch_tag": "Workspace Modulare",
+    "arch_title": "16 Crates Specializzate",
+    "arch_desc": "Architettura suddivisa in 16 librerie autonome con separazione rigorosa delle responsabilità.",
+    "bench_tag": "Test & Scalabilità",
+    "bench_title": "Testato su oltre 14.000 torrent attivi",
+    "bench_desc": "Strutture dati ottimizzate per evitare rallentamenti anche con decine di migliaia di file in condivisione.",
+    "b1_title": "Dimensione sessione",
+    "b1_desc": "Torrent attivi in un singolo processo con reattività istantanea dell'interfaccia.",
+    "b2_title": "Tempo di ricerca",
+    "b2_desc": "Indice hash in memoria con cache DNS dedicata per le richieste ai tracker.",
+    "b3_title": "Consumo di memoria",
+    "b3_desc": "Uso di memoria RAM nettamente inferiore rispetto ai daemon C++ tradizionali.",
+    "b4_title": "Ripristino sessione",
+    "b4_desc": "Lettura concorrente dei file .libtorrent_resume con limite dinamico dei thread di lavoro.",
+    "docs_tag": "Guida Rapida",
+    "docs_title": "Installazione e Configurazione",
+    "docs_desc": "Scegli la modalità di distribuzione più adatta al tuo server o alla tua workstation.",
+    "footer_desc": "Motore BitTorrent moderno scritto in puro Rust.",
+    "footer_license": "Licenza GNU GPL v2+ • Autore: @chmuri",
+    "footer_scalability": "Rapporto di scalabilità",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  },
+  "nl": {
+    "page_title": "rstorrent — Hoogwaardige BitTorrent-engine in Rust",
+    "page_desc": "Moderne, geheugenveilige BitTorrent-engine vanaf de grond opgebouwd in Rust. Tokio asynchrone runtime, gRPC-API, SCGI/ruTorrent-compatibiliteit, Ratatui TUI en ingebouwde Web UI.",
+    "nav_features": "Kenmerken",
+    "nav_architecture": "Architectuur",
+    "nav_benchmarks": "Prestaties",
+    "nav_docs": "Snelstart",
+    "status_pill": "RUST ASYNC ENGINE • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Toegangspoort tot het P2P-netwerk geschreven in",
+    "hero_subtitle": "Moderne, multithreaded en geheugenveilige BitTorrent-engine ontworpen voor maximale doorvoer, laag geheugengebruik en stabiliteit bij meer dan 14.000 actieve torrents. Volledig SCGI-compatibel met native gRPC-API.",
+    "copy_btn": "Kopiëren",
+    "copy_copied": "Gekopieerd!",
+    "btn_github": "GitHub-opslagplaats",
+    "btn_dial_hero": "⚡ Swarm-verbinding starten",
+    "telem_header": "SWARM GATE // NODE-TELEMETRIE",
+    "telem_peers": "Actieve Peers (Swarm)",
+    "telem_speed": "P2P-Doorvoersnelheid",
+    "telem_dht": "DHT-Knooppunten (Kademlia)",
+    "telem_interfaces": "Bedieningsinterfaces",
+    "telem_sparkline": "LIVE-OVERDRACHT",
+    "telem_boot": "[BOOT] Initialiseren van Tokio asynchrone runtime...",
+    "telem_dialing": "VERBINDEN MET SWARM...",
+    "telem_online": "SWARM ONLINE // VERGRENDELD",
+    "telem_idle": "STANDBY // INACTIEF",
+    "telem_log_dial": "[DIAL] Opzetten van P2P-tunnel (7 fasen)...",
+    "telem_log_online": "[OK] Verbinding gestabiliseerd. Datastroom actief.",
+    "telem_log_idle": "[IDLE] Poort gereed. Klik op DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Verbinden)",
+    "btn_burst": "⚡ INJECT PEERS (Puls)",
+    "btn_sound": "GELUIDSEFFECTEN:",
+    "sound_on": "AAN",
+    "sound_off": "UIT",
+    "btn_reset": "↺ HERSTEL POORT",
+    "feat_tag": "Technologie & Prestaties",
+    "feat_title": "Volgende generatie BitTorrent-architectuur",
+    "feat_desc": "Vanaf de basis ontwikkeld in Rust om geheugenlekken en I/O-blokkades van klassieke clients te elimineren.",
+    "f1_title": "Tokio Async & Geen Segfaults",
+    "f1_desc": "Multithreaded Tokio-runtime met niet-blokkerende schijf-I/O en gegarandeerde geheugenveiligheid.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "O(N/64) bitfield-operaties met hardwarematige POPCNT/CLZ en directe globale CANCEL in endgame.",
+    "f3_title": "Zero-Copy BufferPool & BDP Tuning",
+    "f3_desc": "Vergrendelvrije 16 KiB buffer-arena en adaptieve wachtrijdiepte op basis van RTT en bandbreedte.",
+    "f4_title": "Multithreaded Hashing (Rayon)",
+    "f4_desc": "SHA-1 en BitTorrent v2 SHA-256 berekeningen uitbesteed aan Rayon-threads.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Volledige ondersteuning voor ruTorrent, Flood en bestaande rTorrent-hulpprogramma's.",
+    "f6_title": "Native gRPC & Terminal TUI",
+    "f6_desc": "Snelle gRPC-API met realtime telemetrie en interactieve Ratatui terminal-interface.",
+    "f7_title": "BitTorrent v1 & v2 (BEP-Suite)",
+    "f7_desc": "Ondersteuning voor Kademlia DHT, PEX, Fast Extension, uTP met LEDBAT en v2-hybriden.",
+    "f8_title": "Ingebouwde Web UI (Leptos / Wasm)",
+    "f8_desc": "Axum REST + WebSocket-server met geïntegreerde WebAssembly SPA in Rust.",
+    "arch_tag": "Modulaire Werkruimte",
+    "arch_title": "16 Gespecialiseerde Crates",
+    "arch_desc": "Opgedeeld in 16 zelfstandige crates met strikte abstracties en compiler-garanties.",
+    "bench_tag": "Metingen & Schaalbaarheid",
+    "bench_title": "Bewezen met meer dan 14.000 actieve torrents",
+    "bench_desc": "Geoptimaliseerde datastructuren voorkomen knelpunten, zelfs bij duizenden actieve downloads.",
+    "b1_title": "Sessieomvang",
+    "b1_desc": "Actieve torrents in één proces met behoud van directe interface-responsiviteit.",
+    "b2_title": "Zoektijd",
+    "b2_desc": "Geheugen-gebaseerde hash-index met speciale DNS-cache voor trackers.",
+    "b3_title": "Geheugengebruik",
+    "b3_desc": "Aanzienlijk lager RAM-verbruik dan traditionele C++ clients.",
+    "b4_title": "Sessieherstel",
+    "b4_desc": "Parallel inlezen van .libtorrent_resume bestanden met gecontroleerde schijf-threads.",
+    "docs_tag": "Snelstart",
+    "docs_title": "Installatie & Configuratie",
+    "docs_desc": "Kies de eenvoudigste implementatiemethode voor jouw server of werkstation.",
+    "footer_desc": "Moderne BitTorrent-engine geschreven in pure Rust.",
+    "footer_license": "GNU GPL v2+ Licentie • Auteur: @chmuri",
+    "footer_scalability": "Schaalbaarheidsrapport",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  },
+  "tr": {
+    "page_title": "rstorrent — Rust ile Yazılmış Yüksek Performanslı BitTorrent Motoru",
+    "page_desc": "Rust ile sıfırdan yazılmış, modern ve bellek güvenli BitTorrent motoru. Tokio asenkron çalışma zamanı, gRPC API, SCGI/ruTorrent uyumluluğu, Ratatui TUI ve gömülü Web UI.",
+    "nav_features": "Özellikler",
+    "nav_architecture": "Mimari",
+    "nav_benchmarks": "Performans",
+    "nav_docs": "Hızlı Başlangıç",
+    "status_pill": "RUST ASENKRON MOTOR • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "P2P ağına açılan kapı, yazıldığı dil:",
+    "hero_subtitle": "Maksimum verim, düşük bellek kullanımı ve 14.000'den fazla aktif torrent üzerinde kesintisiz kararlılık için tasarlanmış modern BitTorrent istemci motoru. Yerel gRPC API ve tam SCGI uyumluluğu.",
+    "copy_btn": "Kopyala",
+    "copy_copied": "Kopyalandı!",
+    "btn_github": "GitHub Deposu",
+    "btn_dial_hero": "⚡ Swarm Bağlantısını Başlat",
+    "telem_header": "SWARM GATE // DÜĞÜM TELEMETRİSİ",
+    "telem_peers": "Aktif Eşler (Swarm)",
+    "telem_speed": "P2P Veri Akışı",
+    "telem_dht": "DHT Düğümleri (Kademlia)",
+    "telem_interfaces": "Kontrol Arayüzleri",
+    "telem_sparkline": "CANLI AKTARIM",
+    "telem_boot": "[BOOT] Tokio asenkron çekirdeği başlatılıyor...",
+    "telem_dialing": "SWARM'A BAĞLANILIYOR...",
+    "telem_online": "SWARM ÇEVRİMİÇİ // KİLİTLENDİ",
+    "telem_idle": "BEKLEMEDE // BOŞTA",
+    "telem_log_dial": "[DIAL] P2P tüneli kuruluyor (7 protokol aşaması)...",
+    "telem_log_online": "[OK] Bağlantı kararlı hale geldi. Veri blok akışı aktif.",
+    "telem_log_idle": "[IDLE] Geçit beklemede. DIAL SWARM düğmesine tıklayın.",
+    "btn_dial_gate": "▶ DIAL SWARM (Bağlan)",
+    "btn_burst": "⚡ INJECT PEERS (Dürtü)",
+    "btn_sound": "SES EFEKTİ:",
+    "sound_on": "AÇIK",
+    "sound_off": "KAPALI",
+    "btn_reset": "↺ GEÇİDİ SIFIRLA",
+    "feat_tag": "Teknoloji & Performans",
+    "feat_title": "Yeni Nesil BitTorrent Mimarisi",
+    "feat_desc": "Eski istemcilerdeki bellek sızıntılarını ve I/O kilitlenmelerini tamamen ortadan kaldırmak için Rust ile sıfırdan inşa edildi.",
+    "f1_title": "Tokio Async & Sıfır Çökme",
+    "f1_desc": "Engellenmeyen disk I/O işlemlerine sahip çok iş parçacıklı Tokio asenkron mimarisi.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Donanım POPCNT/CLZ komutlarıyla O(N/64) bitfield işlemleri ve bitiş anında anında global CANCEL yayını.",
+    "f3_title": "Zero-Copy BufferPool & BDP Ayarı",
+    "f3_desc": "Kilit içermeyen 16 KiB bellek havuzu, sıfır kopyalama Bencode ayrıştırıcı ve uyarlanabilir istek kuyruğu.",
+    "f4_title": "Çok İş Parçacıklı Parça Doğrulama (Rayon)",
+    "f4_desc": "SHA-1 ve SHA-256 Merkle ağacı hesaplamalarının Rayon havuzuna devredilmesiyle Tokio iş parçacıklarının kilitlenmesi önlenir.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "ruTorrent, Flood ve mevcut rTorrent betikleriyle tam ve sorunsuz uyumluluk.",
+    "f6_title": "Yerel gRPC & Terminal TUI",
+    "f6_desc": "Tonic rtorrent.v1 gRPC API ve Ratatui tabanlı etkileşimli terminal kullanıcı arayüzü.",
+    "f7_title": "BitTorrent v1 & v2 (BEP Paketi)",
+    "f7_desc": "Kademlia DHT, PEX, Fast Extension, uTP LEDBAT ve v2 hibrit torrent desteği.",
+    "f8_title": "Gömülü Web UI (Leptos / Wasm)",
+    "f8_desc": "Axum REST + WebSocket sunucusu ve Rust WebAssembly ile derlenmiş SPA arayüzü.",
+    "arch_tag": "Modüler Çalışma Alanı",
+    "arch_title": "16 Özelleşmiş Sandık (Crate)",
+    "arch_desc": "16 bağımsız bileşene bölünmüş, katı soyutlama ve güvenlik kurallarına sahip mimari.",
+    "bench_tag": "Ölçümler & Ölçeklenebilirlik",
+    "bench_title": "14.000'den Fazla Aktif Torrent ile Test Edildi",
+    "bench_desc": "Büyük ölçekli dosya paylaşım senaryolarında darboğazları ortadan kaldıran veri yapıları.",
+    "b1_title": "Oturum Ölçeği",
+    "b1_desc": "Tek bir süreçte anlık arayüz yanıt süresini koruyan aktif torrent sayısı.",
+    "b2_title": "Arama Süresi",
+    "b2_desc": "İzleyici sorguları için özel DNS önbelleğine sahip bellek içi karma dizini.",
+    "b3_title": "Bellek Tüketimi",
+    "b3_desc": "Kompakt bit dizilimleri sayesinde klasik C++ istemcilerine göre çok daha az RAM kullanımı.",
+    "b4_title": "Oturumu Geri Yükleme",
+    "b4_desc": "Sınırlı disk çalışanları ile .libtorrent_resume dosyalarının eşzamanlı okunması.",
+    "docs_tag": "Hızlı Başlangıç",
+    "docs_title": "Kurulum ve Dağıtım",
+    "docs_desc": "Sunucunuz veya kişisel bilgisayarınız için en uygun dağıtım yöntemini seçin.",
+    "footer_desc": "Saf Rust ile yazılmış modern BitTorrent motoru.",
+    "footer_license": "GNU GPL v2+ Lisansı • Geliştirici: @chmuri",
+    "footer_scalability": "Ölçeklenebilirlik Raporu",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  },
+  "uk": {
+    "page_title": "rstorrent — Високопродуктивний рушій BitTorrent на Rust",
+    "page_desc": "Сучасний та безпечний для пам'яті рушій BitTorrent, написаний з нуля на Rust. Асинхронний рантайм Tokio, gRPC API, сумісність з SCGI/ruTorrent, термінальний TUI та веб-інтерфейс.",
+    "nav_features": "Можливості",
+    "nav_architecture": "Архітектура",
+    "nav_benchmarks": "Продуктивність",
+    "nav_docs": "Швидкий старт",
+    "status_pill": "АСИНХРОННИЙ РУШІЙ RUST • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Брама до мережі P2P, створена на",
+    "hero_subtitle": "Сучасний, багатопотоковий та безпечний клієнтський рушій BitTorrent, розроблений для максимальної пропускної здатності та стабільної роботи понад 14 000 активних роздач. Повна сумісність з SCGI та нативне gRPC API.",
+    "copy_btn": "Копіювати",
+    "copy_copied": "Скопійовано!",
+    "btn_github": "Репозиторій GitHub",
+    "btn_dial_hero": "⚡ Ініціювати з'єднання Swarm",
+    "telem_header": "SWARM GATE // ТЕЛЕМЕТРІЯ ВУЗЛА",
+    "telem_peers": "Активні Піри (Swarm)",
+    "telem_speed": "Швидкість P2P",
+    "telem_dht": "Вузли DHT (Kademlia)",
+    "telem_interfaces": "Інтерфейси керування",
+    "telem_sparkline": "ПЕРЕДАЧА НАЖИВО",
+    "telem_boot": "[BOOT] Ініціалізація асинхронного ядра Tokio...",
+    "telem_dialing": "ПІДКЛЮЧЕННЯ ДО SWARM...",
+    "telem_online": "SWARM ОНЛАЙН // ЗАБЛОКОВАНО",
+    "telem_idle": "ОЧІКУВАННЯ // ВІЛЬНИЙ",
+    "telem_log_dial": "[DIAL] Встановлення P2P-тунелю (7 етапів протоколу)...",
+    "telem_log_online": "[OK] З'єднання стабілізовано. Потік блоків активний.",
+    "telem_log_idle": "[IDLE] Брама в режимі очікування. Натисніть DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (З'єднати)",
+    "btn_burst": "⚡ INJECT PEERS (Імпульс)",
+    "btn_sound": "ЗВУКОВІ FX:",
+    "sound_on": "УВІМК",
+    "sound_off": "ВИМК",
+    "btn_reset": "↺ СКИНУТИ БРАМУ",
+    "feat_tag": "Технології & Продуктивність",
+    "feat_title": "Архітектура BitTorrent нового покоління",
+    "feat_desc": "Створено з нуля на Rust, щоб усунути витоки пам'яті та блокування потоків I/O, притаманні старим клієнтам.",
+    "f1_title": "Tokio Async & Жодних Segfault",
+    "f1_desc": "Багатопотоковий рантайм Tokio з неблокуючим дисковим I/O та суворою безпекою пам'яті.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Операції O(N/64) з апаратними інструкціями POPCNT/CLZ та миттєве сповіщення CANCEL у режимі endgame.",
+    "f3_title": "Zero-Copy BufferPool & BDP Tuning",
+    "f3_desc": "Арена буферів на 16 КіБ без блокувань, парсер Bencode з нульовим копіюванням та адаптивна черга запитів.",
+    "f4_title": "Багатопотоковий Хеш Частин (Rayon)",
+    "f4_desc": "Обчислення SHA-1 та дерев Merkle SHA-256 передано пулу Rayon, що не блокує асинхронні потоки Tokio.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Повна сумісність з ruTorrent, Flood та класичними скриптами екосистеми rTorrent.",
+    "f6_title": "Нативний gRPC & Термінальний TUI",
+    "f6_desc": "Високошвидкісний gRPC API зі стрімінгом телеметрії та інтерактивний термінальний TUI (Ratatui/Crossterm).",
+    "f7_title": "BitTorrent v1 & v2 (Пакет BEP)",
+    "f7_desc": "Підтримка Kademlia DHT, PEX, Fast Extension, uTP LEDBAT та гібридних роздач BitTorrent v2.",
+    "f8_title": "Вбудований Web UI (Leptos / Wasm)",
+    "f8_desc": "Axum REST + WebSocket сервер з клієнтом WebAssembly на Rust та авторизацією токеном.",
+    "arch_tag": "Модульний Воркспейс",
+    "arch_title": "16 Спеціалізованих Крейтів",
+    "arch_desc": "Архітектура розділена на 16 окремих крейтів із суворою перевіркою безпеки компілятором.",
+    "bench_tag": "Тести & Масштабованість",
+    "bench_title": "Перевірено на понад 14 000 активних роздач",
+    "bench_desc": "Оптимізовані структури даних усувають вузькі місця при масштабному сідуванні файлів.",
+    "b1_title": "Масштаб сесії",
+    "b1_desc": "Активних торентів в одному процесі при збереженні миттєвого відгуку інтерфейсу.",
+    "b2_title": "Час пошуку",
+    "b2_desc": "Індексація в пам'яті з окремим кешем DNS для трекерів.",
+    "b3_title": "Споживання пам'яті",
+    "b3_desc": "Значно менше використання RAM порівняно з демонами на C++ завдяки бітовим масивам.",
+    "b4_title": "Відновлення сесії",
+    "b4_desc": "Паралельне зчитування файлів .libtorrent_resume з контрольованим пулом дискових воркерів.",
+    "docs_tag": "Швидкий Старт",
+    "docs_title": "Встановлення та запуск",
+    "docs_desc": "Оберіть найзручніший спосіб запуску на вашому сервері чи персональному комп'ютері.",
+    "footer_desc": "Сучасний рушій BitTorrent, написаний на чистому Rust.",
+    "footer_license": "Ліцензія GNU GPL v2+ • Автор: @chmuri",
+    "footer_scalability": "Звіт про масштабованість",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  },
+  "ru": {
+    "page_title": "rstorrent — Высокопроизводительный движок BitTorrent на Rust",
+    "page_desc": "Современный и безопасный по памяти движок BitTorrent, написанный с нуля на Rust. Асинхронный рантайм Tokio, gRPC API, совместимость с SCGI/ruTorrent, консольный TUI и веб-интерфейс.",
+    "nav_features": "Возможности",
+    "nav_architecture": "Архитектура",
+    "nav_benchmarks": "Производительность",
+    "nav_docs": "Быстрый старт",
+    "status_pill": "АСИНХРОННЫЙ ДВИЖОК RUST • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "Врата в сеть P2P, созданные на",
+    "hero_subtitle": "Современный, многопоточный и безопасный движок BitTorrent, спроектированный для максимальной скорости и стабильной работы более 14 000 активных раздач. Полная совместимость с SCGI и нативное gRPC API.",
+    "copy_btn": "Копировать",
+    "copy_copied": "Скопировано!",
+    "btn_github": "Репозиторий GitHub",
+    "btn_dial_hero": "⚡ Инициировать соединение Swarm",
+    "telem_header": "SWARM GATE // ТЕЛЕМЕТРИЯ УЗЛА",
+    "telem_peers": "Активные Пиры (Swarm)",
+    "telem_speed": "Скорость P2P",
+    "telem_dht": "Узлы DHT (Kademlia)",
+    "telem_interfaces": "Интерфейсы управления",
+    "telem_sparkline": "ПЕРЕДАЧА В РЕАЛЬНОМ ВРЕМЕНИ",
+    "telem_boot": "[BOOT] Инициализация асинхронного ядра Tokio...",
+    "telem_dialing": "ПОДКЛЮЧЕНИЕ К SWARM...",
+    "telem_online": "SWARM ОНЛАЙН // ЗАБЛОКИРОВАНО",
+    "telem_idle": "ОЖИДАНИЕ // СВОБОДЕН",
+    "telem_log_dial": "[DIAL] Установка P2P-туннеля (7 этапов протокола)...",
+    "telem_log_online": "[OK] Соединение стабилизировано. Поток блоков активен.",
+    "telem_log_idle": "[IDLE] Врата в режиме ожидания. Нажмите DIAL SWARM.",
+    "btn_dial_gate": "▶ DIAL SWARM (Соединить)",
+    "btn_burst": "⚡ INJECT PEERS (Импульс)",
+    "btn_sound": "ЗВУКОВЫЕ FX:",
+    "sound_on": "ВКЛ",
+    "sound_off": "ВЫКЛ",
+    "btn_reset": "↺ СБРОС ВРАТ",
+    "feat_tag": "Технологии & Производительность",
+    "feat_title": "Архитектура BitTorrent нового поколения",
+    "feat_desc": "Создан с нуля на Rust для устранения утечек памяти и блокировок ввода-вывода, характерных для старых клиентов.",
+    "f1_title": "Tokio Async & Никаких Segfault",
+    "f1_desc": "Многопоточный рантайм Tokio с неблокирующим дисковым I/O и абсолютной безопасностью памяти.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "Операции O(N/64) с аппаратными инструкциями POPCNT/CLZ и мгновенная отправка CANCEL в режиме endgame.",
+    "f3_title": "Zero-Copy BufferPool & Настройка BDP",
+    "f3_desc": "Безблокировочная арена буферов на 16 КиБ, парсер Bencode без копирования и адаптивная очередь запросов.",
+    "f4_title": "Многопоточный Хеш Кусков (Rayon)",
+    "f4_desc": "Вычисление SHA-1 и деревьев Merkle SHA-256 передано пулу Rayon, не нагружая асинхронный исполнитель Tokio.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "Полная совместимость с ruTorrent, Flood и существующими скриптами инфраструктуры rTorrent.",
+    "f6_title": "Нативный gRPC & Консольный TUI",
+    "f6_desc": "Высокоскоростной gRPC API с потоковой телеметрией и интерактивный терминальный TUI (Ratatui/Crossterm).",
+    "f7_title": "BitTorrent v1 & v2 (Набор BEP)",
+    "f7_desc": "Поддержка Kademlia DHT, PEX, Fast Extension, uTP LEDBAT и гибридных раздач BitTorrent v2.",
+    "f8_title": "Встроенный Web UI (Leptos / Wasm)",
+    "f8_desc": "Axum REST + WebSocket сервер со встроенным приложением WebAssembly на Rust и токеном авторизации.",
+    "arch_tag": "Модульный Воркспейс",
+    "arch_title": "16 Специализированных Крейтов",
+    "arch_desc": "Архитектура разделена на 16 независимых библиотек со строгими гарантиями компилятора.",
+    "bench_tag": "Тесты & Масштабируемость",
+    "bench_title": "Проверено на более чем 14 000 активных раздач",
+    "bench_desc": "Оптимизированные структуры данных устраняют узкие места при масштабном сидировании файлов.",
+    "b1_title": "Масштаб сессии",
+    "b1_desc": "Активных торрентов в одном процессе при сохранении мгновенного отклика интерфейса.",
+    "b2_title": "Время поиска",
+    "b2_desc": "Индексация в оперативной памяти с выделенным DNS-кэшем для трекеров.",
+    "b3_title": "Потребление памяти",
+    "b3_desc": "Существенно меньшее использование RAM по сравнению с демонами на C++.",
+    "b4_title": "Восстановление сессии",
+    "b4_desc": "Параллельное чтение файлов .libtorrent_resume с ограниченным числом дисковых воркеров.",
+    "docs_tag": "Быстрый Старт",
+    "docs_title": "Установка и Запуск",
+    "docs_desc": "Выберите наиболее удобный способ развертывания на сервере или рабочей станции.",
+    "footer_desc": "Современный движок BitTorrent, написанный на чистом Rust.",
+    "footer_license": "Лицензия GNU GPL v2+ • Автор: @chmuri",
+    "footer_scalability": "Отчет о масштабируемости",
+    "arch_subtitle": "Модульная архитектура из 16 крейтов, разделенных на 5 уровней",
+    "arch_flow_title": "Поток Данных & Жизненный Цикл Торрента",
+    "arch_flow_desc": "Строго неблокирующий конвейер: асинхронный реактор Tokio для сети и изолированные пулы потоков Rayon для операций ввода-вывода и хэширования.",
+    "arch_layer_all": "Все уровни (16)",
+    "arch_layer_foundation": "Фундамент (3)",
+    "arch_layer_network": "Сеть & P2P (5)",
+    "arch_layer_engine": "Ядро Движка (2)",
+    "arch_layer_rpc": "RPC & Управление (3)",
+    "arch_layer_ui": "Интерфейсы UI (3)",
+    "arch_invariants_title": "Ключевые Принципы Архитектуры",
+    "arch_inv1_title": "Асинхронный Реактор Сети + Изолированный Пул Диска",
+    "arch_inv1_desc": "Реактор Tokio обрабатывает сокеты P2P и DHT без задержек. Запись на диск и вычисление SHA-1/256 переданы Rayon.",
+    "arch_inv2_title": "Контролируемые Компилятором Границы Безопасности",
+    "arch_inv2_desc": "Строгое правило unsafe_code = deny на всех верхних уровнях. Небезопасный код изолирован исключительно в lt-sys.",
+    "arch_inv3_title": "Байт-ориентированная Модель Данных Bencode",
+    "arch_inv3_desc": "Ключи и строки Bencode хранятся как байтовые буферы (Bytes / Vec<u8>), предотвращая сбои из-за некорректного UTF-8.",
+    "doc_tab_cli": "CLI & Развертывание",
+    "doc_tab_rc": "Конфигурация .rtorrent.rc",
+    "doc_tab_keys": "Горячие клавиши TUI",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Параметры Командной Строки и Режимы Демона",
+    "doc_cli_desc": "Запуск в интерактивном режиме TUI, запуск в фоновом режиме демона (--daemon) или подключение клиента rtorrent-tui по gRPC.",
+    "doc_rc_title": "Справочник Конфигурации ~/.rtorrent.rc",
+    "doc_rc_desc": "Полная поддержка синтаксиса команд rTorrent: пути сессии, диапазоны портов, ограничение скорости и автозагрузка из папки.",
+    "doc_keys_title": "Управление в Терминале и Горячие Клавиши",
+    "doc_keys_desc": "Эргономичная навигация: стрелки и клавиши Vim (j/k/h/l), групповое выделение (Пробел) и модальные окна.",
+    "doc_web_title": "Подключение Веб-Интерфейсов: ruTorrent, Flood и gRPC",
+    "doc_web_desc": "Интеграция через неблокирующий SCGI сокет UNIX/TCP либо современные потоки gRPC Tonic."
+  },
+  "zh": {
+    "page_title": "rstorrent — 基于 Rust 的高性能 BitTorrent 引擎",
+    "page_desc": "从零开始用 Rust 编写的现代化、内存安全 BitTorrent 客户端引擎。Tokio 异步运行时、gRPC API、SCGI/ruTorrent 兼容、Ratatui 终端 TUI 和内置 Leptos Web UI。",
+    "nav_features": "核心特性",
+    "nav_architecture": "模块架构",
+    "nav_benchmarks": "性能指标",
+    "nav_docs": "快速上手",
+    "status_pill": "RUST 异步引擎 • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "新一代 P2P 网络之门，编写语言：",
+    "hero_subtitle": "专为极致吞吐量、超低内存占用以及支持 14,000+ 活跃种子稳定做种而设计的现代化多线程 BitTorrent 引擎。完全兼容 SCGI (ruTorrent, Flood) 并提供原生 gRPC API 与内置 Web 界面。",
+    "copy_btn": "复制",
+    "copy_copied": "已复制！",
+    "btn_github": "GitHub 仓库",
+    "btn_dial_hero": "⚡ 建立 Swarm 连接",
+    "telem_header": "SWARM GATE // 节点遥测数据",
+    "telem_peers": "活跃节点 (Swarm)",
+    "telem_speed": "P2P 数据吞吐率",
+    "telem_dht": "DHT 节点 (Kademlia)",
+    "telem_interfaces": "控制接口",
+    "telem_sparkline": "实时传输走势",
+    "telem_boot": "[BOOT] 正在初始化 Tokio 异步运行时核心...",
+    "telem_dialing": "正在连接 SWARM...",
+    "telem_online": "SWARM 在线 // 已锁定",
+    "telem_idle": "待命 // 空闲",
+    "telem_log_dial": "[DIAL] 启动 P2P 隧道建立流程 (7个协议阶段)...",
+    "telem_log_online": "[OK] 隧道已稳定。数据分块传输就绪。",
+    "telem_log_idle": "[IDLE] 网门就绪。点击 DIAL SWARM 开始连接。",
+    "btn_dial_gate": "▶ DIAL SWARM (连接)",
+    "btn_burst": "⚡ INJECT PEERS (脉冲)",
+    "btn_sound": "音效 FX:",
+    "sound_on": "开",
+    "sound_off": "关",
+    "btn_reset": "↺ 重置网门",
+    "feat_tag": "技术架构与性能",
+    "feat_title": "下一代 BitTorrent 架构设计",
+    "feat_desc": "彻底使用 Rust 重新打造，彻底解决历史 C++ 客户端常见的内存泄漏、I/O 线程阻塞和高并发崩溃等问题。",
+    "f1_title": "Tokio Async & 零崩溃保证",
+    "f1_desc": "基于 Tokio 多线程异步运行时，支持非阻塞定向磁盘 I/O (write_all_at, read_exact_at)，绝对内存安全。",
+    "f2_title": "SIMD 最稀缺优先与动态 Endgame",
+    "f2_desc": "借助硬件 POPCNT/CLZ 指令实现 O(N/64) 高速位图运算，动态节点速度分级并在收尾阶段广播 CANCEL。",
+    "f3_title": "零拷贝 BufferPool & BDP 管道优化",
+    "f3_desc": "基于 crossbeam-queue 的 16 KiB 无锁缓冲区池，零拷贝 Bencode 解析器与自适应请求队列深度。",
+    "f4_title": "多线程分块校验哈希 (Rayon)",
+    "f4_desc": "将 SHA-1 与 BitTorrent v2 SHA-256 Merkle 校验委托给 Rayon 线程池，避免磁盘校验抢占 Tokio 异步核心。",
+    "f5_title": "SCGI、XML-RPC 与 JSON-RPC",
+    "f5_desc": "完全支持基于 UNIX Socket 或 TCP 的 SCGI 协议，无缝接入 ruTorrent、Flood 及现有的生态脚本。",
+    "f6_title": "原生 gRPC 与终端 TUI",
+    "f6_desc": "高效 Tonic rtorrent.v1 gRPC 服务并支持数据流推送，提供精美 Ratatui 终端界面及独立客户端。",
+    "f7_title": "BitTorrent v1 & v2 (BEP 协议簇)",
+    "f7_desc": "完整支持 Kademlia DHT、PEX、Fast Extension、uTP LEDBAT、MSE/PE 加密以及 v2 混合种子。",
+    "f8_title": "内置 Web UI (Leptos / Wasm)",
+    "f8_desc": "基于 Axum 的 REST + WebSocket 服务器，内置纯 Rust 编译的 Leptos WebAssembly 单页前端。",
+    "arch_tag": "模块化工作区",
+    "arch_title": "16 个高度专业化的 Crates",
+    "arch_desc": "整个项目划分为 16 个高内聚、低耦合的模块，上层严格实行 unsafe_code = deny 编译检查。",
+    "bench_tag": "性能基准与伸缩性",
+    "bench_title": "经受 14,000+ 活跃种子的极限实测",
+    "bench_desc": "精细优化的紧凑数据结构，彻底杜绝海量做种场景下的性能衰减。",
+    "b1_title": "会话规模",
+    "b1_desc": "单进程稳定支撑 14,000+ 种子，终端界面依然保持毫秒级瞬时响应。",
+    "b2_title": "检索复杂度",
+    "b2_desc": "内存 O(1) 哈希快速定位，附带 Tracker 域名专用 DNS 高速缓存。",
+    "b3_title": "内存开销",
+    "b3_desc": "得益于紧凑位图表达，内存占用显著低于传统 C++ 客户端。",
+    "b4_title": "会话快速恢复",
+    "b4_desc": "利用限制并发的有界工作池多线程并发读取 .libtorrent_resume 状态文件。",
+    "docs_tag": "快速上手",
+    "docs_title": "安装与部署指南",
+    "docs_desc": "为您的服务器或个人电脑选择最契合的部署方案。",
+    "footer_desc": "采用纯 Rust 编写的现代化 BitTorrent 客户端引擎。",
+    "footer_license": "GNU GPL v2+ 开源协议 • 作者: @chmuri",
+    "footer_scalability": "扩展性深度报告",
+    "arch_subtitle": "跨 16 个 Crates 与 5 个抽象层级的现代模块化架构",
+    "arch_flow_title": "数据流向与种子生命周期",
+    "arch_flow_desc": "严格的非阻塞异步管道：网络 I/O 由 Tokio 异步反应器驱动，磁盘与分块哈希计算完全卸载至独立 Rayon 线程池。",
+    "arch_layer_all": "全部层级 (16)",
+    "arch_layer_foundation": "系统与基础层 (3)",
+    "arch_layer_network": "传输与协议栈 (5)",
+    "arch_layer_engine": "核心引擎层 (2)",
+    "arch_layer_rpc": "RPC与控制层 (3)",
+    "arch_layer_ui": "终端界面与CLI (3)",
+    "arch_invariants_title": "核心设计不变性原则",
+    "arch_inv1_title": "异步网络核心 + 独立磁盘工作池",
+    "arch_inv1_desc": "Tokio 异步反应器全速处理 P2P 套接字与 DHT 查询，磁盘定向读写与 SHA 校验由 Rayon 线程并发分流，永不阻塞网络反应堆。",
+    "arch_inv2_title": "编译器强制内存安全隔离",
+    "arch_inv2_desc": "在所有上层 crate 中强制启用 unsafe_code = deny。所有底层硬件操作严格限定在 lt-sys 及 safe mmap 适配层中。",
+    "arch_inv3_title": "面向字节的二进制 Bencode 模型",
+    "arch_inv3_desc": "Bencode 键值直接作为字节缓冲（Bytes / Vec<u8>）处理，不预先假设有效 UTF-8，杜绝脏元数据引发的引擎 Panic。",
+    "doc_tab_cli": "CLI 与部署",
+    "doc_tab_rc": ".rtorrent.rc 配置指南",
+    "doc_tab_keys": "TUI 终端快捷键",
+    "doc_tab_web": "ruTorrent 与 Web UI 接入",
+    "doc_cli_title": "命令行参数与运行模式",
+    "doc_cli_desc": "支持交互式终端 TUI 模式、后台无头守护进程模式（--daemon），以及轻量级远程 gRPC 客户端 rtorrent-tui。",
+    "doc_rc_title": "标准配置文件 ~/.rtorrent.rc 详尽参考",
+    "doc_rc_desc": "完整支持经典 rTorrent 命令 DSL 语法：会话存储路径、P2P 端口范围、速度限制分组及 inotify 自动监控目录。",
+    "doc_keys_title": "交互式终端控制与快捷键速查",
+    "doc_keys_desc": "双模操作体验：全面支持方向键导航与 Vim 模态移动（j/k/h/l），配合空格键（Space）实现快速批量多选。",
+    "doc_web_title": "Web 前端接入：ruTorrent、Flood 与 gRPC",
+    "doc_web_desc": "支持通过 UNIX Domain Socket 或 TCP 暴露 SCGI 接口，或使用现代 Tonic gRPC 协议流式传输节点状态。"
+  },
+  "ja": {
+    "page_title": "rstorrent — Rustで書かれた高性能BitTorrentエンジン",
+    "page_desc": "Rustでゼロから設計されたモダンでメモリ安全なBitTorrentエンジン。Tokio非同期ランタイム、gRPC API、SCGI/ruTorrent互換、Ratatui TUI、組み込みLeptos Web UI。",
+    "nav_features": "機能",
+    "nav_architecture": "アーキテクチャ",
+    "nav_benchmarks": "パフォーマンス",
+    "nav_docs": "クイックスタート",
+    "status_pill": "RUST 非同期エンジン • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "P2Pネットワークへのゲートウェイ、開発言語：",
+    "hero_subtitle": "最大スループット、極小のメモリ使用量、そして14,000以上のタスクでの安定した稼働を目指してゼロから開発されたBitTorrentクライアントエンジン。SCGI完全互換およびネイティブgRPC対応。",
+    "copy_btn": "コピー",
+    "copy_copied": "コピー完了!",
+    "btn_github": "GitHub リポジトリ",
+    "btn_dial_hero": "⚡ Swarm接続を開始",
+    "telem_header": "SWARM GATE // ノードテレメトリ",
+    "telem_peers": "アクティブピア (Swarm)",
+    "telem_speed": "P2P スループット",
+    "telem_dht": "DHTノード (Kademlia)",
+    "telem_interfaces": "制御インターフェース",
+    "telem_sparkline": "リアルタイム転送",
+    "telem_boot": "[BOOT] Tokio非同期コアを初期化中...",
+    "telem_dialing": "SWARMに接続中...",
+    "telem_online": "SWARM オンライン // ロック完了",
+    "telem_idle": "スタンバイ // アイドル",
+    "telem_log_dial": "[DIAL] P2Pトンネル確立を開始 (7つのプロトコル段階)...",
+    "telem_log_online": "[OK] 接続が安定しました。データブロック転送中。",
+    "telem_log_idle": "[IDLE] ゲート待機中。DIAL SWARMをクリックしてください。",
+    "btn_dial_gate": "▶ DIAL SWARM (接続)",
+    "btn_burst": "⚡ INJECT PEERS (パルス)",
+    "btn_sound": "効果音 FX:",
+    "sound_on": "ON",
+    "sound_off": "OFF",
+    "btn_reset": "↺ ゲートリセット",
+    "feat_tag": "技術 & パフォーマンス",
+    "feat_title": "次世代のBitTorrentアーキテクチャ",
+    "feat_desc": "従来のクライアントが抱えていたメモリリークやI/Oスレッドのブロッキング問題を根絶するために設計されました。",
+    "f1_title": "Tokio Async & 安全設計",
+    "f1_desc": "ノンブロッキングディスクI/Oを備えたマルチスレッドTokioランタイム。セグメンテーション違反を完全に防止。",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "ハードウェアPOPCNT/CLZを活用したO(N/64)ビット演算と、エンドゲーム時のグローバルCANCEL即時ブロードキャスト。",
+    "f3_title": "Zero-Copy BufferPool & BDP調整",
+    "f3_desc": "ロックフリーな16 KiBバッファアリーナと、RTTと帯域幅に適応するリクエストキュー最適化。",
+    "f4_title": "マルチスレッドブロック検証 (Rayon)",
+    "f4_desc": "SHA-1およびBitTorrent v2 SHA-256 Merkle検証をRayonスレッドプールへ逃がし、Tokioスレッドの枯渇を防止。",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "ruTorrent、Flood、既存のrTorrentツール群との完全な互換性を確保。",
+    "f6_title": "ネイティブgRPC & 端末TUI",
+    "f6_desc": "高速なgRPC API（テレメトリ配信対応）と、Ratatuiによる洗練されたターミナル操作画面を提供。",
+    "f7_title": "BitTorrent v1 & v2 (BEP仕様対応)",
+    "f7_desc": "Kademlia DHT、PEX、Fast Extension、uTP LEDBAT、暗号化MSE/PE、ハイブリッドv2に対応。",
+    "f8_title": "組み込みWeb UI (Leptos / Wasm)",
+    "f8_desc": "Axumベースのサーバーに、Rust WebAssemblyでビルドされたSPA画面を内蔵。",
+    "arch_tag": "モジュール構造",
+    "arch_title": "16の特化型クレート (Crates)",
+    "arch_desc": "プロジェクトは16個の独立したクレートに分離され、厳格なコード安全性を維持しています。",
+    "bench_tag": "ベンチマーク & スケーラビリティ",
+    "bench_title": "14,000以上の同時アクティブタスクで実証済み",
+    "bench_desc": "大規模なシーディング環境でもボトルネックが発生しない最適化されたデータ構造を採用。",
+    "b1_title": "セッション規模",
+    "b1_desc": "単一プロセスで14,000超のタスクを保持しながら瞬時のUI応答性を維持。",
+    "b2_title": "検索速度",
+    "b2_desc": "トラッカー専用DNSキャッシュを備えたメモリ内O(1)ハッシュインデックス。",
+    "b3_title": "メモリフットプリント",
+    "b3_desc": "コンパクトなビット表現により、従来のC++製デーモンと比較して大幅に省メモリ。",
+    "b4_title": "セッション復元",
+    "b4_desc": ".libtorrent_resume ファイルを制限付きディスクスレッドで並行読み込み。",
+    "docs_tag": "クイックスタート",
+    "docs_title": "インストールと起動",
+    "docs_desc": "サーバーやワークステーションに応じた最適な実行方法を選択してください。",
+    "footer_desc": "純粋なRustで書かれたモダンなBitTorrentクライアントエンジン。",
+    "footer_license": "GNU GPL v2+ ライセンス • 作者: @chmuri",
+    "footer_scalability": "スケーラビリティ詳細レポート",
+    "arch_subtitle": "16個のCratesと5つの抽象レイヤーに分割されたモジュール構造",
+    "arch_flow_title": "データフローとトレントライフサイクル",
+    "arch_flow_desc": "完全非同期パイプライン：Tokio非同期リアクターがネットワークI/Oを処理し、ディスクI/Oとハッシュ検証は独立したRayonプールで実行。",
+    "arch_layer_all": "全レイヤー (16)",
+    "arch_layer_foundation": "基礎層 (3)",
+    "arch_layer_network": "トランスポート & P2P (5)",
+    "arch_layer_engine": "エンジン中核 (2)",
+    "arch_layer_rpc": "RPC & 制御 (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "中核となる設計方針",
+    "arch_inv1_title": "非同期ネットワーク + 独立ディスクI/Oプール",
+    "arch_inv1_desc": "TokioリアクターがP2PソケットとDHT通信をノンブロッキングで実行。ディスク検証はRayonプールに委譲され処理を妨げません。",
+    "arch_inv2_title": "コンパイラによる厳格なメモリ安全境界",
+    "arch_inv2_desc": "上位の主要Crateすべてに unsafe_code = deny を強制。低レベルなunsafeコードはlt-sysとmmap内部に完全に隔離されています。",
+    "arch_inv3_title": "バイト指向Bencodeデータモデル",
+    "arch_inv3_desc": "Bencodeキーと値をバイトバッファとして扱うことで、不正なUTF-8文字を含むトレントメタデータによるクラッシュを防止。",
+    "doc_tab_cli": "CLI & 起動方法",
+    "doc_tab_rc": ".rtorrent.rc 設定ファイル",
+    "doc_tab_keys": "TUI ショートカット一覧",
+    "doc_tab_web": "ruTorrent & Web連携",
+    "doc_cli_title": "CLI起動オプションとデーモンモード",
+    "doc_cli_desc": "端末TUIによる直接操作、サーバー向けバックグラウンド実行（--daemon）、および遠隔操作クライアントrtorrent-tuiに対応。",
+    "doc_rc_title": "設定ファイル ~/.rtorrent.rc の詳細解説",
+    "doc_rc_desc": "セッション保存先、待ち受けポート、帯域制限、inotifyを用いた自動読み込みディレクトリ（watch directory）の設定例。",
+    "doc_keys_title": "ターミナル操作とショートカットキー",
+    "doc_keys_desc": "標準カーソルキーとVimスタイル（j/k/h/l）を両立。スペースキーによる複数選択にも対応。",
+    "doc_web_title": "Webフロントエンド連携: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "SCGI UNIXソケットまたはTCP接続を介してruTorrentやFloodと連携可能。さらに高速なTonic gRPCも標準サポート。"
+  },
+  "ko": {
+    "page_title": "rstorrent — Rust 기반 고성능 BitTorrent 엔진",
+    "page_desc": "Rust로 처음부터 설계된 현대적이고 메모리 안전한 BitTorrent 엔진. Tokio 비동기 런타임, gRPC API, SCGI/ruTorrent 호환성, Ratatui TUI 및 내장 Leptos Web UI.",
+    "nav_features": "주요 기능",
+    "nav_architecture": "아키텍처",
+    "nav_benchmarks": "성능 지표",
+    "nav_docs": "빠른 시작",
+    "status_pill": "RUST 비동기 엔진 • gRPC / SCGI / TUI / WEB",
+    "hero_title_pre": "P2P 네트워크로 향하는 게이트웨이, 개발 언어:",
+    "hero_subtitle": "최대 처리량, 극도로 낮은 메모리 오버헤드, 14,000개 이상의 활성 토렌트를 안정적으로 구동하도록 설계된 BitTorrent 클라이언트 엔진. 완벽한 SCGI 호환 및 네이티브 gRPC API 제공.",
+    "copy_btn": "복사",
+    "copy_copied": "복사 완료!",
+    "btn_github": "GitHub 저장소",
+    "btn_dial_hero": "⚡ Swarm 연결 시작",
+    "telem_header": "SWARM GATE // 노드 원격 측정",
+    "telem_peers": "활성 피어 (Swarm)",
+    "telem_speed": "P2P 처리량",
+    "telem_dht": "DHT 노드 (Kademlia)",
+    "telem_interfaces": "제어 인터페이스",
+    "telem_sparkline": "실시간 전송 그래프",
+    "telem_boot": "[BOOT] Tokio 비동기 코어 초기화 중...",
+    "telem_dialing": "SWARM 연결 중...",
+    "telem_online": "SWARM 온라인 // 잠금 완료",
+    "telem_idle": "대기 중 // 유휴 상태",
+    "telem_log_dial": "[DIAL] P2P 터널 수립 시작 (7단계 프로토콜)...",
+    "telem_log_online": "[OK] 연결 안정화 완료. 데이터 블록 스트림 활성화.",
+    "telem_log_idle": "[IDLE] 게이트 대기 중. DIAL SWARM 버튼을 클릭하세요.",
+    "btn_dial_gate": "▶ DIAL SWARM (연결)",
+    "btn_burst": "⚡ INJECT PEERS (펄스)",
+    "btn_sound": "사운드 FX:",
+    "sound_on": "켜짐",
+    "sound_off": "꺼짐",
+    "btn_reset": "↺ 게이트 리셋",
+    "feat_tag": "기술 & 성능",
+    "feat_title": "차세대 BitTorrent 아키텍처",
+    "feat_desc": "기존 클라이언트의 메모리 누수와 I/O 블로킹 문제를 근본적으로 제거하기 위해 Rust로 처음부터 구현했습니다.",
+    "f1_title": "Tokio Async & 완벽한 메모리 안전성",
+    "f1_desc": "논블로킹 디스크 I/O를 갖춘 멀티스레드 Tokio 런타임으로 세그멘테이션 폴트를 원천 차단합니다.",
+    "f2_title": "SIMD Rarest-First & Dynamic Endgame",
+    "f2_desc": "하드웨어 POPCNT/CLZ 명령어를 이용한 O(N/64) 비트 연산과 엔드게임 시 즉각적인 CANCEL 브로드캐스트.",
+    "f3_title": "Zero-Copy BufferPool & BDP 튜닝",
+    "f3_desc": "16 KiB 락프리 버퍼 풀, 제로카피 Bencode 파서, RTT 및 대역폭에 적응하는 요청 큐.",
+    "f4_title": "멀티스레드 블록 해시 검증 (Rayon)",
+    "f4_desc": "SHA-1 및 SHA-256 Merkle 검증을 Rayon 스레드 풀로 오프로드하여 비동기 실행을 방해하지 않습니다.",
+    "f5_title": "SCGI, XML-RPC & JSON-RPC",
+    "f5_desc": "ruTorrent, Flood 및 기존 rTorrent 생태계 도구와의 완벽한 호환성 지원.",
+    "f6_title": "네이티브 gRPC & 터미널 TUI",
+    "f6_desc": "실시간 원격 측정을 스트리밍하는 gRPC API와 Ratatui 기반 인터랙티브 터미널 TUI 제공.",
+    "f7_title": "BitTorrent v1 & v2 (BEP 제품군)",
+    "f7_desc": "Kademlia DHT, PEX, Fast Extension, uTP LEDBAT 및 v2 하이브리드 토렌트 지원.",
+    "f8_title": "내장 Web UI (Leptos / Wasm)",
+    "f8_desc": "Axum 기반 서버와 Rust WebAssembly로 빌드된 SPA 클라이언트가 기본 내장되어 있습니다.",
+    "arch_tag": "모듈형 워크스페이스",
+    "arch_title": "16개의 특화된 크레이트(Crates)",
+    "arch_desc": "16개의 독립된 크레이트로 분리되어 강력한 캡슐화와 안전성을 컴파일러가 강제합니다.",
+    "bench_tag": "벤치마크 & 확장성",
+    "bench_title": "14,000개 이상의 활성 토렌트로 실증 완료",
+    "bench_desc": "대규모 시딩 환경에서도 병목 현상을 유발하지 않는 최적화된 데이터 구조.",
+    "b1_title": "세션 규모",
+    "b1_desc": "단일 프로세스에서 14,000개 이상의 토렌트를 유지하며 즉각적인 UI 반응 속도 보장.",
+    "b2_title": "조회 속도",
+    "b2_desc": "트래커 전용 DNS 캐시가 포함된 메모리 내 O(1) 해시 인덱스.",
+    "b3_title": "메모리 점유율",
+    "b3_desc": "밀집 비트 표현 덕분에 기존 C++ 데몬에 비해 매우 낮은 RAM 사용량.",
+    "b4_title": "세션 복구",
+    "b4_desc": "제한된 디스크 워커 풀을 통해 .libtorrent_resume 파일을 병렬로 빠르게 복원.",
+    "docs_tag": "빠른 시작",
+    "docs_title": "설치 및 실행 가이드",
+    "docs_desc": "서버나 개인 컴퓨터 환경에 가장 적합한 배포 방식을 선택하세요.",
+    "footer_desc": "순수 Rust로 작성된 현대적인 BitTorrent 클라이언트 엔진.",
+    "footer_license": "GNU GPL v2+ 라이선스 • 개발자: @chmuri",
+    "footer_scalability": "확장성 상세 보고서",
+    "arch_subtitle": "Modular architecture across 16 crates and 5 distinct layers",
+    "arch_flow_title": "Dataflow & Torrent Lifecycle",
+    "arch_flow_desc": "Strict non-blocking pipeline: network I/O driven by Tokio async reactor while disk operations and hashing run on isolated worker pools.",
+    "arch_layer_all": "All Layers (16)",
+    "arch_layer_foundation": "Foundation (3)",
+    "arch_layer_network": "Transport & P2P (5)",
+    "arch_layer_engine": "Core Engine (2)",
+    "arch_layer_rpc": "RPC & Control (3)",
+    "arch_layer_ui": "UI & CLI (3)",
+    "arch_invariants_title": "Core Architectural Invariants",
+    "arch_inv1_title": "Async Network Reactor + Isolated Disk Pool",
+    "arch_inv1_desc": "Tokio reactor handles P2P sockets, DHT queries, and tracker announces without blocking. File I/O and SHA-1/256 hashing run on Rayon threadpools so reactors never stall.",
+    "arch_inv2_title": "Compiler-Enforced Safety Boundaries",
+    "arch_inv2_desc": "Strict unsafe_code = deny enforced on all higher crates (lt-common, lt-protocol, lt-engine, rt-core, rt-tui, etc.). Unsafe is strictly isolated to system primitives in lt-sys and safe mmap wrappers.",
+    "arch_inv3_title": "Byte-Oriented Binary Bencode Model",
+    "arch_inv3_desc": "Bencode keys and values are parsed into zero-copy byte buffers (Bytes / Vec<u8>), ensuring corrupt or non-UTF-8 torrent files from legacy trackers never panic the engine.",
+    "doc_tab_cli": "CLI & Deployment",
+    "doc_tab_rc": ".rtorrent.rc Config",
+    "doc_tab_keys": "TUI Keybindings",
+    "doc_tab_web": "ruTorrent & Web UI",
+    "doc_cli_title": "Command-Line Interface & Daemon Modes",
+    "doc_cli_desc": "Launch rtorrent interactively with terminal TUI, run as a headless server daemon, or connect the lightweight remote rtorrent-tui client.",
+    "doc_rc_title": "Annotated Configuration Reference",
+    "doc_rc_desc": "Standard ~/.rtorrent.rc syntax with full command DSL support: session paths, port ranges, bandwidth throttling, and automatic directory watching.",
+    "doc_keys_title": "Interactive Terminal Navigation & Shortcuts",
+    "doc_keys_desc": "Ergonomic dual-control scheme: standard cursor keys alongside Vim modal shortcuts (j/k/h/l) with visual multi-selection.",
+    "doc_web_title": "Frontend Integrations: ruTorrent, Flood & gRPC",
+    "doc_web_desc": "Connect existing web interfaces using non-blocking SCGI over UNIX domain sockets or TCP, or use the modern Tonic gRPC stream."
+  }
+};
+
+    let currentLang = 'en';
+
+    function detectUserLanguage() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlLang = urlParams.get('lang');
+      if (urlLang && I18N[urlLang.toLowerCase()]) {
+        return urlLang.toLowerCase();
+      }
+
+      try {
+        const savedLang = localStorage.getItem('rstorrent_lang');
+        if (savedLang && I18N[savedLang]) {
+          return savedLang;
+        }
+      } catch (e) {}
+
+      const navLangs = navigator.languages || [navigator.language || navigator.userLanguage || ''];
+      for (const nl of navLangs) {
+        if (!nl) continue;
+        const code = nl.split('-')[0].toLowerCase();
+        if (I18N[code]) {
+          return code;
+        }
+      }
+
+      return 'en';
+    }
+
+    function t(key) {
+      const dict = I18N[currentLang] || I18N['en'];
+      return dict[key] || I18N['en'][key] || key;
+    }
+
+    function setLanguage(lang) {
+      if (!I18N[lang]) lang = 'en';
+      currentLang = lang;
+      document.documentElement.lang = lang;
+
+      try {
+        localStorage.setItem('rstorrent_lang', lang);
+      } catch (e) {}
+
+      const langSelect = document.getElementById('langSelect');
+      if (langSelect && langSelect.value !== lang) {
+        langSelect.value = lang;
+      }
+
+      const htmlTitle = document.getElementById('htmlTitle');
+      if (htmlTitle) htmlTitle.textContent = t('page_title');
+
+      const metaDesc = document.getElementById('htmlMetaDesc');
+      if (metaDesc) metaDesc.setAttribute('content', t('page_desc'));
+
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const text = t(key);
+        if (text) {
+          el.textContent = text;
+        }
+      });
+
+      const soundStatusText = document.getElementById('soundStatusText');
+      if (soundStatusText) {
+        soundStatusText.textContent = soundEnabled ? t('sound_on') : t('sound_off');
+      }
+
+      if (typeof updateGateStatusText === 'function') {
+        updateGateStatusText();
+      }
+    }
+
+    let soundEnabled = false;
+    let updateGateStatusText = null;
+
+    (function () {
+      const svg = document.getElementById('gateSvg');
+      const canvas = document.getElementById('vortexCanvas');
+      const ctx = canvas.getContext('2d');
+      const gateWrapper = document.getElementById('gateWrapper');
+      const surgeRing = document.getElementById('surgeRing');
+
+      const gateStateText = document.getElementById('gateStateText');
+      const metricPeers = document.getElementById('metricPeers');
+      const metricSpeed = document.getElementById('metricSpeed');
+      const metricDht = document.getElementById('metricDht');
+      const telemetryLog = document.getElementById('telemetryLog');
+
+      const sparklineCanvas = document.getElementById('sparklineCanvas');
+      const sparkCtx = sparklineCanvas.getContext('2d');
+      const speedHistory = new Array(35).fill(0);
+
+      let audioCtx = null;
+
+      function initAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      }
+
+      function playTone(freq, type = 'sine', duration = 0.12, gainVal = 0.05) {
+        if (!soundEnabled || !audioCtx) return;
+        try {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + duration);
+        } catch (e) {}
+      }
+
+      const PROTOCOL_LOCKS = [
+        { id: 'DHT',       angle: 0,           label: 'DHT', desc: 'Mainline DHT Kademlia' },
+        { id: 'PEX',       angle: 51.43,       label: 'PEX', desc: 'Peer Exchange BEP 11' },
+        { id: 'TRACKER',   angle: 102.86,      label: 'TRK', desc: 'HTTP/UDP Tracker Scrape' },
+        { id: 'HANDSHAKE', angle: 154.29,      label: 'HSK', desc: 'Handshake & MSE Encryption' },
+        { id: 'PIECE',     angle: 205.71,      label: 'PCE', desc: 'Piece Picker Verification' },
+        { id: 'HASH',      angle: 257.14,      label: 'SHA', desc: 'Rayon SHA-1/256 Merkle' },
+        { id: 'SWARM',     angle: 308.57,      label: 'SWM', desc: 'BDP Pipelining Stream' }
+      ];
+
+      const state = {
+        mode: 'DIALING',
+        lockedCount: 0,
+        ringAngle: 0,
+        targetAngle: 0,
+        ringDirection: 1,
+        dialTimer: 0,
+        vortexIntensity: 0.15,
+        burstEnergy: 0,
+        peers: 0,
+        speed: 0,
+        dhtNodes: 0
+      };
+
+      updateGateStatusText = function() {
+        if (state.mode === 'DIALING') {
+          gateStateText.textContent = t('telem_dialing');
+          gateStateText.style.color = '#ff9e73';
+        } else if (state.mode === 'OPEN') {
+          gateStateText.textContent = t('telem_online');
+          gateStateText.style.color = '#00f0ff';
+        } else {
+          gateStateText.textContent = t('telem_idle');
+          gateStateText.style.color = '#94a3b8';
+        }
+      };
+
+      function buildGateSVG() {
+        const ns = 'http://www.w3.org/2000/svg';
+        const cx = 300, cy = 300;
+
+        const defs = document.createElementNS(ns, 'defs');
+        defs.innerHTML = `
+          <filter id="rustGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="cyanGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1e293b" />
+            <stop offset="50%" stop-color="#0f172a" />
+            <stop offset="100%" stop-color="#1e293b" />
+          </linearGradient>
+        `;
+        svg.appendChild(defs);
+
+        const outerHousing = document.createElementNS(ns, 'circle');
+        outerHousing.setAttribute('cx', cx);
+        outerHousing.setAttribute('cy', cy);
+        outerHousing.setAttribute('r', '268');
+        outerHousing.setAttribute('fill', 'none');
+        outerHousing.setAttribute('stroke', 'url(#metalGrad)');
+        outerHousing.setAttribute('stroke-width', '28');
+        svg.appendChild(outerHousing);
+
+        [282, 254, 212, 202].forEach((r, idx) => {
+          const ring = document.createElementNS(ns, 'circle');
+          ring.setAttribute('cx', cx);
+          ring.setAttribute('cy', cy);
+          ring.setAttribute('r', r);
+          ring.setAttribute('fill', 'none');
+          ring.setAttribute('stroke', idx % 2 === 0 ? 'rgba(56, 189, 248, 0.28)' : 'rgba(148, 163, 184, 0.16)');
+          ring.setAttribute('stroke-width', idx === 0 ? '1.5' : '1');
+          if (idx === 2) ring.setAttribute('stroke-dasharray', '6 6');
+          svg.appendChild(ring);
+        });
+
+        const innerRingGroup = document.createElementNS(ns, 'g');
+        innerRingGroup.setAttribute('id', 'innerCipherRing');
+        innerRingGroup.style.transformOrigin = '300px 300px';
+
+        const ringTrack = document.createElementNS(ns, 'circle');
+        ringTrack.setAttribute('cx', cx);
+        ringTrack.setAttribute('cy', cy);
+        ringTrack.setAttribute('r', '233');
+        ringTrack.setAttribute('fill', 'none');
+        ringTrack.setAttribute('stroke', '#0b1220');
+        ringTrack.setAttribute('stroke-width', '34');
+        innerRingGroup.appendChild(ringTrack);
+
+        const glyphCount = 28;
+        for (let i = 0; i < glyphCount; i++) {
+          const deg = (i * 360) / glyphCount;
+          const g = document.createElementNS(ns, 'g');
+          g.setAttribute('transform', `rotate(${deg} 300 300) translate(300, 67)`);
+
+          const tick = document.createElementNS(ns, 'line');
+          tick.setAttribute('x1', '-14');
+          tick.setAttribute('y1', '-12');
+          tick.setAttribute('x2', '-14');
+          tick.setAttribute('y2', '12');
+          tick.setAttribute('stroke', 'rgba(56, 189, 248, 0.2)');
+          tick.setAttribute('stroke-width', '1');
+          g.appendChild(tick);
+
+          const variant = i % 4;
+          const path = document.createElementNS(ns, 'path');
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', '#38bdf8');
+          path.setAttribute('stroke-width', '1.5');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('opacity', '0.72');
+
+          if (variant === 0) {
+            path.setAttribute('d', 'M 0 -7 L -6 5 M 0 -7 L 6 5 M -6 5 L 6 5 M 0 -7 L 0 -10');
+          } else if (variant === 1) {
+            path.setAttribute('d', 'M -5 -5 H 5 V 5 H -5 Z M -5 0 H 5 M 0 -5 V 5');
+          } else if (variant === 2) {
+            path.setAttribute('d', 'M -4 -4 L 4 4 M -4 4 L 4 -4 M 0 -7 V 7 M -7 0 H 7');
+          } else {
+            path.setAttribute('d', 'M -5 -6 L 0 -9 L 5 -6 V 6 L 0 9 L -5 6 Z');
+          }
+          g.appendChild(path);
+          innerRingGroup.appendChild(g);
+        }
+
+        svg.appendChild(innerRingGroup);
+
+        PROTOCOL_LOCKS.forEach((lock, idx) => {
+          const lockGroup = document.createElementNS(ns, 'g');
+          lockGroup.setAttribute('id', `lock-node-${idx}`);
+          lockGroup.setAttribute('transform', `rotate(${lock.angle} 300 300) translate(300, 32)`);
+          lockGroup.style.cursor = 'pointer';
+
+          lockGroup.addEventListener('click', () => {
+            initAudio();
+            playTone(400 + idx * 80, 'triangle', 0.18, 0.08);
+            telemetryLog.textContent = `[INSPECT ${idx+1}/7] ${lock.label}: ${lock.desc}`;
+          });
+
+          const housing = document.createElementNS(ns, 'polygon');
+          housing.setAttribute('points', '-22,-10 22,-10 15,18 -15,18');
+          housing.setAttribute('fill', '#0f172a');
+          housing.setAttribute('stroke', '#334155');
+          housing.setAttribute('stroke-width', '2');
+          lockGroup.appendChild(housing);
+
+          const core = document.createElementNS(ns, 'polygon');
+          core.setAttribute('id', `lock-core-${idx}`);
+          core.setAttribute('points', '-12,-4 12,-4 7,12 -7,12');
+          core.setAttribute('fill', '#1e293b');
+          core.setAttribute('transition', 'all 0.25s ease');
+          lockGroup.appendChild(core);
+
+          const label = document.createElementNS(ns, 'text');
+          label.setAttribute('x', '0');
+          label.setAttribute('y', '-15');
+          label.setAttribute('text-anchor', 'middle');
+          label.setAttribute('fill', '#64748b');
+          label.setAttribute('font-family', 'JetBrains Mono, monospace');
+          label.setAttribute('font-size', '9.5');
+          label.setAttribute('font-weight', '700');
+          label.setAttribute('id', `lock-label-${idx}`);
+          label.textContent = lock.label;
+          lockGroup.appendChild(label);
+
+          svg.appendChild(lockGroup);
+        });
+      }
+
+      function updateLockVisuals() {
+        PROTOCOL_LOCKS.forEach((_, idx) => {
+          const core = document.getElementById(`lock-core-${idx}`);
+          const label = document.getElementById(`lock-label-${idx}`);
+          const isLocked = idx < state.lockedCount;
+
+          if (isLocked) {
+            core.setAttribute('fill', idx === 6 ? '#00f0ff' : '#f74c00');
+            core.setAttribute('filter', idx === 6 ? 'url(#cyanGlow)' : 'url(#rustGlow)');
+            label.setAttribute('fill', idx === 6 ? '#00f0ff' : '#ff9e73');
+          } else {
+            core.setAttribute('fill', '#1e293b');
+            core.removeAttribute('filter');
+            label.setAttribute('fill', '#64748b');
+          }
+        });
+      }
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const sRect = sparklineCanvas.getBoundingClientRect();
+        sparklineCanvas.width = sRect.width * dpr;
+        sparklineCanvas.height = sRect.height * dpr;
+        sparkCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      const particles = Array.from({ length: 65 }, () => ({
+        angle: Math.random() * Math.PI * 2,
+        radius: 0.15 + Math.random() * 0.85,
+        speed: 0.004 + Math.random() * 0.012,
+        size: 1.2 + Math.random() * 2.2,
+        isRust: Math.random() > 0.78
+      }));
+
+      function renderVortex(timeMs) {
+        const t = timeMs * 0.001;
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        const cx = w / 2;
+        const cy = h / 2;
+        const maxR = Math.min(cx, cy);
+
+        ctx.clearRect(0, 0, w, h);
+
+        const bgGrad = ctx.createRadialGradient(cx, cy, maxR * 0.05, cx, cy, maxR);
+        bgGrad.addColorStop(0, state.vortexIntensity > 0.5 ? '#031c30' : '#050912');
+        bgGrad.addColorStop(0.7, '#06101e');
+        bgGrad.addColorStop(1, '#020409');
+        ctx.fillStyle = bgGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+        ctx.fill();
+
+        const intensity = state.vortexIntensity + state.burstEnergy * 0.4;
+        if (intensity <= 0.02) return;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+        ctx.clip();
+
+        const waveCount = 14;
+        for (let i = 0; i < waveCount; i++) {
+          const progress = ((i / waveCount) + t * (0.22 + intensity * 0.28)) % 1;
+          const baseRadius = progress * maxR;
+          const alpha = Math.sin(progress * Math.PI) * 0.34 * Math.min(intensity, 1.2);
+
+          ctx.beginPath();
+          const segments = 72;
+          for (let s = 0; s <= segments; s++) {
+            const a = (s / segments) * Math.PI * 2;
+            const ripple =
+              Math.sin(a * 6 + t * 3.5 + i) * (4 * intensity) +
+              Math.cos(a * 11 - t * 2.4) * (2.5 * intensity);
+            const r = Math.max(0, baseRadius + ripple);
+            const x = cx + Math.cos(a) * r;
+            const y = cy + Math.sin(a) * r;
+            if (s === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = i % 3 === 0
+            ? `rgba(0, 240, 255, ${alpha})`
+            : `rgba(14, 165, 233, ${alpha * 0.85})`;
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        }
+
+        for (let arm = 0; arm < 5; arm++) {
+          const baseArmAngle = (arm * Math.PI * 2) / 5 + t * (0.7 + intensity);
+          ctx.beginPath();
+          for (let step = 0; step < 32; step++) {
+            const frac = step / 32;
+            const r = frac * maxR * 0.92;
+            const spiralAngle = baseArmAngle + frac * 2.8 + Math.sin(t * 2 + frac * 5) * 0.15;
+            const x = cx + Math.cos(spiralAngle) * r;
+            const y = cy + Math.sin(spiralAngle) * r;
+            if (step === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = `rgba(56, 189, 248, ${0.18 * intensity})`;
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+        }
+
+        particles.forEach((p) => {
+          p.angle += p.speed * (0.6 + intensity * 1.8);
+          p.radius -= 0.0025 * intensity;
+          if (p.radius < 0.08) p.radius = 0.98;
+
+          const r = p.radius * maxR * 0.92;
+          const x = cx + Math.cos(p.angle) * r;
+          const y = cy + Math.sin(p.angle) * r;
+
+          ctx.fillStyle = p.isRust
+            ? `rgba(247, 76, 0, ${0.75 * intensity})`
+            : `rgba(0, 240, 255, ${0.85 * intensity})`;
+          ctx.beginPath();
+          ctx.arc(x, y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 0.42);
+        coreGrad.addColorStop(0, `rgba(224, 242, 254, ${0.85 * Math.min(intensity, 1)})`);
+        coreGrad.addColorStop(0.35, `rgba(0, 240, 255, ${0.42 * Math.min(intensity, 1)})`);
+        coreGrad.addColorStop(1, 'rgba(0, 240, 255, 0)');
+        ctx.fillStyle = coreGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR * 0.42, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      function renderSparkline() {
+        const sw = sparklineCanvas.clientWidth;
+        const sh = sparklineCanvas.clientHeight;
+        sparkCtx.clearRect(0, 0, sw, sh);
+
+        sparkCtx.beginPath();
+        const maxVal = 130;
+        const step = sw / (speedHistory.length - 1);
+
+        speedHistory.forEach((v, i) => {
+          const x = i * step;
+          const y = sh - (v / maxVal) * (sh - 4) - 2;
+          if (i === 0) sparkCtx.moveTo(x, y);
+          else sparkCtx.lineTo(x, y);
+        });
+
+        sparkCtx.strokeStyle = '#00f0ff';
+        sparkCtx.lineWidth = 1.8;
+        sparkCtx.stroke();
+      }
+
+      function startDialSequence() {
+        initAudio();
+        state.mode = 'DIALING';
+        state.lockedCount = 0;
+        state.dialTimer = 0;
+        state.vortexIntensity = 0.12;
+        state.ringDirection = 1;
+        gateWrapper.classList.remove('active');
+        updateLockVisuals();
+        updateGateStatusText();
+
+        telemetryLog.textContent = t('telem_log_dial');
+        playTone(320, 'sine', 0.25, 0.08);
+      }
+
+      function triggerPortalOpen() {
+        state.mode = 'OPEN';
+        state.vortexIntensity = 1.0;
+        state.burstEnergy = 1.2;
+        gateWrapper.classList.add('active');
+
+        surgeRing.classList.remove('flash');
+        void surgeRing.offsetWidth;
+        surgeRing.classList.add('flash');
+
+        updateGateStatusText();
+        telemetryLog.textContent = t('telem_log_online');
+        playTone(660, 'triangle', 0.4, 0.12);
+      }
+
+      function resetGate() {
+        initAudio();
+        state.mode = 'IDLE';
+        state.lockedCount = 0;
+        state.vortexIntensity = 0.04;
+        state.peers = 0;
+        state.speed = 0;
+        state.dhtNodes = 0;
+        gateWrapper.classList.remove('active');
+        updateLockVisuals();
+        updateGateStatusText();
+
+        telemetryLog.textContent = t('telem_log_idle');
+        playTone(220, 'sine', 0.2, 0.05);
+      }
+
+      function injectPeerBurst() {
+        initAudio();
+        if (state.mode !== 'OPEN') {
+          startDialSequence();
+          return;
+        }
+        state.burstEnergy = 1.4;
+        state.peers = Math.min(128, state.peers + Math.floor(14 + Math.random() * 18));
+        state.speed = Math.min(118.4, state.speed + 24.5);
+        surgeRing.classList.remove('flash');
+        void surgeRing.offsetWidth;
+        surgeRing.classList.add('flash');
+        telemetryLog.textContent = `[PEX] +${Math.floor(14 + Math.random() * 18)} peers • Speed: ${state.speed.toFixed(1)} MB/s`;
+        playTone(520, 'sawtooth', 0.15, 0.08);
+      }
+
+      let lastTime = performance.now();
+      let sparklineTimer = 0;
+      const innerRingEl = document.getElementById('innerCipherRing');
+
+      function tick(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+
+        if (state.burstEnergy > 0) {
+          state.burstEnergy = Math.max(0, state.burstEnergy - dt * 1.4);
+        }
+
+        if (state.mode === 'DIALING') {
+          state.dialTimer += dt;
+          state.ringAngle += state.ringDirection * 115 * dt;
+
+          const stepInterval = 0.42;
+          const expectedLocks = Math.min(7, Math.floor(state.dialTimer / stepInterval));
+          if (expectedLocks > state.lockedCount) {
+            state.lockedCount = expectedLocks;
+            state.ringDirection *= -1;
+            updateLockVisuals();
+
+            const stage = PROTOCOL_LOCKS[state.lockedCount - 1];
+            telemetryLog.textContent = `[LOCK ${state.lockedCount}/7] ${stage.id} (${stage.angle.toFixed(0)}°) - ${stage.desc}`;
+            playTone(340 + state.lockedCount * 45, 'sine', 0.14, 0.06);
+
+            if (state.lockedCount === 7) {
+              triggerPortalOpen();
+            }
+          }
+        } else if (state.mode === 'OPEN') {
+          state.ringAngle += 14 * dt;
+          state.peers += ((64 + Math.sin(now * 0.002) * 18) - state.peers) * dt * 2;
+          state.speed += ((48.6 + Math.cos(now * 0.003) * 12.4) - state.speed) * dt * 2;
+          state.dhtNodes += (412 - state.dhtNodes) * dt * 2.5;
+        } else {
+          state.ringAngle += 3 * dt;
+        }
+
+        if (innerRingEl) {
+          innerRingEl.style.transform = `rotate(${state.ringAngle}deg)`;
+        }
+
+        metricPeers.textContent = `${Math.round(state.peers)} / 128`;
+        metricSpeed.textContent = `${state.speed.toFixed(1)} MB/s`;
+        metricDht.textContent = `${Math.round(state.dhtNodes)} nodes`;
+
+        sparklineTimer += dt;
+        if (sparklineTimer > 0.12) {
+          sparklineTimer = 0;
+          speedHistory.shift();
+          speedHistory.push(state.mode === 'OPEN' ? state.speed + (Math.random() * 8 - 4) : 0);
+          renderSparkline();
+        }
+
+        renderVortex(now);
+        requestAnimationFrame(tick);
+      }
+
+      document.getElementById('btnDial').addEventListener('click', startDialSequence);
+      document.getElementById('heroDialTrigger').addEventListener('click', startDialSequence);
+      document.getElementById('btnBurst').addEventListener('click', injectPeerBurst);
+      document.getElementById('btnReset').addEventListener('click', resetGate);
+
+      const soundBtn = document.getElementById('btnSoundToggle');
+      const soundIcon = document.getElementById('soundIcon');
+      const soundStatusText = document.getElementById('soundStatusText');
+
+      soundBtn.addEventListener('click', () => {
+        initAudio();
+        soundEnabled = !soundEnabled;
+        if (soundEnabled) {
+          soundIcon.textContent = '🔊';
+          soundStatusText.textContent = t('sound_on');
+          playTone(550, 'sine', 0.2, 0.08);
+        } else {
+          soundIcon.textContent = '🔇';
+          soundStatusText.textContent = t('sound_off');
+        }
+      });
+
+      const tabBtns = document.querySelectorAll('.install-tab-btn');
+      const installCmdText = document.getElementById('installCmdText');
+
+      tabBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          tabBtns.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          installCmdText.textContent = btn.getAttribute('data-cmd');
+        });
+      });
+
+      document.getElementById('copyCmdBtn').addEventListener('click', function () {
+        const text = installCmdText.textContent;
+        const self = this;
+
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(() => {
+            self.textContent = t('copy_copied');
+            setTimeout(() => (self.textContent = t('copy_btn')), 1800);
+          }).catch(() => fallbackCopy(text, self));
+        } else {
+          fallbackCopy(text, self);
+        }
+      });
+
+      function fallbackCopy(text, btnElement) {
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        temp.style.position = 'fixed';
+        temp.style.opacity = '0';
+        document.body.appendChild(temp);
+        temp.select();
+        try {
+          document.execCommand('copy');
+          btnElement.textContent = t('copy_copied');
+          setTimeout(() => (btnElement.textContent = t('copy_btn')), 1800);
+        } catch (e) {
+          btnElement.textContent = 'Error';
+        }
+        document.body.removeChild(temp);
+      }
+
+      // Obsługa filtrów warstw w sekcji Architektury
+      const archFilterBtns = document.querySelectorAll('.arch-filter-btn');
+      const crateItems = document.querySelectorAll('.crate-item');
+
+      archFilterBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          archFilterBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const layer = btn.getAttribute('data-layer');
+
+          crateItems.forEach(item => {
+            const itemLayer = item.getAttribute('data-crate-layer');
+            if (layer === 'all' || itemLayer === layer) {
+              item.classList.remove('dimmed');
+            } else {
+              item.classList.add('dimmed');
+            }
+          });
+        });
+      });
+
+      // Obsługa zakładek w sekcji Dokumentacji
+      const docTabBtns = document.querySelectorAll('.doc-tab-btn');
+      const docPanes = document.querySelectorAll('.doc-pane');
+
+      docTabBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          docTabBtns.forEach(b => b.classList.remove('active'));
+          docPanes.forEach(p => p.classList.remove('active'));
+          btn.classList.add('active');
+          const paneId = 'pane-' + btn.getAttribute('data-doc-pane');
+          const pane = document.getElementById(paneId);
+          if (pane) pane.classList.add('active');
+        });
+      });
+
+      const langSelect = document.getElementById('langSelect');
+      if (langSelect) {
+        langSelect.addEventListener('change', (e) => {
+          setLanguage(e.target.value);
+        });
+      }
+
+      const detected = detectUserLanguage();
+      setLanguage(detected);
+
+      buildGateSVG();
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      startDialSequence();
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>
