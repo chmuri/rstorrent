@@ -13,7 +13,7 @@ leptos = { version = "0.7", features = ["csr"] }
 leptos_router = { version = "0.7" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gloo-net = { version = "0.6", features = ["http", "websocket"] }
+gloo-net = { version = "0.7", features = ["http", "websocket"] }
 gloo-timers = { version = "0.4", features = ["futures"] }
 gloo-storage = "0.4"
 futures-util = "0.3"
