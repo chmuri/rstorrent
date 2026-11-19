@@ -34,6 +34,7 @@ There are no subcommands. Torrent files, magnet links and URLs given as position
 | `--metrics-addr` | `ADDR` | Bind address for the Prometheus `/metrics` HTTP server (e.g. `127.0.0.1:9090`). Overrides TOML `[metrics] addr`. |
 | `--webui-addr` | `ADDR` | Bind address for the native Web UI (e.g. `127.0.0.1:8080`). Overrides TOML `[webui] addr`. |
 | `--webui-token` | `TOKEN` | Web UI bearer token. Overrides TOML `[webui] token`. An empty token disables authentication (callers stay untrusted/read-only). |
+| `--generate-config` | `[PATH]` | Generate a complete, annotated `rstorrent.toml` configuration template with all settings and exit. Defaults to `./rstorrent.toml`. |
 | `-o` | `key=value` | Set an arbitrary option (repeatable). Applied after the built-in CLI mappings. |
 | `-O` | `COMMAND` | Execute a raw rc command line (repeatable). Applied after `-o`. |
 | `-D`, `-I`, `-K` | — | Accepted for rTorrent compatibility; no effect. |

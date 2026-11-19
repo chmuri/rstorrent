@@ -5,15 +5,18 @@
 //! (commands can fsync or touch the filesystem) and uses the server-decided
 //! trust level carried in the [`Trusted`] request extension.
 
+use crate::toml_config::RtorrentTomlConfig;
 use crate::webui::convert::{self, SessionStats, TorrentSummary, VersionInfo};
 use crate::webui::{Trusted, WebuiState};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use lt_common::Object;
 use rt_rpc::Target;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::PathBuf;
 
 /// A generic command invocation, equivalent to the gRPC `CommandRequest`.
 #[derive(Debug, Deserialize)]
@@ -208,4 +211,196 @@ async fn run_command(
     })
     .await
     .unwrap_or_else(|_| CommandResponse::failure("command task failed".to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MoveTorrentRequest {
+    pub target: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetTorrentTierRequest {
+    pub tier: u8,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConfigResponse {
+    pub config: RtorrentTomlConfig,
+    pub toml: String,
+    pub config_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateConfigRequest {
+    pub config: Option<RtorrentTomlConfig>,
+    pub toml: Option<String>,
+    #[serde(default)]
+    pub save_file: bool,
+}
+
+pub async fn move_torrent(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+    Path(hash): Path<String>,
+    Json(payload): Json<MoveTorrentRequest>,
+) -> Json<CommandResponse> {
+    let target = match lt_common::HashString::from_hex(&hash) {
+        Some(hash) => Target::Download(hash),
+        None => {
+            return Json(CommandResponse::failure(format!(
+                "invalid info hash {}",
+                hash
+            )))
+        }
+    };
+    Json(
+        run_command(
+            state,
+            trusted.0,
+            "d.move".to_string(),
+            target,
+            Object::from(payload.target.as_str()),
+        )
+        .await,
+    )
+}
+
+pub async fn set_torrent_tier(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+    Path(hash): Path<String>,
+    Json(payload): Json<SetTorrentTierRequest>,
+) -> Json<CommandResponse> {
+    let target = match lt_common::HashString::from_hex(&hash) {
+        Some(hash) => Target::Download(hash),
+        None => {
+            return Json(CommandResponse::failure(format!(
+                "invalid info hash {}",
+                hash
+            )))
+        }
+    };
+    Json(
+        run_command(
+            state,
+            trusted.0,
+            "d.tier.set".to_string(),
+            target,
+            Object::from(payload.tier as i64),
+        )
+        .await,
+    )
+}
+
+pub async fn get_config(State(state): State<WebuiState>) -> Json<ConfigResponse> {
+    let map = state.command_map.read().unwrap_or_else(|e| e.into_inner());
+    let cfg = RtorrentTomlConfig::from_runtime(&map, &state.tiering_manager, &state.dht_config);
+    let toml = cfg.generate_annotated_toml();
+    let config_path = state
+        .config_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string());
+    Json(ConfigResponse {
+        config: cfg,
+        toml,
+        config_path,
+    })
+}
+
+pub async fn update_config(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+    Json(payload): Json<UpdateConfigRequest>,
+) -> Json<CommandResponse> {
+    if !trusted.0 {
+        return Json(CommandResponse::failure(
+            "trusted authentication required to modify configuration".into(),
+        ));
+    }
+
+    let parsed_cfg = if let Some(cfg) = payload.config {
+        cfg
+    } else if let Some(toml_str) = payload.toml {
+        match RtorrentTomlConfig::parse(&toml_str) {
+            Ok(c) => c,
+            Err(e) => return Json(CommandResponse::failure(format!("TOML parse error: {e}"))),
+        }
+    } else {
+        return Json(CommandResponse::failure(
+            "missing config or toml in request".into(),
+        ));
+    };
+
+    // Apply config
+    {
+        let map = state.command_map.read().unwrap_or_else(|e| e.into_inner());
+        let mut dummy_net = lt_net::NetworkConfig::default();
+        parsed_cfg.apply(&map, &mut dummy_net, &state.dht_config);
+    }
+
+    if payload.save_file {
+        let path = state
+            .config_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("rstorrent.toml"));
+        if let Err(e) = parsed_cfg.save_to_file(&path) {
+            return Json(CommandResponse::failure(format!(
+                "Applied settings, but saving file failed: {e}"
+            )));
+        }
+    }
+
+    Json(CommandResponse {
+        success: true,
+        result: serde_json::Value::String("Configuration updated successfully".into()),
+        error: String::new(),
+    })
+}
+
+pub async fn export_config_file(State(state): State<WebuiState>) -> Response {
+    let map = state.command_map.read().unwrap_or_else(|e| e.into_inner());
+    let cfg = RtorrentTomlConfig::from_runtime(&map, &state.tiering_manager, &state.dht_config);
+    let toml = cfg.generate_annotated_toml();
+
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment; filename=\"rstorrent.toml\"",
+            ),
+        ],
+        toml,
+    )
+        .into_response()
+}
+
+pub async fn save_config_file(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+) -> Json<CommandResponse> {
+    if !trusted.0 {
+        return Json(CommandResponse::failure(
+            "trusted authentication required to save configuration".into(),
+        ));
+    }
+    let map = state.command_map.read().unwrap_or_else(|e| e.into_inner());
+    let cfg = RtorrentTomlConfig::from_runtime(&map, &state.tiering_manager, &state.dht_config);
+    let path = state
+        .config_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("rstorrent.toml"));
+    match cfg.save_to_file(&path) {
+        Ok(()) => Json(CommandResponse {
+            success: true,
+            result: serde_json::Value::String(format!("Configuration saved to {}", path.display())),
+            error: String::new(),
+        }),
+        Err(e) => Json(CommandResponse::failure(format!(
+            "Failed to save configuration: {e}"
+        ))),
+    }
 }

@@ -56,6 +56,7 @@ fn cli(data_dir: &Path, session_dir: &Path, port: u16) -> Cli {
         metrics_addr: None,
         webui_addr: None,
         webui_token: None,
+        generate_config: None,
         options: vec!["dht.mode.set=off".to_string()],
         command_options: Vec::new(),
         deprecated: false,

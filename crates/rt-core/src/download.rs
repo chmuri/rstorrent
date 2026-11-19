@@ -1,3 +1,4 @@
+use crate::tiering::{MoveStatus, TorrentTierState};
 use lt_common::hash_string::{Hash256, HashString};
 use lt_common::option_strings::{option_find_string, OptionEnum};
 use lt_common::Object;
@@ -57,6 +58,8 @@ pub struct Download {
     /// be verified. Consumed once by the network supervisor so the check runs
     /// even if another caller (e.g. `session.save`) synced the metadata first.
     metadata_recheck_pending: bool,
+    tier_state: TorrentTierState,
+    move_status: MoveStatus,
 }
 
 impl Download {
@@ -87,6 +90,8 @@ impl Download {
             hash_checking: Arc::new(AtomicBool::new(false)),
             last_active: 0,
             metadata_recheck_pending: false,
+            tier_state: TorrentTierState::default(),
+            move_status: MoveStatus::default(),
         }
     }
 
@@ -827,6 +832,26 @@ impl Download {
             .lock()
             .unwrap()
             .set_throttle_name(self.throttle_name.clone());
+    }
+
+    pub fn tier_state(&self) -> &TorrentTierState {
+        &self.tier_state
+    }
+
+    pub fn tier_state_mut(&mut self) -> &mut TorrentTierState {
+        &mut self.tier_state
+    }
+
+    pub fn set_tier_state(&mut self, state: TorrentTierState) {
+        self.tier_state = state;
+    }
+
+    pub fn move_status(&self) -> &MoveStatus {
+        &self.move_status
+    }
+
+    pub fn set_move_status(&mut self, status: MoveStatus) {
+        self.move_status = status;
     }
 
     pub fn rate_up(&self) -> u64 {

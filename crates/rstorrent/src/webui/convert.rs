@@ -96,6 +96,8 @@ pub struct TorrentSummary {
     pub state_changed: u64,
     pub started: u64,
     pub finished: u64,
+    pub tier: Option<u8>,
+    pub move_status: String,
 }
 
 pub fn summary_from(download: &Download) -> TorrentSummary {
@@ -120,6 +122,8 @@ pub fn summary_from(download: &Download) -> TorrentSummary {
         state_changed: download.state_changed(),
         started: download.timestamp_started(),
         finished: download.timestamp_finished(),
+        tier: download.tier_state().current_tier,
+        move_status: format!("{:?}", download.move_status()),
     }
 }
 

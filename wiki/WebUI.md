@@ -53,9 +53,15 @@ All endpoints live under `/api` and speak JSON.
 | POST | `/api/torrents/{hash}/stop` | Runs `d.stop`. |
 | POST | `/api/torrents/{hash}/remove` | Runs `d.erase` (removes from session; does not delete data). |
 | POST | `/api/torrents/{hash}/recheck` | Runs `d.check_hash`. |
+| POST | `/api/torrents/{hash}/move` | Live move torrent payload to a new target directory (`{"target": "/path"}`) preserving all statistics. |
+| POST | `/api/torrents/{hash}/tier` | Set active storage tier index (`{"tier": 0}`). |
 | POST | `/api/command` | Generic command invocation (see below). |
 | GET | `/api/stats` | Session-wide statistics snapshot. |
 | GET | `/api/version` | Version/build metadata. |
+| GET | `/api/config` | Snapshot of active configuration as JSON and generated TOML. |
+| POST | `/api/config` | Update and apply configuration dynamically, with optional file persistence. |
+| GET | `/api/config/export` | Download generated `rstorrent.toml` directly as a file. |
+| POST | `/api/config/save` | Save active configuration to server config file. |
 | GET | `/api/events` | WebSocket upgrade → live event stream. |
 
 The four action endpoints return the same `CommandResponse` shape as `/api/command`.

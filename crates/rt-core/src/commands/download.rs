@@ -864,6 +864,91 @@ pub fn register_download_commands(
         "Set download target directory.",
     )?;
 
+    let dl_move = Arc::clone(&download_list);
+    map.insert_func(
+        "d.move",
+        move |target, obj| {
+            let dl_arc = get_download(target, &dl_move)?;
+            let target_dir = to_str(obj)?;
+            let mut dl = dl_arc.write().unwrap();
+            crate::tiering::TieringManager::live_move(&mut dl, std::path::Path::new(&target_dir))
+                .map_err(|e| RpcError::Custom {
+                code: -500,
+                message: format!("Move failed: {e}"),
+            })?;
+            Ok(Object::from(0i64))
+        },
+        FLAG_PUBLIC_RPC,
+        "<path>",
+        "Move download data to a new target directory and resume with intact statistics.",
+    )?;
+
+    let dl_move_status = Arc::clone(&download_list);
+    map.insert_func(
+        "d.move_status",
+        move |target, _obj| {
+            let dl_arc = get_download(target, &dl_move_status)?;
+            let dl = dl_arc.read().unwrap();
+            let status_str = match dl.move_status() {
+                crate::tiering::MoveStatus::Idle => "idle",
+                crate::tiering::MoveStatus::InProgress { .. } => "in_progress",
+                crate::tiering::MoveStatus::Completed { .. } => "completed",
+                crate::tiering::MoveStatus::Failed { .. } => "failed",
+            };
+            Ok(Object::from(status_str))
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Get live move status of the download.",
+    )?;
+
+    let dl_tier = Arc::clone(&download_list);
+    map.insert_func(
+        "d.tier",
+        move |target, _obj| {
+            let dl_arc = get_download(target, &dl_tier)?;
+            let dl = dl_arc.read().unwrap();
+            let tier = dl.tier_state().current_tier.map(|t| t as i64).unwrap_or(-1);
+            Ok(Object::from(tier))
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Get current storage tier of the download (-1 if unassigned).",
+    )?;
+
+    let dl_tier_set = Arc::clone(&download_list);
+    map.insert_func(
+        "d.tier.set",
+        move |target, obj| {
+            let dl_arc = get_download(target, &dl_tier_set)?;
+            let val = convert_to_value(obj, 10, 0)?;
+            let mut dl = dl_arc.write().unwrap();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            dl.tier_state_mut()
+                .record_transition(val as u8, now, "Manual tier assignment".into());
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<tier_index>",
+        "Set storage tier index for the download.",
+    )?;
+
+    let dl_tier_entered = Arc::clone(&download_list);
+    map.insert_func(
+        "d.tier_entered_at",
+        move |target, _obj| {
+            let dl_arc = get_download(target, &dl_tier_entered)?;
+            let dl = dl_arc.read().unwrap();
+            Ok(Object::from(dl.tier_state().tier_entered_at as i64))
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Get timestamp when download entered current storage tier.",
+    )?;
+
     let dl_prio = Arc::clone(&download_list);
     map.insert_func(
         "d.priority",

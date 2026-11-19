@@ -51,6 +51,7 @@ fn daemon_cli(session: &str, directory: &str, port: u16) -> Cli {
         metrics_addr: None,
         webui_addr: None,
         webui_token: None,
+        generate_config: None,
         options: Vec::new(),
         command_options: Vec::new(),
         deprecated: false,

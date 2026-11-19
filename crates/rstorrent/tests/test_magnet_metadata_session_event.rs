@@ -50,6 +50,7 @@ async fn metadata_event_persists_torrent_immediately() {
         metrics_addr: None,
         webui_addr: None,
         webui_token: None,
+        generate_config: None,
         options: vec!["dht.mode.set=off".to_string()],
         command_options: Vec::new(),
         deprecated: false,

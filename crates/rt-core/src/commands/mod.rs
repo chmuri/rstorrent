@@ -18,6 +18,7 @@ pub mod storage;
 pub mod string;
 pub mod system;
 pub mod throttle;
+pub mod tiering;
 pub mod tracker;
 pub mod view;
 
@@ -39,6 +40,7 @@ use self::storage::register_storage_commands;
 use self::string::register_string_commands;
 use self::system::register_system_commands;
 use self::throttle::{register_throttle_commands, ThrottleManager};
+use self::tiering::register_tiering_commands;
 use self::tracker::{register_tracker_commands, DhtConfig};
 use self::view::register_view_commands;
 use crate::download_list::DownloadList;
@@ -57,6 +59,7 @@ pub struct CommandRegistry {
     pub throttle_manager: Arc<RwLock<ThrottleManager>>,
     pub dht_config: Arc<RwLock<DhtConfig>>,
     pub network_config: NetworkConfig,
+    pub tiering_manager: Arc<crate::tiering::TieringManager>,
 }
 
 pub fn initialize_builtin_commands(
@@ -72,6 +75,7 @@ pub fn initialize_builtin_commands(
         throttle_manager,
         dht_config,
         network_config,
+        tiering_manager,
     } = registry;
 
     register_string_commands(map)?;
@@ -93,6 +97,7 @@ pub fn initialize_builtin_commands(
     register_dht_commands(map, dht_config)?;
     register_download_commands(map, Arc::clone(&download_list), Arc::clone(&view_manager))?;
     register_storage_commands(map, Arc::clone(&download_list))?;
+    register_tiering_commands(map, tiering_manager, Arc::clone(&download_list))?;
     register_file_commands(map, Arc::clone(&download_list))?;
     register_peer_commands(map, Arc::clone(&download_list))?;
 

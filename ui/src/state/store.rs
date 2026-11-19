@@ -258,7 +258,7 @@ pub fn accent_hex(accent: Accent) -> &'static str {
 impl Default for VersionInfo {
     fn default() -> Self {
         Self {
-            version: "v0.22.0".to_string(),
+            version: "v0.23.0".to_string(),
             api_version: "1".to_string(),
             build_target: "wasm32-unknown-unknown".to_string(),
             uptime_seconds: 0,

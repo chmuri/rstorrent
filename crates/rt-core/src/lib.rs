@@ -8,6 +8,7 @@ pub mod hash_scheduler;
 pub mod manager;
 pub mod network_runtime;
 pub mod session;
+pub mod tiering;
 pub mod view;
 pub mod view_manager;
 
@@ -28,5 +29,6 @@ pub use download_list::{DownloadEventListener, DownloadList};
 pub use manager::Manager;
 pub use network_runtime::NetworkRuntime;
 pub use session::{DirectoryEntry, DownloadStorer, SessionManager};
+pub use tiering::{FileMover, MoveError, MoveStatus, TieringManager, TorrentTierState};
 pub use view::View;
 pub use view_manager::ViewManager;

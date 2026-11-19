@@ -134,6 +134,14 @@ impl Manager {
             let _ = rtorrent_obj.insert_key("custom", custom_obj);
         }
 
+        if let Some(tier) = download.tier_state().current_tier {
+            let _ = rtorrent_obj.insert_key("tier", Object::from(tier as i64));
+            let _ = rtorrent_obj.insert_key(
+                "tier_entered_at",
+                Object::from(download.tier_state().tier_entered_at as i64),
+            );
+        }
+
         let resume = download.to_resume_data();
         let mut resume_obj = resume.to_object();
         crate::session::resume_extras(&resume, download.metadata(), &download.uncertain_pieces())

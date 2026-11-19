@@ -54,6 +54,7 @@ async fn test_full_lifecycle_and_rpc() {
         metrics_addr: None,
         webui_addr: None,
         webui_token: None,
+        generate_config: None,
         options: Vec::new(),
         command_options: vec!["choke_group.up.max.set = 50".to_string()],
         deprecated: false,

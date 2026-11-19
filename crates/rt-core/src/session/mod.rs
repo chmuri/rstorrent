@@ -175,6 +175,15 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> Rtorr
         download.set_state_counter(value.max(0) as u64);
     }
 
+    if let Ok(tier) = object.get_key_value("tier") {
+        let tier_entered_at = object.get_key_value("tier_entered_at").unwrap_or(0).max(0) as u64;
+        download.set_tier_state(crate::tiering::TorrentTierState {
+            current_tier: Some(tier.max(0) as u8),
+            tier_entered_at,
+            transition_history: Vec::new(),
+        });
+    }
+
     RtorrentSessionState {
         was_active: object
             .get_key_value("state")

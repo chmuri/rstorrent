@@ -33,6 +33,18 @@ use std::time::Duration;
 
 pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    if let Some(ref path_opt) = cli.generate_config {
+        let path_str = path_opt.as_deref().unwrap_or("rstorrent.toml");
+        let default_cfg = toml_config::RtorrentTomlConfig::template();
+        if let Err(e) = default_cfg.save_to_file(std::path::Path::new(path_str)) {
+            eprintln!("Error writing configuration to {}: {}", path_str, e);
+            std::process::exit(1);
+        }
+        println!("Successfully generated configuration file at: {}", path_str);
+        return Ok(());
+    }
+
     signals::install_panic_hook();
 
     let is_interactive =
@@ -66,6 +78,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             control.download_list.clone(),
             control.command_map.clone(),
             webui::resolve_webui_token(&cli),
+            control.tiering_manager.clone(),
+            control.dht_config.clone(),
+            control.config_path.clone(),
         );
         let tls = webui::resolve_webui_tls(&cli);
         let shutdown = control.shutdown_tx.subscribe();

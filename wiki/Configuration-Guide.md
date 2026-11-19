@@ -181,6 +181,55 @@ addr = "127.0.0.1:9090"
 [webui]
 addr = "127.0.0.1:8080"
 token = "change-me"
+
+[tiering]
+# Enable automated multi-tier storage management
+enabled = true
+# Interval in seconds between migration evaluation runs
+check_interval = 60
+
+[[tiering.tiers]]
+name = "fast_nvme"
+path = "/mnt/nvme/torrents"
+capacity_gb = 500
+
+[[tiering.tiers]]
+name = "ssd"
+path = "/mnt/ssd/torrents"
+capacity_gb = 1000
+
+[[tiering.tiers]]
+name = "cold_hdd"
+path = "/mnt/hdd/torrents"
+capacity_gb = 4000
+
+[[tiering.rules]]
+from = 0
+to = 1
+is_complete = true
+time_on_tier_secs = 3600
+
+[[tiering.rules]]
+from = 1
+to = 2
+min_ratio = 2.0
+```
+
+### Generating a Configuration File
+
+You can automatically generate a complete, annotated `rstorrent.toml` template with all available settings by running:
+
+```bash
+rstorrent --generate-config [PATH]
+```
+
+Or from within an active session via RPC:
+
+```bash
+# Print active configuration as TOML
+config.show
+# Export configuration to a file
+config.export = /path/to/rstorrent.toml
 ```
 
 ---

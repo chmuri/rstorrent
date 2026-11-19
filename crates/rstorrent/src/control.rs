@@ -67,6 +67,8 @@ pub struct Control {
     /// Number of `queue_recheck_if_files_exist()` calls that found payload on
     /// disk since startup. Diagnostic only; see `startup.summary`.
     pub queued_rechecks: AtomicU64,
+    pub tiering_manager: Arc<rt_core::tiering::TieringManager>,
+    pub config_path: Option<std::path::PathBuf>,
     shutdown_lock: tokio::sync::Mutex<()>,
 }
 
@@ -92,6 +94,9 @@ impl Control {
         let network_config = NetworkConfig::new();
         let root_ui = Arc::new(Mutex::new(RootUI::new()));
         let signals = SignalState::new();
+        let tiering_manager = Arc::new(rt_core::tiering::TieringManager::new(
+            rt_core::tiering::TieringConfig::default(),
+        ));
 
         let our_peer_id =
             lt_common::hash_string::HashString::new(lt_common::version::new_peer_id());
@@ -121,6 +126,8 @@ impl Control {
             network_runtime: Mutex::new(None),
             metrics: Metrics::from_env(),
             queued_rechecks: AtomicU64::new(0),
+            tiering_manager,
+            config_path: None,
             shutdown_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -170,6 +177,7 @@ impl Control {
                     throttle_manager: Arc::clone(&self.throttle_manager),
                     dht_config: Arc::clone(&self.dht_config),
                     network_config: self.network_config.clone(),
+                    tiering_manager: Arc::clone(&self.tiering_manager),
                 },
             )
             .map_err(|e| format!("Failed to initialize commands: {}", e))?;
@@ -221,6 +229,14 @@ impl Control {
             register_lua_commands(&mut map, Arc::clone(&engine))
                 .map_err(|e| format!("Failed to register Lua commands: {}", e))?;
 
+            register_config_commands(
+                &mut map,
+                Arc::clone(&self.command_map),
+                Arc::clone(&self.tiering_manager),
+                Arc::clone(&self.dht_config),
+            )
+            .map_err(|e| format!("Failed to register config commands: {}", e))?;
+
             // `system.listMethods` is registered last so its snapshot contains
             // every command, including session/scheduler/SCGI/UI commands.
             let mut method_names: Vec<Object> = map
@@ -268,6 +284,9 @@ impl Control {
                 .as_ref()
                 .map(std::path::PathBuf::from)
                 .or_else(|| find_config_file(cli.no_rc));
+            self.config_path = config_path
+                .clone()
+                .or_else(|| Some(std::path::PathBuf::from("rstorrent.toml")));
             if let Some(path) = config_path {
                 let path_str = path.to_string_lossy().to_string();
                 if path.exists() {
@@ -1407,6 +1426,18 @@ impl Control {
                     .download_mut()
                     .tick(now);
             }
+
+            // Periodic tiering evaluation
+            let check_interval = self
+                .tiering_manager
+                .config()
+                .read()
+                .map(|c| c.check_interval_secs)
+                .unwrap_or(300)
+                .max(1);
+            if now.is_multiple_of(check_interval) {
+                self.tiering_manager.check_tier_transitions(&dl_list);
+            }
         }
         t
     }
@@ -1888,4 +1919,118 @@ fn warn_if_fd_budget_is_tight(threads: usize, max_open_files: usize) {
             "Disk worker open-file budget is above a third of RLIMIT_NOFILE; raise the limit or lower storage.max_open_files."
         );
     }
+}
+
+/// Registers commands for querying, exporting, and saving system configuration.
+fn register_config_commands(
+    map: &mut CommandMap,
+    command_map_arc: Arc<RwLock<CommandMap>>,
+    tiering_manager: Arc<rt_core::tiering::TieringManager>,
+    dht_config: Arc<RwLock<DhtConfig>>,
+) -> Result<(), String> {
+    use rt_rpc::command_flags::*;
+    use rt_rpc::RpcError;
+
+    let map_weak = Arc::downgrade(&command_map_arc);
+    let tm = Arc::clone(&tiering_manager);
+    let dht = Arc::clone(&dht_config);
+
+    map.insert_func(
+        "config.show",
+        {
+            let map_weak = map_weak.clone();
+            let tm = Arc::clone(&tm);
+            let dht = Arc::clone(&dht);
+            move |_target, _arg| {
+                if let Some(map_arc) = map_weak.upgrade() {
+                    let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
+                    let cfg =
+                        crate::toml_config::RtorrentTomlConfig::from_runtime(&map_guard, &tm, &dht);
+                    let toml_str = cfg.generate_annotated_toml();
+                    Ok(Object::from(toml_str.as_str()))
+                } else {
+                    Err(RpcError::Custom {
+                        code: -500,
+                        message: "Command map dropped".into(),
+                    })
+                }
+            }
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Show current configuration as TOML string.",
+    )
+    .map_err(|e| format!("Failed to register config.show: {e}"))?;
+
+    map.insert_func(
+        "config.export",
+        {
+            let map_weak = map_weak.clone();
+            let tm = Arc::clone(&tm);
+            let dht = Arc::clone(&dht);
+            move |_target, arg| {
+                let path_str = rt_rpc::convert_to_string(arg)?;
+                if path_str.trim().is_empty() {
+                    return Err(RpcError::InputError("Path cannot be empty".into()));
+                }
+                if let Some(map_arc) = map_weak.upgrade() {
+                    let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
+                    let cfg =
+                        crate::toml_config::RtorrentTomlConfig::from_runtime(&map_guard, &tm, &dht);
+                    cfg.save_to_file(std::path::Path::new(path_str.trim()))
+                        .map_err(|e| RpcError::Custom {
+                            code: -500,
+                            message: format!("Failed to save config: {e}"),
+                        })?;
+                    Ok(Object::from(0i64))
+                } else {
+                    Err(RpcError::Custom {
+                        code: -500,
+                        message: "Command map dropped".into(),
+                    })
+                }
+            }
+        },
+        FLAG_PUBLIC_RPC,
+        "<path>",
+        "Export current active configuration to the specified TOML file.",
+    )
+    .map_err(|e| format!("Failed to register config.export: {e}"))?;
+
+    map.insert_func(
+        "config.save",
+        {
+            let map_weak = map_weak.clone();
+            let tm = Arc::clone(&tm);
+            let dht = Arc::clone(&dht);
+            move |_target, arg| {
+                let path_str = match rt_rpc::convert_to_string(arg) {
+                    Ok(s) if !s.trim().is_empty() => s.trim().to_string(),
+                    _ => "rstorrent.toml".to_string(),
+                };
+                if let Some(map_arc) = map_weak.upgrade() {
+                    let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
+                    let cfg =
+                        crate::toml_config::RtorrentTomlConfig::from_runtime(&map_guard, &tm, &dht);
+                    cfg.save_to_file(std::path::Path::new(&path_str))
+                        .map_err(|e| RpcError::Custom {
+                            code: -500,
+                            message: format!("Failed to save config: {e}"),
+                        })?;
+                    Ok(Object::from(0i64))
+                } else {
+                    Err(RpcError::Custom {
+                        code: -500,
+                        message: "Command map dropped".into(),
+                    })
+                }
+            }
+        },
+        FLAG_PUBLIC_RPC,
+        "[path]",
+        "Save current configuration to the active or default config file.",
+    )
+    .map_err(|e| format!("Failed to register config.save: {e}"))?;
+
+    Ok(())
 }

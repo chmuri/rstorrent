@@ -58,8 +58,12 @@ The project contains active implementations for core BitTorrent functionality, a
   - Rich Terminal User Interface powered by [Ratatui](https://github.com/ratatui/ratatui) and [Crossterm](https://github.com/crossterm-rs/crossterm).
   - Headless daemon mode (`--daemon`) for servers and Docker containers.
   - A standalone gRPC TUI client (`rstorrent-tui`) for remote control over TCP/TLS/UNIX sockets.
+- **Multi-Tier Storage & Live Move (Tiering)**:
+  - **Automated Storage Tiering**: Multi-tier data lifecycle orchestration (e.g. Fast NVMe $\rightarrow$ Warm SSD $\rightarrow$ Cold HDD) driven by customizable transition policies based on download completion (`is_complete`), ratio thresholds (`min_ratio`), residency time on tier (`time_on_tier_secs`), upload quota (`min_uploaded_bytes`), or inactivity. Available target capacity is pre-verified via `statvfs`.
+  - **Live Move Without Statistics Loss**: Safely relocate active or paused torrent files across directories or disks on-the-fly (`d.move`). Safely flushes disk buffers, closes descriptors, performs atomic rename or cross-device copy with `sync_data` + verify, updates path and resumes. Downloaded, uploaded bytes and ratio are 100% preserved.
+  - **Dynamic Configuration & WebUI Management**: Generate a complete, annotated `rstorrent.toml` configuration template using `--generate-config [PATH]` or RPC (`config.show`/`config.export`). Full interactive control over storage tiers, transition rules, network limits and live moves directly from the built-in WebUI.
 - **Native Web UI**:
-  - Opt-in axum-based REST + WebSocket API with an embedded Leptos WebAssembly single-page app, bearer-token auth, and optional TLS.
+  - Opt-in axum-based REST + WebSocket API with an embedded single-page app, bearer-token auth, optional TLS, interactive settings, tiering management, and live moves.
 - **Observability**:
   - Prometheus `/metrics` HTTP endpoint and an optional JSONL event recorder (`RSTORRENT_METRICS_FILE`).
 - **Lua Scripting**:

@@ -82,6 +82,10 @@ pub struct Cli {
     #[arg(long = "webui-token", value_name = "TOKEN")]
     pub webui_token: Option<String>,
 
+    /// Generate a complete rtorrent.toml configuration file and exit
+    #[arg(long = "generate-config", value_name = "PATH", num_args = 0..=1)]
+    pub generate_config: Option<Option<String>>,
+
     /// Set arbitrary options (e.g. -o key=value)
     #[arg(short = 'o', value_name = "OPTION", action = clap::ArgAction::Append)]
     pub options: Vec<String>,

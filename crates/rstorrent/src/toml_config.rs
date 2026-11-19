@@ -2,12 +2,13 @@
 
 use lt_common::Object;
 use rt_core::commands::tracker::DhtConfig;
+use rt_core::tiering::{TierCondition, TieringManager};
 use rt_rpc::{CommandMap, Target};
-use serde::Deserialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RtorrentTomlConfig {
     #[serde(default)]
     pub network: NetworkTomlConfig,
@@ -25,9 +26,11 @@ pub struct RtorrentTomlConfig {
     pub metrics: MetricsTomlConfig,
     #[serde(default)]
     pub webui: WebuiTomlConfig,
+    #[serde(default)]
+    pub tiering: TieringTomlConfig,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetworkTomlConfig {
     pub port_range: Option<String>,
     pub port: Option<u16>,
@@ -49,7 +52,7 @@ pub struct NetworkTomlConfig {
     pub max_peers_seed: Option<u32>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StorageTomlConfig {
     pub directory: Option<String>,
     #[serde(alias = "session_directory")]
@@ -59,13 +62,13 @@ pub struct StorageTomlConfig {
     pub max_open_files: Option<usize>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProtocolTomlConfig {
     pub encryption: Option<String>,
     pub peer_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RpcTomlConfig {
     pub scgi_port: Option<u16>,
     pub scgi_socket: Option<String>,
@@ -81,13 +84,13 @@ pub struct RpcTomlConfig {
     pub grpc_tls_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DhtTomlConfig {
     pub mode: Option<String>,
     pub port: Option<u16>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LoggingTomlConfig {
     /// Maximum tracing level: trace, debug, info, warn, error, off.
     pub level: Option<String>,
@@ -96,7 +99,7 @@ pub struct LoggingTomlConfig {
     pub file: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MetricsTomlConfig {
     /// Bind address for the Prometheus `/metrics` HTTP server (e.g.
     /// `127.0.0.1:9090`). Unset disables the server. The CLI `--metrics-addr`
@@ -104,7 +107,7 @@ pub struct MetricsTomlConfig {
     pub addr: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WebuiTomlConfig {
     /// Bind address for the native WebUI HTTP server (e.g. `127.0.0.1:8080`).
     /// Unset disables the server. The CLI `--webui-addr` flag overrides this.
@@ -118,9 +121,465 @@ pub struct WebuiTomlConfig {
     pub tls_key: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TieringTomlConfig {
+    pub enabled: Option<bool>,
+    pub check_interval: Option<u64>,
+    #[serde(default)]
+    pub tiers: Vec<TierTomlItem>,
+    #[serde(default)]
+    pub rules: Vec<TierRuleTomlItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TierTomlItem {
+    pub name: String,
+    pub path: String,
+    pub capacity_gb: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TierRuleTomlItem {
+    pub from: u8,
+    pub to: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_ratio: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_on_tier_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_complete: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_uploaded_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inactive_secs: Option<u64>,
+}
+
 impl RtorrentTomlConfig {
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(content)
+    }
+
+    /// Complete default configuration template.
+    pub fn template() -> Self {
+        Self {
+            network: NetworkTomlConfig {
+                port_range: Some("6881-6889".to_string()),
+                port: Some(6881),
+                enable_upnp: Some(true),
+                enable_utp: Some(true),
+                download_throttle_kb: Some(0),
+                upload_throttle_kb: Some(0),
+                max_uploads: Some(50),
+                max_downloads: Some(50),
+                max_peers: Some(100),
+                max_peers_seed: Some(50),
+                ..Default::default()
+            },
+            storage: StorageTomlConfig {
+                directory: Some("~/Downloads".to_string()),
+                session: Some("~/.local/share/rstorrent/session".to_string()),
+                watch_directory: None,
+                disk_threads: Some(4),
+                max_open_files: Some(256),
+            },
+            protocol: ProtocolTomlConfig {
+                encryption: Some("try_outgoing".to_string()),
+                peer_id: None,
+            },
+            rpc: RpcTomlConfig {
+                scgi_port: None,
+                scgi_socket: None,
+                grpc_port: None,
+                grpc_socket: None,
+                scgi_token: None,
+                grpc_token: None,
+                grpc_tls_cert: None,
+                grpc_tls_key: None,
+            },
+            dht: DhtTomlConfig {
+                mode: Some("auto".to_string()),
+                port: Some(6881),
+            },
+            logging: LoggingTomlConfig {
+                level: Some("info".to_string()),
+                file: None,
+            },
+            metrics: MetricsTomlConfig { addr: None },
+            webui: WebuiTomlConfig {
+                addr: Some("127.0.0.1:8080".to_string()),
+                token: None,
+                tls_cert: None,
+                tls_key: None,
+            },
+            tiering: TieringTomlConfig {
+                enabled: Some(true),
+                check_interval: Some(60),
+                tiers: vec![
+                    TierTomlItem {
+                        name: "fast_nvme".to_string(),
+                        path: "/mnt/nvme/torrents".to_string(),
+                        capacity_gb: Some(500),
+                    },
+                    TierTomlItem {
+                        name: "ssd".to_string(),
+                        path: "/mnt/ssd/torrents".to_string(),
+                        capacity_gb: Some(1000),
+                    },
+                    TierTomlItem {
+                        name: "cold_hdd".to_string(),
+                        path: "/mnt/hdd/torrents".to_string(),
+                        capacity_gb: Some(4000),
+                    },
+                ],
+                rules: vec![
+                    TierRuleTomlItem {
+                        from: 0,
+                        to: 1,
+                        min_ratio: None,
+                        time_on_tier_secs: Some(3600),
+                        is_complete: Some(true),
+                        min_uploaded_bytes: None,
+                        inactive_secs: None,
+                    },
+                    TierRuleTomlItem {
+                        from: 1,
+                        to: 2,
+                        min_ratio: Some(2.0),
+                        time_on_tier_secs: None,
+                        is_complete: None,
+                        min_uploaded_bytes: None,
+                        inactive_secs: None,
+                    },
+                ],
+            },
+        }
+    }
+
+    /// Construct configuration snapshot from active runtime state
+    pub fn from_runtime(
+        map: &CommandMap,
+        tiering: &TieringManager,
+        dht_config: &Arc<RwLock<DhtConfig>>,
+    ) -> Self {
+        let query_str = |name: &str| -> Option<String> {
+            map.call_command(name, &Object::create_empty(), &Target::None, true)
+                .ok()
+                .and_then(|obj| match obj.val {
+                    lt_common::object::ObjectVal::String(bytes) => String::from_utf8(bytes).ok(),
+                    _ => None,
+                })
+                .filter(|s| !s.is_empty())
+        };
+
+        let query_i64 = |name: &str| -> Option<i64> {
+            map.call_command(name, &Object::create_empty(), &Target::None, true)
+                .ok()
+                .and_then(|obj| match obj.val {
+                    lt_common::object::ObjectVal::Value(v) => Some(v),
+                    _ => None,
+                })
+        };
+
+        let directory = query_str("directory.default");
+        let session = query_str("session.path");
+        let port_range = query_str("network.port_range");
+        let bind_address = query_str("network.bind_address");
+        let local_address = query_str("network.local_address");
+        let proxy = query_str("network.proxy.global");
+        let encryption = query_str("protocol.encryption");
+
+        let down_throttle = query_i64("throttle.global_down.max_rate.kb").map(|v| v.max(0) as u64);
+        let up_throttle = query_i64("throttle.global_up.max_rate.kb").map(|v| v.max(0) as u64);
+        let max_uploads = query_i64("throttle.max_uploads").map(|v| v.max(0) as u32);
+        let max_downloads = query_i64("throttle.max_downloads").map(|v| v.max(0) as u32);
+        let max_peers = query_i64("throttle.max_peers.normal").map(|v| v.max(0) as u32);
+        let max_peers_seed = query_i64("throttle.max_peers.seed").map(|v| v.max(0) as u32);
+
+        let dht_guard = dht_config.read().ok();
+        let dht_mode = dht_guard
+            .as_ref()
+            .map(|d| d.mode.clone())
+            .or_else(|| query_str("dht.mode"));
+        let dht_port = dht_guard
+            .as_ref()
+            .map(|d| d.override_port)
+            .filter(|p| *p > 0);
+
+        // Snapshot tiering
+        let tiering_config = tiering
+            .config()
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let tiers = tiering_config
+            .tiers
+            .iter()
+            .map(|t| TierTomlItem {
+                name: t.name.clone(),
+                path: t.path.to_string_lossy().to_string(),
+                capacity_gb: if t.capacity_bytes > 0 {
+                    Some(t.capacity_bytes / (1024 * 1024 * 1024))
+                } else {
+                    None
+                },
+            })
+            .collect();
+
+        let rules = tiering_config
+            .rules
+            .iter()
+            .map(|r| {
+                let mut min_ratio = None;
+                let mut time_on_tier_secs = None;
+                let mut is_complete = None;
+                let mut min_uploaded_bytes = None;
+                let mut inactive_secs = None;
+
+                for c in &r.conditions {
+                    match c {
+                        TierCondition::MinRatio(ratio) => min_ratio = Some(*ratio),
+                        TierCondition::TimeOnTier(secs) => time_on_tier_secs = Some(*secs),
+                        TierCondition::IsComplete => is_complete = Some(true),
+                        TierCondition::MinUploaded(bytes) => min_uploaded_bytes = Some(*bytes),
+                        TierCondition::InactiveSince(secs) => inactive_secs = Some(*secs),
+                    }
+                }
+
+                TierRuleTomlItem {
+                    from: r.from_tier,
+                    to: r.to_tier,
+                    min_ratio,
+                    time_on_tier_secs,
+                    is_complete,
+                    min_uploaded_bytes,
+                    inactive_secs,
+                }
+            })
+            .collect();
+
+        Self {
+            network: NetworkTomlConfig {
+                port_range,
+                port: None,
+                bind_address,
+                local_address,
+                enable_upnp: Some(true),
+                enable_utp: Some(true),
+                proxy,
+                max_upload_rate: None,
+                max_download_rate: None,
+                download_throttle_kb: down_throttle,
+                upload_throttle_kb: up_throttle,
+                max_uploads,
+                max_downloads,
+                max_peers,
+                max_peers_seed,
+            },
+            storage: StorageTomlConfig {
+                directory,
+                session,
+                watch_directory: None,
+                disk_threads: Some(4),
+                max_open_files: Some(256),
+            },
+            protocol: ProtocolTomlConfig {
+                encryption,
+                peer_id: None,
+            },
+            rpc: RpcTomlConfig::default(),
+            dht: DhtTomlConfig {
+                mode: dht_mode,
+                port: dht_port,
+            },
+            logging: LoggingTomlConfig {
+                level: Some("info".to_string()),
+                file: None,
+            },
+            metrics: MetricsTomlConfig::default(),
+            webui: WebuiTomlConfig {
+                addr: Some("127.0.0.1:8080".to_string()),
+                token: None,
+                tls_cert: None,
+                tls_key: None,
+            },
+            tiering: TieringTomlConfig {
+                enabled: Some(tiering_config.enabled),
+                check_interval: Some(tiering_config.check_interval_secs),
+                tiers,
+                rules,
+            },
+        }
+    }
+
+    /// Serialize configuration to a clean TOML string
+    pub fn to_toml_string(&self) -> Result<String, toml::ser::Error> {
+        toml::to_string_pretty(self)
+    }
+
+    /// Generate an annotated, user-friendly TOML string with detailed comments
+    pub fn generate_annotated_toml(&self) -> String {
+        let mut out = String::new();
+        out.push_str("# rtorrent.toml - rtorrent Configuration File\n");
+        out.push_str("# Generated automatically from active system settings.\n\n");
+
+        out.push_str("[storage]\n");
+        if let Some(dir) = &self.storage.directory {
+            out.push_str(&format!(
+                "# Default download directory for new torrents\ndirectory = {:?}\n",
+                dir
+            ));
+        } else {
+            out.push_str("# directory = \"~/Downloads\"\n");
+        }
+        if let Some(sess) = &self.storage.session {
+            out.push_str(&format!(
+                "# Directory for session checkpoints and resume files\nsession = {:?}\n",
+                sess
+            ));
+        } else {
+            out.push_str("# session = \"~/.local/share/rstorrent/session\"\n");
+        }
+        if let Some(wd) = &self.storage.watch_directory {
+            out.push_str(&format!("watch_directory = {:?}\n", wd));
+        }
+        if let Some(dt) = self.storage.disk_threads {
+            out.push_str(&format!("disk_threads = {}\n", dt));
+        }
+        if let Some(mof) = self.storage.max_open_files {
+            out.push_str(&format!("max_open_files = {}\n", mof));
+        }
+        out.push('\n');
+
+        out.push_str("[network]\n");
+        if let Some(pr) = &self.network.port_range {
+            out.push_str(&format!(
+                "# Port or port range for incoming connections\nport_range = {:?}\n",
+                pr
+            ));
+        }
+        if let Some(bind) = &self.network.bind_address {
+            out.push_str(&format!("bind_address = {:?}\n", bind));
+        }
+        if let Some(local) = &self.network.local_address {
+            out.push_str(&format!("local_address = {:?}\n", local));
+        }
+        if let Some(utp) = self.network.enable_utp {
+            out.push_str(&format!("enable_utp = {}\n", utp));
+        }
+        if let Some(upnp) = self.network.enable_upnp {
+            out.push_str(&format!("enable_upnp = {}\n", upnp));
+        }
+        if let Some(p) = &self.network.proxy {
+            out.push_str(&format!("proxy = {:?}\n", p));
+        }
+        if let Some(down) = self.network.download_throttle_kb {
+            out.push_str(&format!("# Global download rate throttle in KiB/s (0 = unlimited)\ndownload_throttle_kb = {}\n", down));
+        }
+        if let Some(up) = self.network.upload_throttle_kb {
+            out.push_str(&format!(
+                "# Global upload rate throttle in KiB/s (0 = unlimited)\nupload_throttle_kb = {}\n",
+                up
+            ));
+        }
+        if let Some(mu) = self.network.max_uploads {
+            out.push_str(&format!("max_uploads = {}\n", mu));
+        }
+        if let Some(md) = self.network.max_downloads {
+            out.push_str(&format!("max_downloads = {}\n", md));
+        }
+        if let Some(mp) = self.network.max_peers {
+            out.push_str(&format!("max_peers = {}\n", mp));
+        }
+        if let Some(mps) = self.network.max_peers_seed {
+            out.push_str(&format!("max_peers_seed = {}\n", mps));
+        }
+        out.push('\n');
+
+        out.push_str("[protocol]\n");
+        if let Some(enc) = &self.protocol.encryption {
+            out.push_str(&format!("# Encryption mode: allow_incoming, try_outgoing, require, require_RC4\nencryption = {:?}\n", enc));
+        }
+        if let Some(pid) = &self.protocol.peer_id {
+            out.push_str(&format!("peer_id = {:?}\n", pid));
+        }
+        out.push('\n');
+
+        out.push_str("[dht]\n");
+        if let Some(mode) = &self.dht.mode {
+            out.push_str(&format!("# DHT mode: off, auto, on\nmode = {:?}\n", mode));
+        }
+        if let Some(p) = self.dht.port {
+            out.push_str(&format!("port = {}\n", p));
+        }
+        out.push('\n');
+
+        out.push_str("[webui]\n");
+        if let Some(addr) = &self.webui.addr {
+            out.push_str(&format!(
+                "# Native WebUI HTTP listen address\naddr = {:?}\n",
+                addr
+            ));
+        }
+        if let Some(token) = &self.webui.token {
+            out.push_str(&format!("token = {:?}\n", token));
+        }
+        out.push('\n');
+
+        out.push_str("[tiering]\n");
+        out.push_str("# Automatic storage tiering and live torrent migration\n");
+        out.push_str(&format!(
+            "enabled = {}\n",
+            self.tiering.enabled.unwrap_or(false)
+        ));
+        out.push_str(&format!(
+            "check_interval = {}\n\n",
+            self.tiering.check_interval.unwrap_or(60)
+        ));
+
+        for tier in &self.tiering.tiers {
+            out.push_str("[[tiering.tiers]]\n");
+            out.push_str(&format!("name = {:?}\n", tier.name));
+            out.push_str(&format!("path = {:?}\n", tier.path));
+            if let Some(cap) = tier.capacity_gb {
+                out.push_str(&format!("capacity_gb = {}\n", cap));
+            }
+            out.push('\n');
+        }
+
+        for rule in &self.tiering.rules {
+            out.push_str("[[tiering.rules]]\n");
+            out.push_str(&format!("from = {}\n", rule.from));
+            out.push_str(&format!("to = {}\n", rule.to));
+            if let Some(r) = rule.min_ratio {
+                out.push_str(&format!("min_ratio = {}\n", r));
+            }
+            if let Some(t) = rule.time_on_tier_secs {
+                out.push_str(&format!("time_on_tier_secs = {}\n", t));
+            }
+            if let Some(c) = rule.is_complete {
+                out.push_str(&format!("is_complete = {}\n", c));
+            }
+            if let Some(u) = rule.min_uploaded_bytes {
+                out.push_str(&format!("min_uploaded_bytes = {}\n", u));
+            }
+            if let Some(i) = rule.inactive_secs {
+                out.push_str(&format!("inactive_secs = {}\n", i));
+            }
+            out.push('\n');
+        }
+
+        out
+    }
+
+    /// Save configuration directly to a file
+    pub fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        let content = self.generate_annotated_toml();
+        std::fs::write(path, content)
     }
 
     /// Apply parsed configuration into the command map and runtime network/dht configurations.
@@ -327,6 +786,43 @@ impl RtorrentTomlConfig {
                 Err(e) => tracing::warn!("TOML dht port lock poisoned: {}", e),
             }
         }
+
+        // Tiering
+        if let Some(enabled) = self.tiering.enabled {
+            call(
+                "tiering.enabled.set",
+                &Object::from(if enabled { 1i64 } else { 0i64 }),
+                true,
+            );
+        }
+        for tier in &self.tiering.tiers {
+            let cap_bytes = tier
+                .capacity_gb
+                .unwrap_or(0)
+                .saturating_mul(1024 * 1024 * 1024);
+            let s = format!("{},{},{}", tier.name, tier.path, cap_bytes);
+            call("tiering.tier.add", &Object::from(s.as_str()), true);
+        }
+        for rule in &self.tiering.rules {
+            let mut parts = vec![rule.from.to_string(), rule.to.to_string()];
+            if let Some(r) = rule.min_ratio {
+                parts.push(format!("ratio={}", r));
+            }
+            if let Some(t) = rule.time_on_tier_secs {
+                parts.push(format!("time={}", t));
+            }
+            if let Some(true) = rule.is_complete {
+                parts.push("complete".to_string());
+            }
+            if let Some(u) = rule.min_uploaded_bytes {
+                parts.push(format!("uploaded={}", u));
+            }
+            if let Some(i) = rule.inactive_secs {
+                parts.push(format!("inactive={}", i));
+            }
+            let s = parts.join(",");
+            call("tiering.rule.add", &Object::from(s.as_str()), true);
+        }
     }
 }
 
@@ -459,5 +955,66 @@ mod tests {
         let empty = RtorrentTomlConfig::parse("").unwrap();
         assert!(empty.webui.addr.is_none());
         assert!(empty.webui.token.is_none());
+    }
+
+    #[test]
+    fn test_parse_tiering_config() {
+        let toml_str = r#"
+            [tiering]
+            enabled = true
+            check_interval = 60
+
+            [[tiering.tiers]]
+            name = "fast_nvme"
+            path = "/mnt/nvme"
+            capacity_gb = 100
+
+            [[tiering.tiers]]
+            name = "slow_hdd"
+            path = "/mnt/hdd"
+
+            [[tiering.rules]]
+            from = 0
+            to = 1
+            min_ratio = 2.0
+            is_complete = true
+        "#;
+        let cfg = RtorrentTomlConfig::parse(toml_str).unwrap();
+        assert_eq!(cfg.tiering.enabled, Some(true));
+        assert_eq!(cfg.tiering.check_interval, Some(60));
+        assert_eq!(cfg.tiering.tiers.len(), 2);
+        assert_eq!(cfg.tiering.tiers[0].name, "fast_nvme");
+        assert_eq!(cfg.tiering.tiers[0].capacity_gb, Some(100));
+        assert_eq!(cfg.tiering.rules.len(), 1);
+        assert_eq!(cfg.tiering.rules[0].from, 0);
+        assert_eq!(cfg.tiering.rules[0].to, 1);
+        assert_eq!(cfg.tiering.rules[0].min_ratio, Some(2.0));
+        assert_eq!(cfg.tiering.rules[0].is_complete, Some(true));
+    }
+
+    #[test]
+    fn test_template_roundtrip_and_save() {
+        let tpl = RtorrentTomlConfig::template();
+        let toml_str = tpl.generate_annotated_toml();
+        let parsed = RtorrentTomlConfig::parse(&toml_str).expect("template must be valid TOML");
+
+        assert_eq!(parsed.network.port_range, tpl.network.port_range);
+        assert_eq!(parsed.storage.directory, tpl.storage.directory);
+        assert_eq!(parsed.tiering.enabled, Some(true));
+        assert_eq!(parsed.tiering.tiers.len(), 3);
+        assert_eq!(parsed.tiering.rules.len(), 2);
+        assert_eq!(parsed.tiering.tiers[0].name, "fast_nvme");
+        assert_eq!(parsed.tiering.rules[0].from, 0);
+        assert_eq!(parsed.tiering.rules[0].to, 1);
+
+        let temp_dir = std::env::temp_dir().join(format!("test_cfg_save_{}", std::process::id()));
+        let file_path = temp_dir.join("subdir").join("rstorrent.toml");
+        tpl.save_to_file(&file_path)
+            .expect("saving to file must succeed");
+        assert!(file_path.exists());
+        let read_back = std::fs::read_to_string(&file_path).unwrap();
+        assert!(read_back.contains("[tiering]"));
+        assert!(read_back.contains("fast_nvme"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

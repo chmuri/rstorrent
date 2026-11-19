@@ -52,6 +52,9 @@ pub struct WebuiState {
     pub token: Option<String>,
     pub start_time: Instant,
     pub event_broadcaster: broadcast::Sender<ws::WebuiTorrentEvent>,
+    pub tiering_manager: Arc<rt_core::tiering::TieringManager>,
+    pub dht_config: Arc<RwLock<rt_core::commands::tracker::DhtConfig>>,
+    pub config_path: Option<PathBuf>,
 }
 
 impl WebuiState {
@@ -59,6 +62,9 @@ impl WebuiState {
         download_list: Arc<RwLock<DownloadList>>,
         command_map: Arc<RwLock<CommandMap>>,
         token: Option<String>,
+        tiering_manager: Arc<rt_core::tiering::TieringManager>,
+        dht_config: Arc<RwLock<rt_core::commands::tracker::DhtConfig>>,
+        config_path: Option<PathBuf>,
     ) -> Self {
         // Mirror `rt-grpc/src/server.rs`: hook the download-list event listener
         // once and fan every event out to subscribed WebSocket clients.
@@ -85,6 +91,9 @@ impl WebuiState {
             token,
             start_time: Instant::now(),
             event_broadcaster,
+            tiering_manager,
+            dht_config,
+            config_path,
         }
     }
 }
@@ -133,9 +142,14 @@ pub fn router(state: WebuiState) -> Router {
         .route("/torrents/{hash}/stop", post(rest::stop_torrent))
         .route("/torrents/{hash}/remove", post(rest::remove_torrent))
         .route("/torrents/{hash}/recheck", post(rest::recheck_torrent))
+        .route("/torrents/{hash}/move", post(rest::move_torrent))
+        .route("/torrents/{hash}/tier", post(rest::set_torrent_tier))
         .route("/command", post(rest::execute_command))
         .route("/stats", get(rest::get_stats))
         .route("/version", get(rest::get_version))
+        .route("/config", get(rest::get_config).post(rest::update_config))
+        .route("/config/export", get(rest::export_config_file))
+        .route("/config/save", post(rest::save_config_file))
         .route("/events", get(ws::events_ws))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth))
         .with_state(state);
@@ -328,6 +342,9 @@ mod tests {
             Arc::new(RwLock::new(DownloadList::new())),
             Arc::new(RwLock::new(map)),
             token.map(|t| t.to_string()),
+            Arc::new(rt_core::tiering::TieringManager::new(Default::default())),
+            Arc::new(RwLock::new(rt_core::commands::tracker::DhtConfig::default())),
+            None,
         )
     }
 
@@ -445,6 +462,9 @@ mod tests {
             Arc::new(RwLock::new(DownloadList::new())),
             Arc::new(RwLock::new(map)),
             None,
+            Arc::new(rt_core::tiering::TieringManager::new(Default::default())),
+            Arc::new(RwLock::new(rt_core::commands::tracker::DhtConfig::default())),
+            None,
         );
         let (_, body) = send(
             state,
@@ -480,6 +500,30 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn config_endpoints_return_and_update() {
+        let state = test_state(Some("secret"));
+        let (status, body) = send(state.clone(), get("/api/config", Some("secret"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["toml"].as_str().unwrap().contains("[storage]"));
+        assert!(body["config"].is_object());
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/config",
+                Some("secret"),
+                &json!({
+                    "toml": "[tiering]\nenabled = true\ncheck_interval = 45\n",
+                    "save_file": false
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(true));
     }
 
     #[test]

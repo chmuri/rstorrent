@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-19
+
+### Added
+- **Multi-Tier Storage Management (Tiering)** (`crates/rt-core/src/tiering/`, `crates/rstorrent/src/toml_config.rs`):
+  - Multi-tier automatic data migration based on user-defined policies (e.g. NVMe -> SSD -> HDD).
+  - Configurable transition rules evaluating ratio (`min_ratio`), time spent on tier (`time_on_tier_secs`), download completion (`is_complete`), uploaded volume (`min_uploaded_bytes`), and inactivity duration (`inactive_secs`).
+  - Available space verification prior to migration via POSIX `statvfs`.
+  - Atomic fast-path `fs::rename` within the same filesystem; robust cross-device copy + `sync_data` (fsync) + size verification + source cleanup across mounts (`EXDEV`).
+  - Periodic background evaluation worker hooked into `Control::inc_tick`.
+  - Full persistence of torrent tier state and entry timestamps in the `.rtorrent` Bencode session sidecar.
+- **Live Move without Statistics Loss**:
+  - Live relocation of torrent payload files across directories/disks while active or paused.
+  - Safe orchestration sequence: pause I/O -> disk buffer flush (`flush_disk`) -> descriptor release -> file migration -> path re-pointing (`set_save_directory`) -> descriptor reopen -> automatic resume.
+  - 100% preservation of transfer metrics: uploaded bytes, downloaded bytes, verified completion, and ratio remain intact across moves.
+  - RPC commands: `d.move = <target_directory>`, `d.move_status = `, `d.tier = `, `d.tier.set = <idx>`, `d.tier_entered_at = `.
+  - Global tiering commands: `tiering.enabled`, `tiering.enabled.set`, `tiering.check`, `tiering.tier.add`, `tiering.rule.add`, `tiering.tiers`.
+- **System Configuration Generation & CLI Export**:
+  - CLI flag `--generate-config [PATH]` generating a complete, richly annotated `rstorrent.toml` configuration template with all options and tiered storage definitions.
+  - RPC commands: `config.show` (prints active configuration as TOML), `config.export = <path>` (exports to file), `config.save = [path]` (saves active config).
+  - Snapshotting live runtime configuration from active `CommandMap`, `TieringManager`, and `DhtConfig` into clean `RtorrentTomlConfig`.
+- **Enhanced WebUI with Interactive Settings & Tiering**:
+  - WebUI navigation tabs for **Torrents** and **Settings & Tiering**.
+  - Torrent list displays active storage tier badge and live move status.
+  - Interactive **Move** button with destination prompt and **Set Tier** button per torrent.
+  - Full configuration management panel: Storage directories, Network limits (throttles, port range, UPnP, uTP), DHT mode, and interactive Tiering configuration (add/remove tiers and transition rules).
+  - Real-time TOML viewer/editor with **"Save & Apply Settings"**, **"Save to Server"**, and one-click **"Download rstorrent.toml"**.
+  - REST endpoints: `GET /api/config`, `POST /api/config`, `GET /api/config/export`, `POST /api/config/save`, `POST /api/torrents/{hash}/move`, `POST /api/torrents/{hash}/tier`.
+
 ## [0.22.0] - 2026-11-14
 
 ### Added

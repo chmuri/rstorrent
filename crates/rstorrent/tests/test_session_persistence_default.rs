@@ -71,6 +71,7 @@ async fn test_default_session_persists_and_restores_torrents() {
         metrics_addr: None,
         webui_addr: None,
         webui_token: None,
+        generate_config: None,
         options: Vec::new(),
         command_options: Vec::new(),
         deprecated: false,
