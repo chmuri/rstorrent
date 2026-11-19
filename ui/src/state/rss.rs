@@ -2,10 +2,6 @@
 //! page store and a REST client for `/api/rss`. DTOs are duplicated here by
 //! repo convention (see `store.rs` vs the backend conversion layer) instead of
 //! sharing a common crate.
-//!
-//! T8 scaffolding: the panels and this client are wired into the app by
-//! T9-T13, so nothing here is reachable from `main` yet.
-#![allow(dead_code)]
 
 use gloo_net::http::{Method, RequestBuilder, Response};
 use leptos::prelude::*;

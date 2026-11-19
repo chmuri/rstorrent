@@ -74,6 +74,7 @@ pub fn Sidebar() -> impl IntoView {
             >
                 {nav_link(state, pathname, "/", "Dashboard", dashboard_icon(), None)}
                 {nav_link(state, pathname, "/explorer", "Explorer", folder_icon(), Some(explorer_count))}
+                {nav_link(state, pathname, "/rss", "RSS", rss_icon(), None)}
                 {nav_link(state, pathname, "/analytics", "Analytics", chart_icon(), None)}
                 {nav_link(state, pathname, "/settings", "Settings", settings_icon(), None)}
             </nav>
@@ -240,6 +241,26 @@ fn folder_icon() -> AnyView {
         </svg>
     }
         .into_any()
+}
+
+fn rss_icon() -> AnyView {
+    view! {
+        <svg
+            class="h-[18px] w-[18px] shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M4 11a9 9 0 0 1 9 9"/>
+            <path d="M4 4a16 16 0 0 1 16 16"/>
+            <circle cx="5" cy="19" r="1"/>
+        </svg>
+    }
+    .into_any()
 }
 
 fn chart_icon() -> AnyView {
