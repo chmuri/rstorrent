@@ -3876,6 +3876,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rt-rss"
+version = "0.23.0"
+dependencies = [
+ "quick-xml",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "rt-scgi"
 version = "0.23.0"
 dependencies = [
