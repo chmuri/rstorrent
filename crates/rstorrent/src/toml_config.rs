@@ -533,6 +533,9 @@ impl RtorrentTomlConfig {
                 "# Port or port range for incoming connections\nport_range = {:?}\n",
                 pr
             ));
+        } else if let Some(p) = self.network.port {
+            // A standalone port must survive a save even without a range.
+            out.push_str(&format!("port = {}\n", p));
         }
         if let Some(bind) = &self.network.bind_address {
             out.push_str(&format!("bind_address = {:?}\n", bind));

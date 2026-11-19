@@ -82,6 +82,7 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             control.tiering_manager.clone(),
             control.dht_config.clone(),
             control.config_path.clone(),
+            control.rss_service.clone(),
         );
         let tls = webui::resolve_webui_tls(&cli);
         let shutdown = control.shutdown_tx.subscribe();
