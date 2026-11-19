@@ -9,6 +9,12 @@ permissions:
   contents: write
   pull-requests: write
 
+# Serialize auto-merges: parallel squash-merges of cargo bumps conflict on
+# Cargo.lock, so let one PR land before the next one is merged.
+concurrency:
+  group: dependabot-automerge
+  cancel-in-progress: false
+
 jobs:
   dependabot-automerge:
     name: "Auto-approve and merge on CI success"
@@ -37,9 +43,58 @@ jobs:
         if: steps.pr.outputs.pr_number != ''
         run: |
           PR="${{ steps.pr.outputs.pr_number }}"
+
+          request_rebase() {
+            # Skip if a rebase was already requested for the current head,
+            # so repeated CI runs do not spam the PR while dependabot works.
+            LAST_REBASE=$(gh pr view "$PR" --json comments \
+              --jq '[.comments[] | select(.author.login == "github-actions[bot]" and (.body | contains("@dependabot rebase")))] | last | .createdAt // ""')
+            HEAD_DATE=$(gh pr view "$PR" --json commits --jq '.commits[-1].committedDate')
+            if [ -n "$LAST_REBASE" ] && [[ "$LAST_REBASE" > "$HEAD_DATE" ]]; then
+              echo "Rebase already requested for the current head; waiting for dependabot."
+              return 0
+            fi
+            echo "Cargo.lock conflict: requesting dependabot rebase..."
+            gh pr comment "$PR" --body "@dependabot rebase"
+          }
+
+          STATE=$(gh pr view "$PR" --json state --jq .state)
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR #$PR is $STATE; nothing to do."
+            exit 0
+          fi
+
+          # Mergeability is computed asynchronously; give GitHub a moment.
+          MERGEABLE=$(gh pr view "$PR" --json mergeable --jq .mergeable)
+          for _ in 1 2 3 4 5; do
+            if [ "$MERGEABLE" != "UNKNOWN" ]; then break; fi
+            echo "Mergeability unknown; retrying in 10s..."
+            sleep 10
+            MERGEABLE=$(gh pr view "$PR" --json mergeable --jq .mergeable)
+          done
+          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+            request_rebase
+            exit 0
+          fi
+
           echo "Approving PR #$PR after green CI verification..."
           gh pr review --approve "$PR" --body "Approved automatically: CI tests and checks passed cleanly on this dependency update."
           echo "Merging PR #$PR..."
-          gh pr merge --squash --delete-branch "$PR"
+          if gh pr merge --squash --delete-branch "$PR"; then
+            exit 0
+          fi
+
+          STATE=$(gh pr view "$PR" --json state --jq .state)
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR #$PR is $STATE (merged elsewhere); nothing to do."
+            exit 0
+          fi
+          MERGEABLE=$(gh pr view "$PR" --json mergeable --jq .mergeable)
+          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+            request_rebase
+            exit 0
+          fi
+          echo "Merge failed for an unexpected reason (mergeable=$MERGEABLE)."
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
