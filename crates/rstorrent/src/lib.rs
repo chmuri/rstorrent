@@ -6,6 +6,7 @@ pub mod grpc;
 pub mod logging;
 pub mod metrics;
 pub mod prometheus;
+pub mod rss;
 pub mod scgi;
 pub mod setup;
 pub mod signals;
@@ -92,6 +93,13 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
+    // RSS runs independently of the WebUI: it only needs the initialized
+    // service (session directory + store), not an HTTP listener.
+    let rss_task = control
+        .rss_service
+        .as_ref()
+        .map(|service| rss::spawn_worker(service.clone(), control.shutdown_tx.subscribe()));
+
     if !is_interactive {
         tracing::info!("rstorrent running in non-interactive (daemon) mode...");
         while !control.signals.is_shutdown() {
@@ -104,6 +112,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             task.abort();
         }
         if let Some(task) = &webui_task {
+            task.abort();
+        }
+        if let Some(task) = &rss_task {
             task.abort();
         }
         control.metrics.summary(
@@ -484,6 +495,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         task.abort();
     }
     if let Some(task) = &webui_task {
+        task.abort();
+    }
+    if let Some(task) = &rss_task {
         task.abort();
     }
     control.metrics.summary(

@@ -28,6 +28,8 @@ pub struct RtorrentTomlConfig {
     pub webui: WebuiTomlConfig,
     #[serde(default)]
     pub tiering: TieringTomlConfig,
+    #[serde(default)]
+    pub rss: RssTomlConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -154,6 +156,60 @@ pub struct TierRuleTomlItem {
     pub inactive_secs: Option<u64>,
 }
 
+/// RSS automation settings. Unset keys fall back to `rt_rss::RssConfig`
+/// defaults; the TOML file is the durable home of the configuration (the
+/// `rss.json` store only holds feeds, rules, items and history).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RssTomlConfig {
+    pub enabled: Option<bool>,
+    pub refresh_interval_secs: Option<u64>,
+    pub max_items_per_feed: Option<usize>,
+    pub request_timeout_secs: Option<u64>,
+    /// Response size cap in MiB (feeds and torrent payloads alike).
+    pub max_response_mb: Option<u64>,
+}
+
+impl RssTomlConfig {
+    /// Overlays the set keys onto `base`, leaving unset keys untouched.
+    pub fn overlay(&self, base: &mut rt_rss::RssConfig) {
+        if let Some(enabled) = self.enabled {
+            base.enabled = enabled;
+        }
+        if let Some(secs) = self.refresh_interval_secs {
+            base.default_refresh_interval_secs = secs;
+        }
+        if let Some(max) = self.max_items_per_feed {
+            base.max_items_per_feed = max;
+        }
+        if let Some(secs) = self.request_timeout_secs {
+            base.request_timeout_secs = secs;
+        }
+        if let Some(mb) = self.max_response_mb {
+            base.max_response_bytes = mb.saturating_mul(1024 * 1024);
+        }
+    }
+
+    /// Resolves the section against the domain defaults.
+    pub fn to_rss_config(&self) -> rt_rss::RssConfig {
+        let mut config = rt_rss::RssConfig::default();
+        self.overlay(&mut config);
+        config
+    }
+
+    /// Snapshots a live configuration with every key explicit. Bytes are
+    /// rounded up to whole MiB so the exported cap never undershoots.
+    pub fn from_rss_config(config: &rt_rss::RssConfig) -> Self {
+        const MB: u64 = 1024 * 1024;
+        Self {
+            enabled: Some(config.enabled),
+            refresh_interval_secs: Some(config.default_refresh_interval_secs),
+            max_items_per_feed: Some(config.max_items_per_feed),
+            request_timeout_secs: Some(config.request_timeout_secs),
+            max_response_mb: Some(config.max_response_bytes.saturating_add(MB - 1) / MB),
+        }
+    }
+}
+
 impl RtorrentTomlConfig {
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(content)
@@ -252,14 +308,34 @@ impl RtorrentTomlConfig {
                     },
                 ],
             },
+            rss: RssTomlConfig {
+                enabled: Some(true),
+                refresh_interval_secs: Some(1800),
+                max_items_per_feed: Some(200),
+                request_timeout_secs: Some(30),
+                max_response_mb: Some(5),
+            },
         }
     }
 
-    /// Construct configuration snapshot from active runtime state
+    /// Construct configuration snapshot from active runtime state. The RSS
+    /// section is left unset (commented defaults in the output); callers that
+    /// hold the live RSS configuration use [`Self::from_runtime_with_rss`].
     pub fn from_runtime(
         map: &CommandMap,
         tiering: &TieringManager,
         dht_config: &Arc<RwLock<DhtConfig>>,
+    ) -> Self {
+        Self::from_runtime_with_rss(map, tiering, dht_config, None)
+    }
+
+    /// Like [`Self::from_runtime`], but snapshots the live RSS configuration
+    /// when one is available.
+    pub fn from_runtime_with_rss(
+        map: &CommandMap,
+        tiering: &TieringManager,
+        dht_config: &Arc<RwLock<DhtConfig>>,
+        rss: Option<&rt_rss::RssConfig>,
     ) -> Self {
         let query_str = |name: &str| -> Option<String> {
             map.call_command(name, &Object::create_empty(), &Target::None, true)
@@ -408,6 +484,7 @@ impl RtorrentTomlConfig {
                 tiers,
                 rules,
             },
+            rss: rss.map(RssTomlConfig::from_rss_config).unwrap_or_default(),
         }
     }
 
@@ -567,6 +644,41 @@ impl RtorrentTomlConfig {
             }
             out.push('\n');
         }
+
+        out.push_str("[rss]\n");
+        out.push_str("# RSS feed automation: refresh feeds, match rules, auto-add torrents\n");
+        if let Some(enabled) = self.rss.enabled {
+            out.push_str(&format!("enabled = {}\n", enabled));
+        } else {
+            out.push_str("# enabled = true\n");
+        }
+        if let Some(secs) = self.rss.refresh_interval_secs {
+            out.push_str(&format!(
+                "# Default refresh interval per feed in seconds\nrefresh_interval_secs = {}\n",
+                secs
+            ));
+        } else {
+            out.push_str("# refresh_interval_secs = 1800\n");
+        }
+        if let Some(max) = self.rss.max_items_per_feed {
+            out.push_str(&format!("max_items_per_feed = {}\n", max));
+        } else {
+            out.push_str("# max_items_per_feed = 200\n");
+        }
+        if let Some(secs) = self.rss.request_timeout_secs {
+            out.push_str(&format!("request_timeout_secs = {}\n", secs));
+        } else {
+            out.push_str("# request_timeout_secs = 30\n");
+        }
+        if let Some(mb) = self.rss.max_response_mb {
+            out.push_str(&format!(
+                "# Response size cap in MiB (feeds and torrent payloads)\nmax_response_mb = {}\n",
+                mb
+            ));
+        } else {
+            out.push_str("# max_response_mb = 5\n");
+        }
+        out.push('\n');
 
         out
     }
@@ -824,6 +936,20 @@ impl RtorrentTomlConfig {
             call("tiering.rule.add", &Object::from(s.as_str()), true);
         }
     }
+
+    /// Like [`Self::apply`], additionally overlaying the `[rss]` section onto a
+    /// live [`rt_rss::RssConfig`]. The three-argument `apply` stays for callers
+    /// (webui) that have no RSS runtime to update.
+    pub fn apply_with_rss(
+        &self,
+        map: &CommandMap,
+        network_config: &mut lt_net::NetworkConfig,
+        dht_config: &Arc<RwLock<DhtConfig>>,
+        rss_config: &mut rt_rss::RssConfig,
+    ) {
+        self.apply(map, network_config, dht_config);
+        self.rss.overlay(rss_config);
+    }
 }
 
 #[cfg(test)]
@@ -1016,5 +1142,190 @@ mod tests {
         assert!(read_back.contains("[tiering]"));
         assert!(read_back.contains("fast_nvme"));
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_parse_rss_config() {
+        let cfg = RtorrentTomlConfig::parse(
+            r#"
+            [rss]
+            enabled = false
+            refresh_interval_secs = 900
+            max_items_per_feed = 50
+            request_timeout_secs = 15
+            max_response_mb = 10
+        "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.rss.enabled, Some(false));
+        assert_eq!(cfg.rss.refresh_interval_secs, Some(900));
+        assert_eq!(cfg.rss.max_items_per_feed, Some(50));
+        assert_eq!(cfg.rss.request_timeout_secs, Some(15));
+        assert_eq!(cfg.rss.max_response_mb, Some(10));
+
+        // Absent section leaves every key unset (domain defaults apply).
+        let empty = RtorrentTomlConfig::parse("").unwrap();
+        assert!(empty.rss.enabled.is_none());
+        assert!(empty.rss.refresh_interval_secs.is_none());
+        assert!(empty.rss.max_items_per_feed.is_none());
+        assert!(empty.rss.request_timeout_secs.is_none());
+        assert!(empty.rss.max_response_mb.is_none());
+    }
+
+    #[test]
+    fn test_rss_overlay_keeps_unset_defaults() {
+        let section = RssTomlConfig {
+            enabled: Some(false),
+            max_response_mb: Some(2),
+            ..Default::default()
+        };
+        let config = section.to_rss_config();
+        assert!(!config.enabled);
+        assert_eq!(config.max_response_bytes, 2 * 1024 * 1024);
+        let defaults = rt_rss::RssConfig::default();
+        assert_eq!(
+            config.default_refresh_interval_secs,
+            defaults.default_refresh_interval_secs
+        );
+        assert_eq!(config.max_items_per_feed, defaults.max_items_per_feed);
+        assert_eq!(config.request_timeout_secs, defaults.request_timeout_secs);
+
+        // Overlay onto a non-default base only touches the set keys.
+        let mut base = rt_rss::RssConfig {
+            enabled: true,
+            default_refresh_interval_secs: 60,
+            max_items_per_feed: 10,
+            request_timeout_secs: 5,
+            max_response_bytes: 1024,
+        };
+        section.overlay(&mut base);
+        assert!(!base.enabled);
+        assert_eq!(base.max_response_bytes, 2 * 1024 * 1024);
+        assert_eq!(base.default_refresh_interval_secs, 60);
+        assert_eq!(base.max_items_per_feed, 10);
+        assert_eq!(base.request_timeout_secs, 5);
+    }
+
+    #[test]
+    fn test_rss_from_rss_config_roundtrip() {
+        let defaults = rt_rss::RssConfig::default();
+        let section = RssTomlConfig::from_rss_config(&defaults);
+        assert_eq!(section.enabled, Some(defaults.enabled));
+        assert_eq!(
+            section.refresh_interval_secs,
+            Some(defaults.default_refresh_interval_secs)
+        );
+        assert_eq!(
+            section.max_items_per_feed,
+            Some(defaults.max_items_per_feed)
+        );
+        assert_eq!(
+            section.request_timeout_secs,
+            Some(defaults.request_timeout_secs)
+        );
+        assert_eq!(section.max_response_mb, Some(5));
+        let resolved = section.to_rss_config();
+        assert_eq!(resolved.max_response_bytes, defaults.max_response_bytes);
+
+        // Sub-MiB byte caps round up so the exported cap never undershoots.
+        let odd = rt_rss::RssConfig {
+            max_response_bytes: 1024 * 1024 + 1,
+            ..defaults.clone()
+        };
+        let odd_section = RssTomlConfig::from_rss_config(&odd);
+        assert_eq!(odd_section.max_response_mb, Some(2));
+        assert!(odd_section.to_rss_config().max_response_bytes >= odd.max_response_bytes);
+    }
+
+    #[test]
+    fn test_from_runtime_with_rss_snapshot() {
+        let map = CommandMap::new();
+        let tiering = TieringManager::new(Default::default());
+        let dht_config = Arc::new(RwLock::new(DhtConfig::new()));
+
+        let without = RtorrentTomlConfig::from_runtime(&map, &tiering, &dht_config);
+        assert!(without.rss.enabled.is_none());
+        assert!(without.rss.max_response_mb.is_none());
+
+        let live = rt_rss::RssConfig {
+            enabled: false,
+            default_refresh_interval_secs: 120,
+            max_items_per_feed: 25,
+            request_timeout_secs: 7,
+            max_response_bytes: 3 * 1024 * 1024,
+        };
+        let with =
+            RtorrentTomlConfig::from_runtime_with_rss(&map, &tiering, &dht_config, Some(&live));
+        assert_eq!(with.rss.enabled, Some(false));
+        assert_eq!(with.rss.refresh_interval_secs, Some(120));
+        assert_eq!(with.rss.max_items_per_feed, Some(25));
+        assert_eq!(with.rss.request_timeout_secs, Some(7));
+        assert_eq!(with.rss.max_response_mb, Some(3));
+    }
+
+    #[test]
+    fn test_apply_with_rss_overlays_live_config() {
+        let map = CommandMap::new();
+        let dht_config = Arc::new(RwLock::new(DhtConfig::new()));
+        let mut network_config = lt_net::NetworkConfig::new();
+
+        let cfg = RtorrentTomlConfig::parse(
+            r#"
+            [rss]
+            enabled = false
+            refresh_interval_secs = 60
+        "#,
+        )
+        .unwrap();
+        let mut rss_config = rt_rss::RssConfig::default();
+        cfg.apply_with_rss(&map, &mut network_config, &dht_config, &mut rss_config);
+        assert!(!rss_config.enabled);
+        assert_eq!(rss_config.default_refresh_interval_secs, 60);
+        let defaults = rt_rss::RssConfig::default();
+        assert_eq!(rss_config.max_items_per_feed, defaults.max_items_per_feed);
+
+        // Without an [rss] section the live config is left untouched.
+        let empty = RtorrentTomlConfig::parse("").unwrap();
+        let mut untouched = defaults.clone();
+        empty.apply_with_rss(&map, &mut network_config, &dht_config, &mut untouched);
+        assert_eq!(untouched.enabled, defaults.enabled);
+        assert_eq!(
+            untouched.default_refresh_interval_secs,
+            defaults.default_refresh_interval_secs
+        );
+    }
+
+    #[test]
+    fn test_annotated_toml_rss_section() {
+        let tpl = RtorrentTomlConfig::template();
+        let text = tpl.generate_annotated_toml();
+        assert!(text.contains("[rss]"));
+        assert!(text.contains("enabled = true"));
+        assert!(text.contains("refresh_interval_secs = 1800"));
+        assert!(text.contains("max_response_mb = 5"));
+
+        let parsed = RtorrentTomlConfig::parse(&text).unwrap();
+        assert_eq!(parsed.rss.enabled, tpl.rss.enabled);
+        assert_eq!(
+            parsed.rss.refresh_interval_secs,
+            tpl.rss.refresh_interval_secs
+        );
+        assert_eq!(parsed.rss.max_items_per_feed, tpl.rss.max_items_per_feed);
+        assert_eq!(
+            parsed.rss.request_timeout_secs,
+            tpl.rss.request_timeout_secs
+        );
+        assert_eq!(parsed.rss.max_response_mb, tpl.rss.max_response_mb);
+
+        // Unset keys are emitted as commented defaults and parse back to None.
+        let unset = RtorrentTomlConfig::default();
+        let unset_text = unset.generate_annotated_toml();
+        assert!(unset_text.contains("[rss]"));
+        assert!(unset_text.contains("# enabled = true"));
+        assert!(unset_text.contains("# max_response_mb = 5"));
+        let reparsed = RtorrentTomlConfig::parse(&unset_text).unwrap();
+        assert!(reparsed.rss.enabled.is_none());
+        assert!(reparsed.rss.refresh_interval_secs.is_none());
+        assert!(reparsed.rss.max_response_mb.is_none());
     }
 }

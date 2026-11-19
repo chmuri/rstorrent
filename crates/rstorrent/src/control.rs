@@ -23,7 +23,7 @@ use rt_rpc::{
 };
 use rt_tui::RootUI;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 /// Bounded deadlines for the graceful shutdown phases. A stage that overruns
@@ -69,6 +69,11 @@ pub struct Control {
     pub queued_rechecks: AtomicU64,
     pub tiering_manager: Arc<rt_core::tiering::TieringManager>,
     pub config_path: Option<std::path::PathBuf>,
+    /// RSS automation service. `None` until [`Control::initialize`] has an
+    /// active session directory to anchor the `rss.json` store; stays `None`
+    /// (with a warning) if the service cannot be created, so the daemon runs
+    /// without RSS rather than failing to start.
+    pub rss_service: Option<Arc<crate::rss::RssService>>,
     shutdown_lock: tokio::sync::Mutex<()>,
 }
 
@@ -128,6 +133,7 @@ impl Control {
             queued_rechecks: AtomicU64::new(0),
             tiering_manager,
             config_path: None,
+            rss_service: None,
             shutdown_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -151,6 +157,12 @@ impl Control {
         self.metrics.phase("startup.phase", "views", phase, None);
 
         // 2. Register all standard builtin commands into command_map
+        // The RSS service is only created once the session directory exists
+        // (step 7), but config.show/export/save are registered now. The slot
+        // lets those commands read the live RSS config at call time without
+        // reordering registration (which would break the listMethods snapshot
+        // and Lua startup scripts).
+        let rss_slot: Arc<OnceLock<Arc<crate::rss::RssService>>> = Arc::new(OnceLock::new());
         let phase = Instant::now();
         let lua_engine = {
             let mut map = self.command_map.write().unwrap_or_else(|e| e.into_inner());
@@ -234,6 +246,7 @@ impl Control {
                 Arc::clone(&self.command_map),
                 Arc::clone(&self.tiering_manager),
                 Arc::clone(&self.dht_config),
+                Arc::clone(&rss_slot),
             )
             .map_err(|e| format!("Failed to register config commands: {}", e))?;
 
@@ -278,6 +291,7 @@ impl Control {
         let mut watch_dir_from_toml: Option<String> = None;
         let mut disk_threads_from_toml: Option<usize> = None;
         let mut max_open_files_from_toml: Option<usize> = None;
+        let mut rss_config = rt_rss::RssConfig::default();
         if !cli.ignore_rc_file() {
             let config_path = cli
                 .config_file
@@ -299,7 +313,12 @@ impl Control {
                         if path_str.ends_with(".toml") {
                             match crate::toml_config::RtorrentTomlConfig::parse(&content) {
                                 Ok(cfg) => {
-                                    cfg.apply(&map, &mut self.network_config, &self.dht_config);
+                                    cfg.apply_with_rss(
+                                        &map,
+                                        &mut self.network_config,
+                                        &self.dht_config,
+                                        &mut rss_config,
+                                    );
                                     if let Some(wd) = cfg.storage.watch_directory {
                                         watch_dir_from_toml = Some(wd);
                                     }
@@ -710,6 +729,38 @@ impl Control {
         // resume and overwrite the saved progress.
         self.metrics
             .phase("startup.phase", "session_lock", phase, None);
+
+        // RSS automation: anchor the store next to the session files. The
+        // service is optional — a failure here only disables RSS, it must not
+        // take the daemon down with it.
+        {
+            let phase = Instant::now();
+            let store_path = {
+                let sm = self
+                    .session_manager
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                // SessionManager::path() carries a trailing separator.
+                std::path::PathBuf::from(format!("{}rss.json", sm.path()))
+            };
+            match crate::rss::RssService::new(
+                store_path,
+                rss_config,
+                Arc::clone(&self.download_list),
+                Arc::clone(&self.session_manager),
+            ) {
+                Ok(service) => {
+                    let _ = rss_slot.set(Arc::clone(&service));
+                    self.rss_service = Some(service);
+                }
+                Err(e) => {
+                    tracing::warn!("RSS service disabled: {}", e);
+                }
+            }
+            self.metrics
+                .phase("startup.phase", "rss_service", phase, None);
+        }
+
         {
             let session_path = {
                 let session = self
@@ -1927,6 +1978,7 @@ fn register_config_commands(
     command_map_arc: Arc<RwLock<CommandMap>>,
     tiering_manager: Arc<rt_core::tiering::TieringManager>,
     dht_config: Arc<RwLock<DhtConfig>>,
+    rss_slot: Arc<OnceLock<Arc<crate::rss::RssService>>>,
 ) -> Result<(), String> {
     use rt_rpc::command_flags::*;
     use rt_rpc::RpcError;
@@ -1941,11 +1993,17 @@ fn register_config_commands(
             let map_weak = map_weak.clone();
             let tm = Arc::clone(&tm);
             let dht = Arc::clone(&dht);
+            let rss = Arc::clone(&rss_slot);
             move |_target, _arg| {
                 if let Some(map_arc) = map_weak.upgrade() {
                     let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
-                    let cfg =
-                        crate::toml_config::RtorrentTomlConfig::from_runtime(&map_guard, &tm, &dht);
+                    let rss_cfg = rss.get().map(|svc| svc.rss.config());
+                    let cfg = crate::toml_config::RtorrentTomlConfig::from_runtime_with_rss(
+                        &map_guard,
+                        &tm,
+                        &dht,
+                        rss_cfg.as_ref(),
+                    );
                     let toml_str = cfg.generate_annotated_toml();
                     Ok(Object::from(toml_str.as_str()))
                 } else {
@@ -1968,6 +2026,7 @@ fn register_config_commands(
             let map_weak = map_weak.clone();
             let tm = Arc::clone(&tm);
             let dht = Arc::clone(&dht);
+            let rss = Arc::clone(&rss_slot);
             move |_target, arg| {
                 let path_str = rt_rpc::convert_to_string(arg)?;
                 if path_str.trim().is_empty() {
@@ -1975,8 +2034,13 @@ fn register_config_commands(
                 }
                 if let Some(map_arc) = map_weak.upgrade() {
                     let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
-                    let cfg =
-                        crate::toml_config::RtorrentTomlConfig::from_runtime(&map_guard, &tm, &dht);
+                    let rss_cfg = rss.get().map(|svc| svc.rss.config());
+                    let cfg = crate::toml_config::RtorrentTomlConfig::from_runtime_with_rss(
+                        &map_guard,
+                        &tm,
+                        &dht,
+                        rss_cfg.as_ref(),
+                    );
                     cfg.save_to_file(std::path::Path::new(path_str.trim()))
                         .map_err(|e| RpcError::Custom {
                             code: -500,
@@ -2003,6 +2067,7 @@ fn register_config_commands(
             let map_weak = map_weak.clone();
             let tm = Arc::clone(&tm);
             let dht = Arc::clone(&dht);
+            let rss = Arc::clone(&rss_slot);
             move |_target, arg| {
                 let path_str = match rt_rpc::convert_to_string(arg) {
                     Ok(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -2010,8 +2075,13 @@ fn register_config_commands(
                 };
                 if let Some(map_arc) = map_weak.upgrade() {
                     let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
-                    let cfg =
-                        crate::toml_config::RtorrentTomlConfig::from_runtime(&map_guard, &tm, &dht);
+                    let rss_cfg = rss.get().map(|svc| svc.rss.config());
+                    let cfg = crate::toml_config::RtorrentTomlConfig::from_runtime_with_rss(
+                        &map_guard,
+                        &tm,
+                        &dht,
+                        rss_cfg.as_ref(),
+                    );
                     cfg.save_to_file(std::path::Path::new(&path_str))
                         .map_err(|e| RpcError::Custom {
                             code: -500,
