@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-11-20
+
+### Added
+- **Web UI Column Header Sorting** (`ui/src/pages/explorer.rs`, `ui/src/state/store.rs`):
+  - Interactive table header sorting directly on column headers (Name, Status, Size, Progress, Down rate, Up rate, Updated).
+  - Directional sorting indicators and hover hints on table headers.
+  - Contextual default sort order (alphabetical for Name, descending for speeds, sizes, progress, and timestamps).
+  - Extended sorting options in Cards view to include Up Rate and Progress.
+- **Extended Pagination** (`ui/src/pages/explorer.rs`):
+  - Expanded items-per-page selection up to 1000 items (25, 50, 100, 200, 500, 1000).
+
 ## [0.24.0] - 2026-11-20
 
 ### Added
