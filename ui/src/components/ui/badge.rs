@@ -13,8 +13,8 @@ pub enum BadgeKind {
 
 pub fn status_kind(status: ItemStatus) -> BadgeKind {
     match status {
-        ItemStatus::Healthy => BadgeKind::Success,
-        ItemStatus::Processing => BadgeKind::Info,
+        ItemStatus::Completed => BadgeKind::Success,
+        ItemStatus::Downloading => BadgeKind::Info,
         ItemStatus::Warning => BadgeKind::Warning,
         ItemStatus::Failed => BadgeKind::Error,
     }

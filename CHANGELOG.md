@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-11-20
+
+### Added
+- **First-Class Labels & Categories** (`ui/`, `crates/rt-core/`, `crates/rstorrent/`):
+  - Added dedicated sortable `Label` column to the Web UI Explorer table and card view.
+  - Added editable Label / Category input with Save button in the Torrent Details Drawer.
+  - Added REST API endpoints `POST /api/torrents/{hash}/label` and `POST /api/torrents/{hash}/category`.
+  - Added CLI command aliases `d.label`, `d.label.set`, `d.category`, and `d.category.set` redirecting to `d.custom1`/`d.custom1.set`.
+- **Status Concepts Renaming** (`ui/`, `crates/rt-core/`):
+  - Renamed status values across Web UI tabs, badges, drawer, and analytics: `Healthy` &rarr; `Completed`, `Processing` &rarr; `Downloading`.
+  - Added built-in views `"completed"` and `"downloading"` to `rt-core`'s default view manager.
+
+### Fixed
+- **RSS Auto-Download Engine** (`crates/rt-rss/`, `crates/rstorrent/`):
+  - Evaluated existing unprocessed items in RSS store upon feed refresh and rule creation/updates (`evaluate_unprocessed()`).
+  - Added fallback to `directory.default` (`/downloads`) when rule does not specify a custom directory.
+  - Fixed REST `add_torrent` to persist torrent category to `d.custom1`.
+
 ## [0.25.1] - 2026-11-20
 
 ### Fixed

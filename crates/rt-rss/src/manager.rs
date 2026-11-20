@@ -16,7 +16,7 @@ use crate::error::RssError;
 use crate::fetch::{self, FeedResponse};
 use crate::model::{
     DownloadAction, DownloadRecord, DownloadResult, DownloadStatus, Feed, FeedId, FeedItem,
-    FeedPatch, HistoryEntry, ItemFilter, RefreshOutcome, RssConfig, RssRule, RuleId,
+    FeedPatch, HistoryEntry, ItemFilter, MatchedItem, RefreshOutcome, RssConfig, RssRule, RuleId,
 };
 use crate::parse;
 use crate::rules;
@@ -238,6 +238,44 @@ impl RssManager {
         if let Err(err) = store.save(&self.store_path) {
             tracing::warn!(error = %err, "Failed to persist RSS store after clearing history");
         }
+    }
+
+    /// Evaluates all unprocessed stored items (`download.is_none()`) across all feeds
+    /// against the current rules and returns any matching items.
+    pub fn evaluate_unprocessed(&self) -> Vec<MatchedItem> {
+        let store = self.lock_store();
+        let now = unix_secs();
+        let mut matches = Vec::new();
+        let mut effective_cooldowns = store.cooldowns.clone();
+        for item in store.items.iter().filter(|i| i.download.is_none()) {
+            if let Some(matched) = rules::best_match(&store.rules, item, now, &effective_cooldowns)
+            {
+                effective_cooldowns.insert(matched.rule_id, now);
+                matches.push(matched);
+            }
+        }
+        matches
+    }
+
+    /// Evaluates unprocessed stored items (`download.is_none()`) for a specific feed
+    /// against the current rules and returns any matching items.
+    pub fn evaluate_unprocessed_for_feed(&self, feed_id: FeedId) -> Vec<MatchedItem> {
+        let store = self.lock_store();
+        let now = unix_secs();
+        let mut matches = Vec::new();
+        let mut effective_cooldowns = store.cooldowns.clone();
+        for item in store
+            .items
+            .iter()
+            .filter(|i| i.feed_id == feed_id && i.download.is_none())
+        {
+            if let Some(matched) = rules::best_match(&store.rules, item, now, &effective_cooldowns)
+            {
+                effective_cooldowns.insert(matched.rule_id, now);
+                matches.push(matched);
+            }
+        }
+        matches
     }
 
     /// Fetches and parses one feed, then applies new items under the store

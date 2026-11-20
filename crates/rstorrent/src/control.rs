@@ -748,6 +748,7 @@ impl Control {
                 rss_config,
                 Arc::clone(&self.download_list),
                 Arc::clone(&self.session_manager),
+                Some(Arc::clone(&self.command_map)),
             ) {
                 Ok(service) => {
                     let _ = rss_slot.set(Arc::clone(&service));

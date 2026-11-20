@@ -212,6 +212,99 @@ pub async fn test_connection(base_url: &str, token: &str) -> Result<VersionInfo,
         })
 }
 
+pub async fn update_torrent_label(
+    state: AppState,
+    hash: &str,
+    label: &str,
+) -> Result<CommandResponse, String> {
+    let clean_label = label.trim().to_string();
+    if state.connection.get() == ConnectionMode::Live {
+        let base = state.api_base_url.get();
+        let token = state.api_token.get();
+        let url = format!("{base}/api/torrents/{hash}/label");
+        let mut request = Request::post(&url);
+        if !token.is_empty() {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
+        let payload = serde_json::json!({ "label": clean_label });
+        let outcome = async {
+            let response = request
+                .json(&payload)
+                .map_err(|e| format!("Serialization error: {e}"))?
+                .send()
+                .await
+                .map_err(|err| format!("Request failed: {err}"))?;
+            if !response.ok() {
+                return Err(format!("Server returned HTTP {}", response.status()));
+            }
+            response
+                .json::<CommandResponse>()
+                .await
+                .map_err(|err| format!("Invalid JSON: {err}"))
+        }
+        .await;
+
+        match outcome {
+            Ok(cmd) => {
+                if cmd.success {
+                    let h = hash.to_string();
+                    let l = clean_label.clone();
+                    state.items.update(|items| {
+                        if let Some(item) = items.iter_mut().find(|i| i.hash == h) {
+                            item.category = l;
+                        }
+                    });
+                    state.selected_item.update(|selected| {
+                        if let Some(ref mut item) = selected {
+                            if item.hash == hash {
+                                item.category = clean_label.clone();
+                            }
+                        }
+                    });
+                    state.push_toast(
+                        ToastKind::Success,
+                        "Label updated",
+                        format!("Label set to '{}'", clean_label),
+                    );
+                    Ok(cmd)
+                } else {
+                    state.push_toast(ToastKind::Error, "Update failed", cmd.error.clone());
+                    Err(cmd.error)
+                }
+            }
+            Err(err) => {
+                state.push_toast(ToastKind::Error, "Update failed", err.clone());
+                Err(err)
+            }
+        }
+    } else {
+        let h = hash.to_string();
+        let l = clean_label.clone();
+        state.items.update(|items| {
+            if let Some(item) = items.iter_mut().find(|i| i.hash == h) {
+                item.category = l;
+            }
+        });
+        state.selected_item.update(|selected| {
+            if let Some(ref mut item) = selected {
+                if item.hash == hash {
+                    item.category = clean_label.clone();
+                }
+            }
+        });
+        state.push_toast(
+            ToastKind::Success,
+            "Label updated",
+            format!("Label set to '{}'", clean_label),
+        );
+        Ok(CommandResponse {
+            success: true,
+            result: serde_json::Value::Null,
+            error: String::new(),
+        })
+    }
+}
+
 pub fn download_json(filename: &str, json: &str) {
     let Some(window) = web_sys::window() else {
         return;

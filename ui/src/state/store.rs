@@ -219,8 +219,8 @@ pub struct AddTorrentResult {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemStatus {
-    Healthy,
-    Processing,
+    Completed,
+    Downloading,
     Warning,
     Failed,
 }
@@ -291,6 +291,7 @@ pub enum SortKey {
     Size,
     Progress,
     Status,
+    Category,
     Updated,
 }
 
@@ -311,11 +312,11 @@ impl TorrentItem {
             || self.is_hash_checking
             || (self.is_active && !self.is_complete)
         {
-            ItemStatus::Processing
+            ItemStatus::Downloading
         } else if !self.message.is_empty() {
             ItemStatus::Warning
         } else {
-            ItemStatus::Healthy
+            ItemStatus::Completed
         }
     }
 
@@ -561,8 +562,8 @@ impl AppState {
                         || item.hash.to_lowercase().contains(&query)
                         || item.category.to_lowercase().contains(&query);
                     let matches_status = match filter.as_str() {
-                        "healthy" => item.status() == ItemStatus::Healthy,
-                        "processing" => item.status() == ItemStatus::Processing,
+                        "completed" | "healthy" => item.status() == ItemStatus::Completed,
+                        "downloading" | "processing" => item.status() == ItemStatus::Downloading,
                         "warning" => item.status() == ItemStatus::Warning,
                         "failed" => item.status() == ItemStatus::Failed,
                         _ => true,
@@ -585,6 +586,7 @@ impl AppState {
                         .partial_cmp(&b.progress())
                         .unwrap_or(std::cmp::Ordering::Equal),
                     SortKey::Status => status_rank(a.status()).cmp(&status_rank(b.status())),
+                    SortKey::Category => a.category.to_lowercase().cmp(&b.category.to_lowercase()),
                     SortKey::Updated => a.state_changed.cmp(&b.state_changed),
                 };
                 if descending {
@@ -631,8 +633,8 @@ impl Default for AppState {
 
 fn status_rank(status: ItemStatus) -> u8 {
     match status {
-        ItemStatus::Healthy => 0,
-        ItemStatus::Processing => 1,
+        ItemStatus::Completed => 0,
+        ItemStatus::Downloading => 1,
         ItemStatus::Warning => 2,
         ItemStatus::Failed => 3,
     }

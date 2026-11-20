@@ -265,6 +265,40 @@ pub async fn move_torrent(
     )
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SetTorrentLabelRequest {
+    #[serde(alias = "category")]
+    pub label: Option<String>,
+}
+
+pub async fn set_torrent_label(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+    Path(hash): Path<String>,
+    Json(payload): Json<SetTorrentLabelRequest>,
+) -> Json<CommandResponse> {
+    let target = match lt_common::HashString::from_hex(&hash) {
+        Some(hash) => Target::Download(hash),
+        None => {
+            return Json(CommandResponse::failure(format!(
+                "invalid info hash {}",
+                hash
+            )))
+        }
+    };
+    let label = payload.label.unwrap_or_default().trim().to_string();
+    Json(
+        run_command(
+            state,
+            trusted.0,
+            "d.custom1.set".to_string(),
+            target,
+            Object::from(label.as_str()),
+        )
+        .await,
+    )
+}
+
 pub async fn set_torrent_tier(
     State(state): State<WebuiState>,
     Extension(trusted): Extension<Trusted>,
@@ -561,7 +595,7 @@ pub async fn add_torrent(
                         .map(str::trim)
                         .filter(|c| !c.is_empty())
                     {
-                        guard.custom_set("1", cat);
+                        guard.set_custom_field(1, cat);
                     }
                 }
                 let guard = dl.read().unwrap_or_else(|e| e.into_inner());

@@ -180,6 +180,8 @@ pub fn router(state: WebuiState) -> Router {
         .route("/torrents/{hash}/recheck", post(rest::recheck_torrent))
         .route("/torrents/{hash}/move", post(rest::move_torrent))
         .route("/torrents/{hash}/tier", post(rest::set_torrent_tier))
+        .route("/torrents/{hash}/label", post(rest::set_torrent_label))
+        .route("/torrents/{hash}/category", post(rest::set_torrent_label))
         .route("/command", post(rest::execute_command))
         .route("/stats", get(rest::get_stats))
         .route("/version", get(rest::get_version))

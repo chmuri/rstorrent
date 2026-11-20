@@ -180,6 +180,8 @@ fn test_view_manager_basics() {
     assert!(vm.find("active").is_some());
     assert!(vm.find("started").is_some());
     assert!(vm.find("stopped").is_some());
+    assert!(vm.find("completed").is_some());
+    assert!(vm.find("downloading").is_some());
 
     let custom = vm.insert("custom_view");
     assert_eq!("custom_view", custom.name());

@@ -932,6 +932,38 @@ fn custom_fields_support_legacy_variants() {
         );
     }
 
+    // d.label / d.category alias d.custom1
+    call(&map, "d.label.set", &target, vec![Object::from("movies")]).unwrap();
+    assert_eq!(
+        call(&map, "d.label", &target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "movies"
+    );
+    assert_eq!(
+        call(&map, "d.custom1", &target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "movies"
+    );
+    call(&map, "d.category.set", &target, vec![Object::from("tv")]).unwrap();
+    assert_eq!(
+        call(&map, "d.category", &target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "tv"
+    );
+    assert_eq!(
+        call(&map, "d.label", &target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "tv"
+    );
+
     // d.custom and the numbered variants require a Download target.
     assert!(call(&map, "d.custom", &Target::None, vec![Object::from("tag")]).is_err());
     assert!(call(&map, "d.custom1", &Target::None, vec![]).is_err());

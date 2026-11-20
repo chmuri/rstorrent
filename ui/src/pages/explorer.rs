@@ -7,16 +7,16 @@ use crate::state::*;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct StatusCounts {
     total: usize,
-    healthy: usize,
-    processing: usize,
+    completed: usize,
+    downloading: usize,
     warning: usize,
     failed: usize,
 }
 
 const STATUS_FILTERS: [(&str, &str); 5] = [
     ("all", "All"),
-    ("healthy", "Healthy"),
-    ("processing", "Processing"),
+    ("completed", "Completed"),
+    ("downloading", "Downloading"),
     ("warning", "Warning"),
     ("failed", "Failed"),
 ];
@@ -31,8 +31,8 @@ pub fn ExplorerPage() -> impl IntoView {
             for item in items.iter() {
                 c.total += 1;
                 match item.status() {
-                    ItemStatus::Healthy => c.healthy += 1,
-                    ItemStatus::Processing => c.processing += 1,
+                    ItemStatus::Completed => c.completed += 1,
+                    ItemStatus::Downloading => c.downloading += 1,
                     ItemStatus::Warning => c.warning += 1,
                     ItemStatus::Failed => c.failed += 1,
                 }
@@ -159,6 +159,7 @@ fn toolbar(state: AppState, counts: Memo<StatusCounts>) -> impl IntoView {
                             <option value="size">"Size"</option>
                             <option value="progress">"Progress"</option>
                             <option value="status">"Status"</option>
+                            <option value="category">"Label"</option>
                             <option value="updated">"Updated"</option>
                         </select>
                         <button
@@ -390,6 +391,7 @@ fn table_view(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl Into
                             <th class="dense-row w-10 px-4 py-3">{select_all_checkbox(state)}</th>
                             {sortable_th(state, SortKey::Name, "Name")}
                             {sortable_th(state, SortKey::Status, "Status")}
+                            {sortable_th(state, SortKey::Category, "Label")}
                             {sortable_th(state, SortKey::Size, "Size")}
                             {sortable_th(state, SortKey::Progress, "Progress")}
                             {sortable_th(state, SortKey::DownRate, "Down")}
@@ -582,19 +584,6 @@ fn ExplorerRow(state: AppState, hash: String) -> impl IntoView {
                         <span class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
                             {move || item.get().map(|i| i.short_hash()).unwrap_or_default()}
                         </span>
-                        <span class="text-[10px] text-zinc-500">
-                            {move || {
-                                item.get()
-                                    .map(|i| {
-                                        if i.category.is_empty() {
-                                            "uncategorized".to_string()
-                                        } else {
-                                            i.category
-                                        }
-                                    })
-                                    .unwrap_or_default()
-                            }}
-                        </span>
                     </div>
                 </div>
             </td>
@@ -606,10 +595,28 @@ fn ExplorerRow(state: AppState, hash: String) -> impl IntoView {
                                 <Badge
                                     label=i.status_label()
                                     kind=status_kind(i.status())
-                                    pulse=i.status() == ItemStatus::Processing
+                                    pulse=i.status() == ItemStatus::Downloading
                                 />
                             }
                                 .into_any()
+                        })
+                        .unwrap_or_else(|| ().into_any())
+                }}
+            </td>
+            <td class="dense-row px-4 py-3">
+                {move || {
+                    item.get()
+                        .map(|i| {
+                            if i.category.is_empty() {
+                                view! { <span class="text-xs text-zinc-600">"—"</span> }.into_any()
+                            } else {
+                                view! {
+                                    <span class="inline-flex items-center rounded-md bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-400 border border-purple-500/20">
+                                        {i.category}
+                                    </span>
+                                }
+                                .into_any()
+                            }
                         })
                         .unwrap_or_else(|| ().into_any())
                 }}
@@ -661,19 +668,19 @@ fn ExplorerCard(state: AppState, hash: String) -> impl IntoView {
                         <span class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
                             {move || item.get().map(|i| i.short_hash()).unwrap_or_default()}
                         </span>
-                        <span class="truncate text-[10px] text-zinc-500">
-                            {move || {
-                                item.get()
-                                    .map(|i| {
-                                        if i.category.is_empty() {
-                                            "uncategorized".to_string()
-                                        } else {
-                                            i.category
-                                        }
+                        {move || {
+                            item.get().and_then(|i| {
+                                if i.category.is_empty() {
+                                    None
+                                } else {
+                                    Some(view! {
+                                        <span class="inline-flex items-center rounded-md bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-400 border border-purple-500/20">
+                                            {i.category}
+                                        </span>
                                     })
-                                    .unwrap_or_default()
-                            }}
-                        </span>
+                                }
+                            })
+                        }}
                     </div>
                 </div>
                 {checkbox}
@@ -687,7 +694,7 @@ fn ExplorerCard(state: AppState, hash: String) -> impl IntoView {
                                 <Badge
                                     label=i.status_label()
                                     kind=status_kind(i.status())
-                                    pulse=i.status() == ItemStatus::Processing
+                                    pulse=i.status() == ItemStatus::Downloading
                                 />
                             }
                                 .into_any()
@@ -893,6 +900,7 @@ fn sort_key_value(key: SortKey) -> &'static str {
         SortKey::Size => "size",
         SortKey::Progress => "progress",
         SortKey::Status => "status",
+        SortKey::Category => "category",
         SortKey::Updated => "updated",
     }
 }
@@ -904,6 +912,7 @@ fn sort_key_from_value(value: &str) -> SortKey {
         "size" => SortKey::Size,
         "progress" => SortKey::Progress,
         "status" => SortKey::Status,
+        "category" | "label" => SortKey::Category,
         "updated" => SortKey::Updated,
         _ => SortKey::DownRate,
     }
@@ -913,8 +922,8 @@ fn pill_classes(value: &str, active: bool) -> String {
     let base = "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-[0.98]";
     let skin = if active {
         match value {
-            "healthy" => "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
-            "processing" => "border-indigo-500/20 bg-indigo-500/10 text-indigo-400",
+            "completed" | "healthy" => "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+            "downloading" | "processing" => "border-indigo-500/20 bg-indigo-500/10 text-indigo-400",
             "warning" => "border-amber-500/20 bg-amber-500/10 text-amber-400",
             "failed" => "border-rose-500/20 bg-rose-500/10 text-rose-400",
             _ => "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-zinc-100",
@@ -927,8 +936,8 @@ fn pill_classes(value: &str, active: bool) -> String {
 
 fn pill_count(counts: StatusCounts, value: &str) -> usize {
     match value {
-        "healthy" => counts.healthy,
-        "processing" => counts.processing,
+        "completed" | "healthy" => counts.completed,
+        "downloading" | "processing" => counts.downloading,
         "warning" => counts.warning,
         "failed" => counts.failed,
         _ => counts.total,

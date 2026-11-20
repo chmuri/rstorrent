@@ -12,12 +12,12 @@ const STATUS_BAR_COLORS: [&str; 4] = [
 
 const STATUS_PILLS: [(&str, &str, &str); 4] = [
     (
-        "Healthy",
+        "Completed",
         "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20",
         "bg-emerald-400",
     ),
     (
-        "Processing",
+        "Downloading",
         "inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-400 border border-indigo-500/20",
         "bg-indigo-400",
     ),
@@ -130,8 +130,8 @@ pub fn AnalyticsPage() -> impl IntoView {
         state.items.with(|items| {
             for item in items {
                 let idx = match item.status() {
-                    ItemStatus::Healthy => 0,
-                    ItemStatus::Processing => 1,
+                    ItemStatus::Completed => 0,
+                    ItemStatus::Downloading => 1,
                     ItemStatus::Warning => 2,
                     ItemStatus::Failed => 3,
                 };

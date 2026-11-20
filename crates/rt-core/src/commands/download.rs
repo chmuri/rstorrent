@@ -3359,6 +3359,11 @@ fn register_download_extended_commands(
     for index in 1..=5 {
         let key = format!("custom{index}");
         let list_get = Arc::clone(download_list);
+        let get_flags = if index == 1 {
+            FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT
+        } else {
+            FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE
+        };
         map.insert_func(
             &format!("d.{key}"),
             move |target, _obj| {
@@ -3366,12 +3371,17 @@ fn register_download_extended_commands(
                 let value = dl.read().unwrap().custom_field(index).to_string();
                 Ok(Object::from(value))
             },
-            FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+            get_flags,
             "",
             "Get a numbered custom download field.",
         )?;
 
         let list_set = Arc::clone(download_list);
+        let set_flags = if index == 1 {
+            FLAG_PUBLIC_RPC | FLAG_IS_REDIRECT
+        } else {
+            FLAG_PUBLIC_RPC
+        };
         map.insert_func(
             &format!("d.{key}.set"),
             move |target, obj| {
@@ -3380,11 +3390,16 @@ fn register_download_extended_commands(
                 dl.write().unwrap().set_custom_field(index, value);
                 Ok(Object::create_empty())
             },
-            FLAG_PUBLIC_RPC,
+            set_flags,
             "<value>",
             "Set a numbered custom download field.",
         )?;
     }
+
+    map.create_redirect("d.label", "d.custom1", 0)?;
+    map.create_redirect("d.label.set", "d.custom1.set", 0)?;
+    map.create_redirect("d.category", "d.custom1", 0)?;
+    map.create_redirect("d.category.set", "d.custom1.set", 0)?;
 
     // Views.
     let vm_list = Arc::clone(view_manager);

@@ -281,10 +281,9 @@ async fn create_rule(
     Json(rule): Json<RssRule>,
 ) -> Result<(StatusCode, Json<RssRule>), ApiError> {
     let svc = service(&state, trusted)?;
-    Ok((
-        StatusCode::CREATED,
-        Json(svc.rss.add_rule(rule).map_err(rss_error)?),
-    ))
+    let created = svc.rss.add_rule(rule).map_err(rss_error)?;
+    svc.apply_unprocessed().await;
+    Ok((StatusCode::CREATED, Json(created)))
 }
 
 async fn update_rule(
@@ -294,7 +293,9 @@ async fn update_rule(
     Json(rule): Json<RssRule>,
 ) -> Result<Json<RssRule>, ApiError> {
     let svc = service(&state, trusted)?;
-    Ok(Json(svc.rss.update_rule(id, rule).map_err(rss_error)?))
+    let updated = svc.rss.update_rule(id, rule).map_err(rss_error)?;
+    svc.apply_unprocessed().await;
+    Ok(Json(updated))
 }
 
 async fn delete_rule(
@@ -535,6 +536,7 @@ mod tests {
             RssConfig::default(),
             Arc::clone(&list),
             session,
+            None,
         )
         .unwrap();
         let state = WebuiState::new(

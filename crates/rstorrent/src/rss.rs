@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use lt_common::Object;
 use rt_core::session::SessionManager;
 use rt_core::{DownloadFactory, DownloadList};
+use rt_rpc::{CommandMap, Target};
 use rt_rss::manager::RssManager;
 use rt_rss::{
     fetch, DownloadAction, DownloadResult, FeedId, FeedItem, RefreshOutcome, RssConfig, RssError,
@@ -28,6 +30,7 @@ pub struct RssService {
     pub rss: Arc<RssManager>,
     download_list: Arc<RwLock<DownloadList>>,
     session_manager: Arc<Mutex<SessionManager>>,
+    command_map: Option<Arc<RwLock<CommandMap>>>,
     client: reqwest::Client,
 }
 
@@ -37,6 +40,7 @@ impl RssService {
         config: RssConfig,
         download_list: Arc<RwLock<DownloadList>>,
         session_manager: Arc<Mutex<SessionManager>>,
+        command_map: Option<Arc<RwLock<CommandMap>>>,
     ) -> Result<Arc<Self>, RssError> {
         let client = fetch::build_client(config.request_timeout_secs, 5);
         let manager = RssManager::new(store_path, config)?;
@@ -44,6 +48,7 @@ impl RssService {
             rss: Arc::new(manager),
             download_list,
             session_manager,
+            command_map,
             client,
         }))
     }
@@ -53,6 +58,7 @@ impl RssService {
     pub async fn refresh_feed(&self, id: FeedId) -> Result<RefreshOutcome, RssError> {
         let outcome = self.rss.refresh_feed(id).await?;
         self.apply_matches(&outcome).await;
+        self.apply_unprocessed_feed(id).await;
         Ok(outcome)
     }
 
@@ -62,6 +68,7 @@ impl RssService {
         let outcomes = self.rss.refresh_due(now).await;
         for outcome in &outcomes {
             self.apply_matches(outcome).await;
+            self.apply_unprocessed_feed(outcome.feed_id).await;
         }
         outcomes
     }
@@ -71,8 +78,45 @@ impl RssService {
         let outcomes = self.rss.refresh_all().await;
         for outcome in &outcomes {
             self.apply_matches(outcome).await;
+            self.apply_unprocessed_feed(outcome.feed_id).await;
         }
         outcomes
+    }
+
+    /// Evaluates any unprocessed feed items across all feeds against current rules
+    /// and auto-downloads matches.
+    pub async fn apply_unprocessed(&self) {
+        let matches = self.rss.evaluate_unprocessed();
+        for matched in &matches {
+            let result = self.add_torrent(&matched.item, &matched.action).await;
+            self.rss
+                .record_download(matched.item.id, Some(matched.rule_id), result);
+        }
+    }
+
+    /// Evaluates any unprocessed feed items for a specific feed against current rules
+    /// and auto-downloads matches.
+    pub async fn apply_unprocessed_feed(&self, feed_id: FeedId) {
+        let matches = self.rss.evaluate_unprocessed_for_feed(feed_id);
+        for matched in &matches {
+            let result = self.add_torrent(&matched.item, &matched.action).await;
+            self.rss
+                .record_download(matched.item.id, Some(matched.rule_id), result);
+        }
+    }
+
+    fn default_directory(&self) -> Option<String> {
+        let map_arc = self.command_map.as_ref()?;
+        let map = map_arc.read().unwrap_or_else(|e| e.into_inner());
+        map.call_command(
+            "directory.default",
+            &Object::create_empty(),
+            &Target::None,
+            false,
+        )
+        .ok()
+        .and_then(|obj| obj.as_str().map(|s| s.to_string()).ok())
+        .filter(|d| !d.is_empty())
     }
 
     /// Manual download of a single item. Rule matching still applies (with
@@ -119,7 +163,14 @@ impl RssService {
             Ok(download) => download,
             Err(err) => return DownloadResult::Failed(err.to_string()),
         };
-        if let Some(path) = &action.save_path {
+        let save_path = action
+            .save_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .or_else(|| self.default_directory());
+        if let Some(path) = &save_path {
             if let Err(err) = std::fs::create_dir_all(path) {
                 tracing::warn!(path = %path, error = %err, "Could not create RSS save directory");
             }
@@ -234,6 +285,7 @@ mod tests {
             RssConfig::default(),
             Arc::new(RwLock::new(DownloadList::new())),
             Arc::new(Mutex::new(SessionManager::new())),
+            None,
         )
         .unwrap()
     }

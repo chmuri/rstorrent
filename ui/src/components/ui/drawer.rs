@@ -165,6 +165,9 @@ pub fn SlideOverDrawer() -> impl IntoView {
                     let message = item.message.clone();
                     let message_is_error = status == ItemStatus::Failed;
                     let item_hash = item.hash.clone();
+                    let save_hash = item.hash.clone();
+                    let label_input = RwSignal::new(item.category.clone());
+                    let is_saving = RwSignal::new(false);
                     let json_preview = serde_json::to_string_pretty(&item);
                     view! {
                         <div class="space-y-6">
@@ -173,7 +176,7 @@ pub fn SlideOverDrawer() -> impl IntoView {
                                     <Badge
                                         label=item.status_label()
                                         kind=status_kind(status)
-                                        pulse=status == ItemStatus::Processing
+                                        pulse=status == ItemStatus::Downloading
                                     />
                                     <span class="font-mono text-xs tabular-nums text-zinc-400">{format_percent(progress)}</span>
                                 </div>
@@ -211,12 +214,33 @@ pub fn SlideOverDrawer() -> impl IntoView {
                                 <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
                                     {meta_cell("Hash", item.hash.clone(), true, true)}
                                     {meta_cell("Directory", item.directory.clone(), false, true)}
-                                    {meta_cell(
-                                        "Category",
-                                        if item.category.is_empty() { "—".to_string() } else { item.category.clone() },
-                                        false,
-                                        false,
-                                    )}
+                                    <div class="col-span-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                        <label class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">"Label / Category"</label>
+                                        <div class="mt-1.5 flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                class="flex-1 rounded-lg border border-white/[0.1] bg-black/40 px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 focus:border-[var(--accent)] focus:outline-none"
+                                                placeholder="e.g. movies, linux, tv"
+                                                prop:value=move || label_input.get()
+                                                on:input=move |ev| label_input.set(event_target_value(&ev))
+                                            />
+                                            <button
+                                                class="cursor-pointer rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                                disabled=move || is_saving.get()
+                                                on:click=move |_| {
+                                                    let h = save_hash.clone();
+                                                    let l = label_input.get();
+                                                    is_saving.set(true);
+                                                    spawn_local(async move {
+                                                        let _ = update_torrent_label(state, &h, &l).await;
+                                                        is_saving.set(false);
+                                                    });
+                                                }
+                                            >
+                                                {move || if is_saving.get() { "Saving..." } else { "Save" }}
+                                            </button>
+                                        </div>
+                                    </div>
                                     {meta_cell("Priority", item.priority.to_string(), true, false)}
                                     {meta_cell("Size", format_bytes(item.size_bytes), true, false)}
                                     {meta_cell("Completed", format_bytes(item.completed_bytes), true, false)}

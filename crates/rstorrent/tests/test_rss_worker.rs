@@ -188,7 +188,7 @@ fn service(
     sm: Arc<Mutex<SessionManager>>,
     config: RssConfig,
 ) -> Arc<RssService> {
-    RssService::new(dir.path.join("rss.json"), config, list, sm).unwrap()
+    RssService::new(dir.path.join("rss.json"), config, list, sm, None).unwrap()
 }
 
 fn feed_xml(torrent_url: &str, guid: &str) -> String {
