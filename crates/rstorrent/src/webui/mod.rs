@@ -45,6 +45,20 @@ use crate::toml_config::{RtorrentTomlConfig, WebuiTomlConfig};
 #[derive(Clone, Copy, Debug)]
 pub struct Trusted(pub bool);
 
+/// Lifecycle stage of the rtorrent daemon.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "status", content = "details")]
+pub enum DaemonLifecycle {
+    Initializing {
+        phase: String,
+        step: u32,
+        total_steps: u32,
+        current_item: Option<String>,
+    },
+    Ready,
+    ShuttingDown,
+}
+
 /// Shared state handed to every WebUI handler.
 #[derive(Clone)]
 pub struct WebuiState {
@@ -55,21 +69,24 @@ pub struct WebuiState {
     pub event_broadcaster: broadcast::Sender<ws::WebuiTorrentEvent>,
     pub tiering_manager: Arc<rt_core::tiering::TieringManager>,
     pub dht_config: Arc<RwLock<rt_core::commands::tracker::DhtConfig>>,
-    pub config_path: Option<PathBuf>,
+    pub config_path: Arc<RwLock<Option<PathBuf>>>,
     /// RSS automation service; `None` when the daemon runs without RSS, in
     /// which case every `/api/rss` endpoint answers 503.
-    pub rss: Option<Arc<crate::rss::RssService>>,
+    pub rss: Arc<RwLock<Option<Arc<crate::rss::RssService>>>>,
+    pub lifecycle: Arc<RwLock<DaemonLifecycle>>,
 }
 
 impl WebuiState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         download_list: Arc<RwLock<DownloadList>>,
         command_map: Arc<RwLock<CommandMap>>,
         token: Option<String>,
         tiering_manager: Arc<rt_core::tiering::TieringManager>,
         dht_config: Arc<RwLock<rt_core::commands::tracker::DhtConfig>>,
-        config_path: Option<PathBuf>,
-        rss: Option<Arc<crate::rss::RssService>>,
+        config_path: Arc<RwLock<Option<PathBuf>>>,
+        rss: Arc<RwLock<Option<Arc<crate::rss::RssService>>>>,
+        lifecycle: Arc<RwLock<DaemonLifecycle>>,
     ) -> Self {
         // Mirror `rt-grpc/src/server.rs`: hook the download-list event listener
         // once and fan every event out to subscribed WebSocket clients.
@@ -100,7 +117,48 @@ impl WebuiState {
             dht_config,
             config_path,
             rss,
+            lifecycle,
         }
+    }
+
+    pub fn config_path(&self) -> Option<PathBuf> {
+        self.config_path
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn rss(&self) -> Option<Arc<crate::rss::RssService>> {
+        self.rss.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn lifecycle(&self) -> DaemonLifecycle {
+        self.lifecycle
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    #[cfg(test)]
+    pub fn new_test(
+        download_list: Arc<RwLock<DownloadList>>,
+        command_map: Arc<RwLock<CommandMap>>,
+        token: Option<String>,
+        tiering_manager: Arc<rt_core::tiering::TieringManager>,
+        dht_config: Arc<RwLock<rt_core::commands::tracker::DhtConfig>>,
+        config_path: Option<PathBuf>,
+        rss: Option<Arc<crate::rss::RssService>>,
+    ) -> Self {
+        Self::new(
+            download_list,
+            command_map,
+            token,
+            tiering_manager,
+            dht_config,
+            Arc::new(RwLock::new(config_path)),
+            Arc::new(RwLock::new(rss)),
+            Arc::new(RwLock::new(DaemonLifecycle::Ready)),
+        )
     }
 }
 
@@ -189,6 +247,8 @@ pub fn router(state: WebuiState) -> Router {
         .route("/config/export", get(rest::export_config_file))
         .route("/config/save", post(rest::save_config_file))
         .route("/events", get(ws::events_ws))
+        .route("/logs", get(rest::get_logs))
+        .route("/status", get(rest::get_status))
         .merge(rss::routes())
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth))
         .with_state(state);
@@ -377,7 +437,7 @@ mod tests {
             "",
         )
         .unwrap();
-        WebuiState::new(
+        WebuiState::new_test(
             Arc::new(RwLock::new(DownloadList::new())),
             Arc::new(RwLock::new(map)),
             token.map(|t| t.to_string()),
@@ -506,7 +566,7 @@ mod tests {
             "",
         )
         .unwrap();
-        let state = WebuiState::new(
+        let state = WebuiState::new_test(
             Arc::new(RwLock::new(DownloadList::new())),
             Arc::new(RwLock::new(map)),
             None,

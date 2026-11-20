@@ -69,11 +69,14 @@ pub struct Control {
     pub queued_rechecks: AtomicU64,
     pub tiering_manager: Arc<rt_core::tiering::TieringManager>,
     pub config_path: Option<std::path::PathBuf>,
+    pub config_path_slot: Arc<RwLock<Option<std::path::PathBuf>>>,
     /// RSS automation service. `None` until [`Control::initialize`] has an
     /// active session directory to anchor the `rss.json` store; stays `None`
     /// (with a warning) if the service cannot be created, so the daemon runs
     /// without RSS rather than failing to start.
     pub rss_service: Option<Arc<crate::rss::RssService>>,
+    pub rss_service_slot: Arc<RwLock<Option<Arc<crate::rss::RssService>>>>,
+    pub lifecycle: Arc<RwLock<crate::webui::DaemonLifecycle>>,
     shutdown_lock: tokio::sync::Mutex<()>,
 }
 
@@ -133,9 +136,46 @@ impl Control {
             queued_rechecks: AtomicU64::new(0),
             tiering_manager,
             config_path: None,
+            config_path_slot: Arc::new(RwLock::new(None)),
             rss_service: None,
+            rss_service_slot: Arc::new(RwLock::new(None)),
+            lifecycle: Arc::new(RwLock::new(crate::webui::DaemonLifecycle::Initializing {
+                phase: "Booting rtorrent engine".to_string(),
+                step: 0,
+                total_steps: 10,
+                current_item: None,
+            })),
             shutdown_lock: tokio::sync::Mutex::new(()),
         }
+    }
+
+    pub fn set_phase(
+        &self,
+        phase: &str,
+        step: u32,
+        total_steps: u32,
+        current_item: Option<String>,
+    ) {
+        if let Ok(mut lock) = self.lifecycle.write() {
+            *lock = crate::webui::DaemonLifecycle::Initializing {
+                phase: phase.to_string(),
+                step,
+                total_steps,
+                current_item: current_item.clone(),
+            };
+        }
+        if let Some(item) = current_item {
+            tracing::info!(phase = %phase, step = step, total_steps = total_steps, item = %item, "Startup: {phase} ({item})");
+        } else {
+            tracing::info!(phase = %phase, step = step, total_steps = total_steps, "Startup: {phase}");
+        }
+    }
+
+    pub fn set_ready(&self) {
+        if let Ok(mut lock) = self.lifecycle.write() {
+            *lock = crate::webui::DaemonLifecycle::Ready;
+        }
+        tracing::info!("Startup: all systems initialized. Engine READY.");
     }
 
     /// Replaces the recorder. Used by tests and by embedders that want to
@@ -149,6 +189,7 @@ impl Control {
         let mut watch_loaded = 0usize;
 
         // 1. Setup default views
+        self.set_phase("Setting up default views", 1, 10, None);
         let phase = Instant::now();
         {
             let mut vm = self.view_manager.write().unwrap_or_else(|e| e.into_inner());
@@ -157,6 +198,7 @@ impl Control {
         self.metrics.phase("startup.phase", "views", phase, None);
 
         // 2. Register all standard builtin commands into command_map
+        self.set_phase("Registering builtin commands", 2, 10, None);
         // The RSS service is only created once the session directory exists
         // (step 7), but config.show/export/save are registered now. The slot
         // lets those commands read the live RSS config at call time without
@@ -272,6 +314,7 @@ impl Control {
         self.metrics.phase("startup.phase", "commands", phase, None);
 
         // 3. Setup default schedule
+        self.set_phase("Configuring scheduler & event timers", 3, 10, None);
         let phase = Instant::now();
         {
             let mut sched = self
@@ -287,6 +330,7 @@ impl Control {
         self.metrics.phase("startup.phase", "schedule", phase, None);
 
         // 4. Parse config files
+        self.set_phase("Loading configuration files", 4, 10, None);
         let phase = Instant::now();
         let mut watch_dir_from_toml: Option<String> = None;
         let mut disk_threads_from_toml: Option<usize> = None;
@@ -301,6 +345,9 @@ impl Control {
             self.config_path = config_path
                 .clone()
                 .or_else(|| Some(std::path::PathBuf::from("rstorrent.toml")));
+            if let Ok(mut slot) = self.config_path_slot.write() {
+                *slot = self.config_path.clone();
+            }
             if let Some(path) = config_path {
                 let path_str = path.to_string_lossy().to_string();
                 if path.exists() {
@@ -389,6 +436,7 @@ impl Control {
         }
 
         // 5. Apply CLI overrides
+        self.set_phase("Applying runtime overrides", 5, 10, None);
         {
             let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
             // CLI overrides are local, trusted configuration; some setters are
@@ -486,6 +534,7 @@ impl Control {
         // 5.5 Create the disk pool before any download exists: EngineDownload
         // captures its shard at construction, and the pool configuration is
         // fixed from this point.
+        self.set_phase("Initializing disk storage pool & I/O threads", 6, 10, None);
         self.metrics.phase("startup.phase", "config", phase, None);
         let phase = Instant::now();
         {
@@ -679,6 +728,7 @@ impl Control {
         }
 
         // 7. Start session manager if session directory is configured, or use XDG default
+        self.set_phase("Acquiring session lock & configuring handlers", 7, 10, None);
         self.metrics
             .phase("startup.phase", "ui_wiring", phase, None);
         let phase = Instant::now();
@@ -752,6 +802,9 @@ impl Control {
             ) {
                 Ok(service) => {
                     let _ = rss_slot.set(Arc::clone(&service));
+                    if let Ok(mut slot) = self.rss_service_slot.write() {
+                        *slot = Some(Arc::clone(&service));
+                    }
                     self.rss_service = Some(service);
                 }
                 Err(e) => {
@@ -805,6 +858,12 @@ impl Control {
                 );
 
                 let phase = Instant::now();
+                self.set_phase(
+                    "Restoring session entries & verifying payloads",
+                    8,
+                    10,
+                    None,
+                );
                 let mut restore_failed = 0u64;
                 let mut resume_rejected = 0u64;
                 let mut duplicates = 0u64;
@@ -813,6 +872,12 @@ impl Control {
                 for (index, outcome) in outcomes {
                     let entry = &entries[index];
                     let torrent_path = format!("{}{}", session_path, entry.base_name);
+                    self.set_phase(
+                        "Restoring session entries & verifying payloads",
+                        8,
+                        10,
+                        Some(entry.base_name.clone()),
+                    );
 
                     let restored = match outcome {
                         Ok(restored) => restored,
@@ -938,6 +1003,7 @@ impl Control {
 
         // 8.6 Load torrents from the watch directory, if configured. A bad
         // watch directory is reported but must not abort startup.
+        self.set_phase("Scanning watch directory", 9, 10, None);
         let phase = Instant::now();
         let effective_watch_dir = cli.watch_dir.clone().or(watch_dir_from_toml);
         if let Some(watch_dir) = &effective_watch_dir {
@@ -957,6 +1023,7 @@ impl Control {
         );
 
         // 9. Spawn NetworkRuntime supervisor
+        self.set_phase("Bootstrapping network runtime & DHT", 10, 10, None);
         let phase = Instant::now();
         let dht_cache_path = {
             let session = self
@@ -1050,6 +1117,8 @@ impl Control {
         summary.extend(rt_core::session::stats::snapshot().as_fields());
         summary.extend(self.runtime_stats_fields());
         self.metrics.summary("startup.summary", &summary);
+
+        self.set_ready();
 
         Ok(())
     }

@@ -1,7 +1,9 @@
 use leptos::prelude::*;
 
 use super::{Header, Sidebar};
-use crate::components::ui::{AddTorrentModal, CommandPalette, SlideOverDrawer, ToastContainer};
+use crate::components::ui::{
+    AddTorrentModal, BootSplash, CommandPalette, LogDrawer, SlideOverDrawer, ToastContainer,
+};
 use crate::state::*;
 
 #[component]
@@ -48,6 +50,8 @@ pub fn AppShell(children: Children) -> impl IntoView {
             <AddTorrentModal/>
             <SlideOverDrawer/>
             <ToastContainer/>
+            <BootSplash/>
+            <LogDrawer/>
         </div>
     }
 }

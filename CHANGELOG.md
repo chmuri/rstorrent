@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.4] - 2026-11-20
+
+### Added
+- **Immediate WebUI Availability on Daemon Startup** (`crates/rstorrent/`):
+  - Spawns the WebUI HTTP/WebSocket server task immediately upon process start, before session restore and chunk hash-checking commence. Prevents connection refused (`ECONNREFUSED`) during long startup sequences.
+- **Cyberpunk Neon-SciFi Boot Splash Screen** (`ui/src/components/ui/boot_splash.rs`, `ui/style/main.css`):
+  - Added a full-screen startup experience with rotating SVG radar scanner, concentric pulse rings, and glowing neon-cyan (`#06b6d4`) / amber (`#f59e0b`) accents.
+  - Implemented a 10-phase system initialization stepper displaying real-time progress percentages and phase descriptions.
+  - Added an auto-scrolling CRT terminal feed with scanline aesthetics streaming startup logs in real time.
+  - Added active file integrity cards displaying torrents currently undergoing hash verification with chunk progress indicators (`chunks_hashed / chunks_total`).
+- **Global Log Console Drawer** (`ui/src/components/ui/log_drawer.rs`, `crates/rstorrent/src/logging.rs`):
+  - Added an in-memory `LogHub` ring-buffer (retaining the last 1,000 log entries) connected to a `tokio::sync::broadcast` channel and `tracing` subscriber layer.
+  - Exposed `GET /api/v1/status` and `GET /api/v1/logs?limit=N` REST endpoints, as well as real-time WebSocket log streaming (`WsMessage::Log`).
+  - Added a slide-over terminal console accessible anytime from the header via the `Logs` button, featuring severity level filters (`ALL`, `INFO`, `WARN`, `ERROR`), live keyword search, and clipboard copy.
+- **Torrent Hash Checking Progress Telemetry** (`crates/rstorrent/`, `ui/`):
+  - Added `chunks_hashed`, `chunks_total`, and `hash_progress_pct` to `TorrentSummary` and `TorrentItem`.
+  - Added `BadgeKind::Checking` with a pulsating neon-cyan badge.
+  - Added an animated laser-scan progress bar in the WebUI Explorer table for torrents in the `Checking` state.
+
+### Changed
+- **Removed Fake Demo Data Fallback** (`ui/src/state/api.rs`):
+  - Disabled automatic demo torrent generation when the daemon connection is interrupted or initializing, keeping the UI honest and transparent to genuine daemon state.
+
 ## [0.25.3] - 2026-11-20
 
 ### Added

@@ -60,6 +60,30 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     let mut control = Control::new();
     let signal_task = spawn_signal_handlers(control.signals.clone());
 
+    // Spawn WebUI early so diagnostic status, live logs, and boot splash
+    // are accessible immediately from process launch even while session restore
+    // and payload verification are running.
+    let webui_task = webui::resolve_webui_addr(&cli).map(|addr| {
+        let state = webui::WebuiState::new(
+            control.download_list.clone(),
+            control.command_map.clone(),
+            webui::resolve_webui_token(&cli),
+            control.tiering_manager.clone(),
+            control.dht_config.clone(),
+            control.config_path_slot.clone(),
+            control.rss_service_slot.clone(),
+            control.lifecycle.clone(),
+        );
+        let tls = webui::resolve_webui_tls(&cli);
+        let shutdown = control.shutdown_tx.subscribe();
+        tracing::info!(%addr, tls = tls.is_some(), "WebUI server listening");
+        tokio::spawn(async move {
+            if let Err(err) = webui::serve(addr, state, shutdown, tls).await {
+                tracing::warn!(error = %err, "WebUI server stopped");
+            }
+        })
+    });
+
     if let Err(e) = control.initialize(&cli) {
         control.metrics.failure("startup.failed", &e);
         eprintln!("Initialization error: {}", e);
@@ -74,26 +98,6 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             if let Err(err) = prometheus::serve(addr, download_list, throttle, shutdown).await {
                 tracing::warn!(error = %err, "Prometheus /metrics server stopped");
-            }
-        })
-    });
-
-    let webui_task = webui::resolve_webui_addr(&cli).map(|addr| {
-        let state = webui::WebuiState::new(
-            control.download_list.clone(),
-            control.command_map.clone(),
-            webui::resolve_webui_token(&cli),
-            control.tiering_manager.clone(),
-            control.dht_config.clone(),
-            control.config_path.clone(),
-            control.rss_service.clone(),
-        );
-        let tls = webui::resolve_webui_tls(&cli);
-        let shutdown = control.shutdown_tx.subscribe();
-        tracing::info!(%addr, tls = tls.is_some(), "WebUI server listening");
-        tokio::spawn(async move {
-            if let Err(err) = webui::serve(addr, state, shutdown, tls).await {
-                tracing::warn!(error = %err, "WebUI server stopped");
             }
         })
     });

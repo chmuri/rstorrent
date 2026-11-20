@@ -9,12 +9,14 @@ pub enum BadgeKind {
     Error,
     Info,
     Neutral,
+    Checking,
 }
 
 pub fn status_kind(status: ItemStatus) -> BadgeKind {
     match status {
         ItemStatus::Completed => BadgeKind::Success,
         ItemStatus::Downloading => BadgeKind::Info,
+        ItemStatus::Checking => BadgeKind::Checking,
         ItemStatus::Warning => BadgeKind::Warning,
         ItemStatus::Failed => BadgeKind::Error,
     }
@@ -46,6 +48,10 @@ pub fn Badge(
         BadgeKind::Neutral => (
             "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
             "bg-zinc-400",
+        ),
+        BadgeKind::Checking => (
+            "bg-cyan-500/15 text-cyan-300 border-cyan-400/40 shadow-[0_0_10px_rgba(6,182,212,0.35)]",
+            "bg-cyan-400",
         ),
     };
 

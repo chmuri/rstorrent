@@ -144,14 +144,14 @@ fn rss_error(err: RssError) -> ApiError {
 
 /// Trust gate plus service availability, shared by every handler. The trust
 /// check runs first so untrusted callers never learn whether RSS is enabled.
-fn service(state: &WebuiState, trusted: Trusted) -> Result<&Arc<RssService>, ApiError> {
+fn service(state: &WebuiState, trusted: Trusted) -> Result<Arc<RssService>, ApiError> {
     if !trusted.0 {
         return Err(error(
             StatusCode::FORBIDDEN,
             "trusted authentication required for RSS endpoints",
         ));
     }
-    state.rss.as_ref().ok_or_else(|| {
+    state.rss().ok_or_else(|| {
         error(
             StatusCode::SERVICE_UNAVAILABLE,
             "RSS service is unavailable",
@@ -369,8 +369,7 @@ async fn update_settings(
 /// problems and surface as 500.
 fn save_rss_section(state: &WebuiState, config: &RssConfig) -> Result<(), ApiError> {
     let path = state
-        .config_path
-        .clone()
+        .config_path()
         .unwrap_or_else(|| PathBuf::from("rstorrent.toml"));
     let io_error = |err: std::io::Error| {
         error(
@@ -539,7 +538,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let state = WebuiState::new(
+        let state = WebuiState::new_test(
             Arc::clone(&list),
             Arc::new(RwLock::new(CommandMap::new())),
             token.map(str::to_string),
@@ -1511,11 +1510,11 @@ mod tests {
     #[tokio::test]
     async fn settings_round_trip_and_save_file() {
         let dir = TempDir::new("settings");
-        let mut h = harness(&dir, Some("t"), plain_session());
+        let h = harness(&dir, Some("t"), plain_session());
         let toml_path = dir.path.join("rstorrent.toml");
         // Pre-existing file with another section: save_file must preserve it.
         std::fs::write(&toml_path, "[network]\nport = 6881\n").unwrap();
-        h.state.config_path = Some(toml_path.clone());
+        *h.state.config_path.write().unwrap() = Some(toml_path.clone());
 
         let (status, body) = send(
             h.state.clone(),
@@ -1583,7 +1582,7 @@ mod tests {
 
         // A missing file is created from the default config.
         let created = dir.path.join("created.toml");
-        h.state.config_path = Some(created.clone());
+        *h.state.config_path.write().unwrap() = Some(created.clone());
         let (status, _) = send(
             h.state.clone(),
             request(
@@ -1678,7 +1677,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_service_is_unavailable() {
-        let state = WebuiState::new(
+        let state = WebuiState::new_test(
             Arc::new(RwLock::new(DownloadList::new())),
             Arc::new(RwLock::new(CommandMap::new())),
             Some("t".to_string()),

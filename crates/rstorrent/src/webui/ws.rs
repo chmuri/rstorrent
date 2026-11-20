@@ -34,7 +34,15 @@ pub struct WebuiTorrentEvent {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsMessage {
     Torrent(Box<WebuiTorrentEvent>),
-    Stats { stats: SessionStats, timestamp: u64 },
+    Stats {
+        stats: SessionStats,
+        timestamp: u64,
+    },
+    Log(crate::logging::LogEntry),
+    Status {
+        lifecycle: super::DaemonLifecycle,
+        timestamp: u64,
+    },
 }
 
 type WsSender = SplitSink<WebSocket, Message>;
@@ -54,11 +62,17 @@ fn now_secs() -> u64 {
 async fn handle_socket(socket: WebSocket, state: WebuiState) {
     let (mut sender, mut receiver) = socket.split();
     let mut events = state.event_broadcaster.subscribe();
+    let mut logs = crate::logging::log_hub().subscribe();
     let mut stats_tick = tokio::time::interval(Duration::from_secs(1));
     stats_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    // Send an immediate snapshot so a fresh client has state before the first
-    // periodic tick lands.
+    // Send initial status and stats immediately so the client has full state on connect.
+    let initial_status = WsMessage::Status {
+        lifecycle: state.lifecycle(),
+        timestamp: now_secs(),
+    };
+    let _ = send_json(&mut sender, &initial_status).await;
+
     if send_stats(&mut sender, &state).await.is_err() {
         return;
     }
@@ -74,13 +88,29 @@ async fn handle_socket(socket: WebSocket, state: WebuiState) {
                         break;
                     }
                 }
-                // A slow client that fell behind skips the missed events rather
-                // than stalling the stream; the next stats tick resyncs totals.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            log = logs.recv() => match log {
+                Ok(entry) => {
+                    if send_json(&mut sender, &WsMessage::Log(entry)).await.is_err() {
+                        break;
+                    }
+                }
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => break,
             },
             _ = stats_tick.tick() => {
+                let status_msg = WsMessage::Status {
+                    lifecycle: state.lifecycle(),
+                    timestamp: now_secs(),
+                };
+                let _ = send_json(&mut sender, &status_msg).await;
+
                 if send_stats(&mut sender, &state).await.is_err() {
+                    break;
+                }
+                if send_checking_progress(&mut sender, &state).await.is_err() {
                     break;
                 }
             }
@@ -90,6 +120,39 @@ async fn handle_socket(socket: WebSocket, state: WebuiState) {
             },
         }
     }
+}
+
+async fn send_checking_progress(
+    sender: &mut WsSender,
+    state: &WebuiState,
+) -> Result<(), axum::Error> {
+    let checking_events = {
+        let list = state
+            .download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        list.all()
+            .iter()
+            .filter_map(|dl| {
+                let guard = dl.read().ok()?;
+                if guard.is_hash_checking() {
+                    Some(WebuiTorrentEvent {
+                        event_name: "event.download.hash_progress".to_string(),
+                        hash: guard.info_hash_hex(),
+                        summary: convert::summary_from(&guard),
+                        timestamp: now_secs(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for ev in checking_events {
+        send_json(sender, &WsMessage::Torrent(Box::new(ev))).await?;
+    }
+    Ok(())
 }
 
 async fn send_stats(sender: &mut WsSender, state: &WebuiState) -> Result<(), axum::Error> {

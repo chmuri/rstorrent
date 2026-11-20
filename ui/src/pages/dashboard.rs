@@ -296,7 +296,8 @@ pub fn DashboardPage() -> impl IntoView {
                                             <td class="dense-row px-3 py-2.5">
                                                 {move || {
                                                     item.get().map(|torrent| {
-                                                        view! { <Badge label=torrent.status_label() kind=status_kind(torrent.status())/> }
+                                                        let is_pulsing = matches!(torrent.status(), ItemStatus::Downloading | ItemStatus::Checking);
+                                                        view! { <Badge label=torrent.status_label() kind=status_kind(torrent.status()) pulse=is_pulsing/> }
                                                     })
                                                 }}
                                             </td>

@@ -330,10 +330,7 @@ pub async fn get_config(State(state): State<WebuiState>) -> Json<ConfigResponse>
     let map = state.command_map.read().unwrap_or_else(|e| e.into_inner());
     let cfg = RtorrentTomlConfig::from_runtime(&map, &state.tiering_manager, &state.dht_config);
     let toml = cfg.generate_annotated_toml();
-    let config_path = state
-        .config_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().to_string());
+    let config_path = state.config_path().map(|p| p.to_string_lossy().to_string());
     Json(ConfigResponse {
         config: cfg,
         toml,
@@ -374,8 +371,7 @@ pub async fn update_config(
 
     if payload.save_file {
         let path = state
-            .config_path
-            .clone()
+            .config_path()
             .unwrap_or_else(|| PathBuf::from("rstorrent.toml"));
         if let Err(e) = parsed_cfg.save_to_file(&path) {
             return Json(CommandResponse::failure(format!(
@@ -424,8 +420,7 @@ pub async fn save_config_file(
     let map = state.command_map.read().unwrap_or_else(|e| e.into_inner());
     let cfg = RtorrentTomlConfig::from_runtime(&map, &state.tiering_manager, &state.dht_config);
     let path = state
-        .config_path
-        .clone()
+        .config_path()
         .unwrap_or_else(|| PathBuf::from("rstorrent.toml"));
     match cfg.save_to_file(&path) {
         Ok(()) => Json(CommandResponse {
@@ -627,4 +622,54 @@ pub async fn add_torrent(
             error: format!("Task execution failed: {e}"),
         }),
     }
+}
+
+#[derive(Serialize)]
+pub struct DaemonStatusResponse {
+    pub lifecycle: super::DaemonLifecycle,
+    pub uptime_seconds: u64,
+    pub active_torrents: usize,
+    pub checking_torrents: usize,
+}
+
+pub async fn get_status(State(state): State<WebuiState>) -> Json<DaemonStatusResponse> {
+    let lifecycle = state.lifecycle();
+    let (active_torrents, checking_torrents) = {
+        let list = state
+            .download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let active = list
+            .all()
+            .iter()
+            .filter(|d| d.read().map(|g| g.is_active()).unwrap_or(false))
+            .count();
+        let checking = list
+            .all()
+            .iter()
+            .filter(|d| d.read().map(|g| g.is_hash_checking()).unwrap_or(false))
+            .count();
+        (active, checking)
+    };
+    Json(DaemonStatusResponse {
+        lifecycle,
+        uptime_seconds: state.start_time.elapsed().as_secs(),
+        active_torrents,
+        checking_torrents,
+    })
+}
+
+pub async fn get_logs(
+    State(_state): State<WebuiState>,
+    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
+) -> Json<Vec<crate::logging::LogEntry>> {
+    let limit = raw_query
+        .as_deref()
+        .and_then(|q| {
+            q.split('&')
+                .find_map(|pair| pair.strip_prefix("limit="))
+                .and_then(|v| v.parse::<usize>().ok())
+        })
+        .unwrap_or(200);
+    Json(crate::logging::log_hub().recent(limit))
 }

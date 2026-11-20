@@ -32,7 +32,7 @@ pub fn ExplorerPage() -> impl IntoView {
                 c.total += 1;
                 match item.status() {
                     ItemStatus::Completed => c.completed += 1,
-                    ItemStatus::Downloading => c.downloading += 1,
+                    ItemStatus::Downloading | ItemStatus::Checking => c.downloading += 1,
                     ItemStatus::Warning => c.warning += 1,
                     ItemStatus::Failed => c.failed += 1,
                 }
@@ -600,7 +600,7 @@ fn ExplorerRow(state: AppState, hash: String) -> impl IntoView {
                                 <Badge
                                     label=i.status_label()
                                     kind=status_kind(i.status())
-                                    pulse=i.status() == ItemStatus::Downloading
+                                    pulse=matches!(i.status(), ItemStatus::Downloading | ItemStatus::Checking)
                                 />
                             }
                                 .into_any()
@@ -728,7 +728,7 @@ fn ExplorerCard(state: AppState, hash: String) -> impl IntoView {
                                 <Badge
                                     label=i.status_label()
                                     kind=status_kind(i.status())
-                                    pulse=i.status() == ItemStatus::Downloading
+                                    pulse=matches!(i.status(), ItemStatus::Downloading | ItemStatus::Checking)
                                 />
                             }
                                 .into_any()
@@ -906,15 +906,34 @@ fn progress_bar(item: Memo<Option<TorrentItem>>, bar_class: &'static str) -> imp
                 format!("{bar_class} overflow-hidden rounded-full bg-white/[0.06]")
             }>
                 <div
-                    class="h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+                    class=move || {
+                        let is_checking = item.get().map(|i| i.status() == ItemStatus::Checking).unwrap_or(false);
+                        if is_checking {
+                            "h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-300 to-amber-500 animate-laser-scan shadow-[0_0_8px_rgba(245,158,11,0.5)] transition-all duration-300"
+                        } else {
+                            "h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+                        }
+                    }
                     style=move || {
-                        let pct = item.get().map(|i| i.progress() * 100.0).unwrap_or_default();
+                        let pct = item.get().map(|i| {
+                            if i.status() == ItemStatus::Checking && i.chunks_total > 0 {
+                                (i.chunks_hashed as f64 / i.chunks_total as f64) * 100.0
+                            } else {
+                                i.progress() * 100.0
+                            }
+                        }).unwrap_or_default();
                         format!("width: {pct:.1}%")
                     }
                 ></div>
             </div>
             <span class="font-mono text-xs tabular-nums text-zinc-400">
-                {move || item.get().map(|i| format_percent(i.progress())).unwrap_or_default()}
+                {move || item.get().map(|i| {
+                    if i.status() == ItemStatus::Checking && i.chunks_total > 0 {
+                        format!("{:.1}% [chk]", (i.chunks_hashed as f64 / i.chunks_total as f64) * 100.0)
+                    } else {
+                        format_percent(i.progress())
+                    }
+                }).unwrap_or_default()}
             </span>
         </div>
     }

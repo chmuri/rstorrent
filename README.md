@@ -64,6 +64,8 @@ The project contains active implementations for core BitTorrent functionality, a
   - **Dynamic Configuration & WebUI Management**: Generate a complete, annotated `rstorrent.toml` configuration template using `--generate-config [PATH]` or RPC (`config.show`/`config.export`). Full interactive control over storage tiers, transition rules, network limits and live moves directly from the built-in WebUI.
 - **Native Web UI**:
   - Opt-in axum-based REST + WebSocket API with an embedded single-page app, bearer-token auth, optional TLS, interactive settings, tiering management, and live moves.
+  - **Cyberpunk Neon-SciFi Boot Experience**: Instant availability on startup — even during heavy file rehashing and session restores — with real-time SVG radar sweep, 10-phase initialization progress, CRT scanline log feed, and live chunk verification cards.
+  - **Live Observability & Logs**: Global slide-over log drawer with real-time WebSocket log streaming, severity filtering (`ALL`, `INFO`, `WARN`, `ERROR`), and live search.
 - **RSS Auto-Downloads**:
   - Track RSS/Atom feeds, match new items with regex/size/episode rules, and auto-download matching torrents in the background; manage feeds, rules and history from the `/rss` Web UI page or the trusted `/api/rss` REST API.
 - **Observability**:
@@ -402,7 +404,8 @@ an embedded [Leptos](https://leptos.dev/) WebAssembly single-page app (Tailwind 
 compiled with Trunk and embedded into the binary at compile time — no external
 assets or CDN). It provides a torrent explorer, inspector, analytics dashboard,
 RSS feed manager, full daemon settings, command palette, live WebSocket updates,
-and an interactive **+ New Torrent** modal supporting magnet links, HTTP URLs, and
+a global slide-over log console, a Cyberpunk Neon-SciFi boot splash during startup
+and file hash-checking, and an interactive **+ New Torrent** modal supporting magnet links, HTTP URLs, and
 drag-and-drop `.torrent` file uploads.
 
 The **Settings** page features three specialized views:

@@ -82,6 +82,22 @@ pub fn Header() -> impl IntoView {
 
             <div class="ml-auto flex items-center gap-2.5">
                 {connection_pill(state)}
+
+                <button
+                    type="button"
+                    title="Toggle System Log Console (~ or Ctrl+L)"
+                    class="inline-flex h-9 items-center gap-1.5 px-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] text-zinc-300 font-mono text-xs transition-all duration-200 hover:bg-cyan-500/10 hover:border-cyan-500/30 hover:text-cyan-300 active:scale-[0.98]"
+                    on:click=move |_| {
+                        state.log_drawer_open.update(|open| *open = !*open);
+                    }
+                >
+                    <svg class="h-4 w-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <line x1="12" y1="19" x2="20" y2="19"></line>
+                    </svg>
+                    <span class="hidden sm:inline">"Logs"</span>
+                </button>
+
                 <button
                     type="button"
                     title=move || match state.theme.get() {
@@ -173,28 +189,51 @@ pub fn Header() -> impl IntoView {
 }
 
 fn connection_pill(state: AppState) -> impl IntoView {
+    let is_initializing = move || {
+        matches!(
+            state.daemon_lifecycle.get(),
+            DaemonLifecycle::Initializing { .. }
+        )
+    };
+
     let pill_class = move || {
+        if is_initializing() {
+            return "inline-flex items-center gap-1.5 rounded-full bg-cyan-500/15 px-2.5 py-0.5 text-xs font-medium text-cyan-300 border border-cyan-400/40 shadow-[0_0_10px_rgba(6,182,212,0.3)] transition-all duration-200 active:scale-[0.98] cursor-pointer";
+        }
         match state.connection.get() {
-        ConnectionMode::Live => {
-            "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+            ConnectionMode::Live => {
+                "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+            }
+            ConnectionMode::Demo => {
+                "inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400 border border-amber-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+            }
+            ConnectionMode::Offline => {
+                "inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-400 border border-rose-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+            }
         }
-        ConnectionMode::Demo => {
-            "inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400 border border-amber-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
-        }
-        ConnectionMode::Offline => {
-            "inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-medium text-rose-400 border border-rose-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
-        }
-    }
     };
-    let dot_class = move || match state.connection.get() {
-        ConnectionMode::Live => "bg-emerald-400",
-        ConnectionMode::Demo => "bg-amber-400",
-        ConnectionMode::Offline => "bg-rose-400",
+    let dot_class = move || {
+        if is_initializing() {
+            return "bg-cyan-400";
+        }
+        match state.connection.get() {
+            ConnectionMode::Live => "bg-emerald-400",
+            ConnectionMode::Demo => "bg-amber-400",
+            ConnectionMode::Offline => "bg-rose-400",
+        }
     };
-    let label = move || match state.connection.get() {
-        ConnectionMode::Live => "Live",
-        ConnectionMode::Demo => "Demo",
-        ConnectionMode::Offline => "Offline",
+    let label = move || {
+        if let DaemonLifecycle::Initializing {
+            step, total_steps, ..
+        } = state.daemon_lifecycle.get()
+        {
+            return format!("Booting {step}/{total_steps}");
+        }
+        match state.connection.get() {
+            ConnectionMode::Live => "Live".to_string(),
+            ConnectionMode::Demo => "Demo".to_string(),
+            ConnectionMode::Offline => "Offline".to_string(),
+        }
     };
 
     view! {

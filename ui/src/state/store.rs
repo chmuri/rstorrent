@@ -37,6 +37,12 @@ pub struct TorrentItem {
     pub peers_connected: u32,
     #[serde(default)]
     pub peers_total: u32,
+    #[serde(default)]
+    pub chunks_hashed: u32,
+    #[serde(default)]
+    pub chunks_total: u32,
+    #[serde(default)]
+    pub hash_progress_pct: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -229,8 +235,32 @@ pub struct AddTorrentResult {
 pub enum ItemStatus {
     Completed,
     Downloading,
+    Checking,
     Warning,
     Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub id: u64,
+    pub timestamp: u64,
+    pub level: String,
+    pub target: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", content = "details")]
+pub enum DaemonLifecycle {
+    Initializing {
+        phase: String,
+        step: u32,
+        total_steps: u32,
+        current_item: Option<String>,
+    },
+    Ready,
+    ShuttingDown,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -320,11 +350,9 @@ impl TorrentItem {
     pub fn status(&self) -> ItemStatus {
         if self.state.starts_with("Error") {
             ItemStatus::Failed
-        } else if self.state == "Downloading"
-            || self.state == "Checking"
-            || self.is_hash_checking
-            || (self.is_active && !self.is_complete)
-        {
+        } else if self.is_hash_checking || self.state == "Checking" {
+            ItemStatus::Checking
+        } else if self.state == "Downloading" || (self.is_active && !self.is_complete) {
             ItemStatus::Downloading
         } else if !self.message.is_empty() {
             ItemStatus::Warning
@@ -509,6 +537,9 @@ pub struct AppState {
     pub time_range: RwSignal<TimeRange>,
     pub selected_hashes: RwSignal<Vec<String>>,
     pub add_torrent_modal_open: RwSignal<bool>,
+    pub logs: RwSignal<Vec<LogEntry>>,
+    pub daemon_lifecycle: RwSignal<DaemonLifecycle>,
+    pub log_drawer_open: RwSignal<bool>,
 }
 
 impl AppState {
@@ -562,7 +593,19 @@ impl AppState {
             time_range: RwSignal::new(TimeRange::FifteenMin),
             selected_hashes: RwSignal::new(Vec::new()),
             add_torrent_modal_open: RwSignal::new(false),
+            logs: RwSignal::new(Vec::new()),
+            daemon_lifecycle: RwSignal::new(DaemonLifecycle::Unknown),
+            log_drawer_open: RwSignal::new(false),
         }
+    }
+
+    pub fn push_log(self, entry: LogEntry) {
+        self.logs.update(|list| {
+            if list.len() >= 500 {
+                list.remove(0);
+            }
+            list.push(entry);
+        });
     }
 
     pub fn push_toast(self, kind: ToastKind, title: impl Into<String>, message: impl Into<String>) {
@@ -695,9 +738,10 @@ impl Default for AppState {
 
 fn status_rank(status: ItemStatus) -> u8 {
     match status {
-        ItemStatus::Completed => 0,
-        ItemStatus::Downloading => 1,
-        ItemStatus::Warning => 2,
-        ItemStatus::Failed => 3,
+        ItemStatus::Checking => 0,
+        ItemStatus::Completed => 1,
+        ItemStatus::Downloading => 2,
+        ItemStatus::Warning => 3,
+        ItemStatus::Failed => 4,
     }
 }

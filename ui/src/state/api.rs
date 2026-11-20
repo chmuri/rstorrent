@@ -76,14 +76,23 @@ pub fn spawn_backend_bridge(state: AppState) {
                     state.items.set(items);
                     set_connection(state, ConnectionMode::Live, false);
                     refresh_stats_version(state, &base, &token).await;
+                    let _ = fetch_recent_logs(state, &base, &token).await;
+                    if let Ok(lifecycle) = fetch_lifecycle(&base, &token).await {
+                        state.daemon_lifecycle.set(lifecycle);
+                    }
                     live_phase(state, &base, &token).await;
                 }
                 Err(err) => {
-                    if state.connection.get() != ConnectionMode::Demo {
-                        seed_demo(state);
+                    // Probe daemon status - it might be initializing
+                    if let Ok(lifecycle) = fetch_lifecycle(&base, &token).await {
+                        state.daemon_lifecycle.set(lifecycle);
+                        set_connection(state, ConnectionMode::Live, false);
+                        let _ = fetch_recent_logs(state, &base, &token).await;
+                        live_phase(state, &base, &token).await;
+                    } else {
+                        set_connection(state, ConnectionMode::Offline, err.is_auth());
+                        TimeoutFuture::new(2_000).await;
                     }
-                    set_connection(state, ConnectionMode::Demo, err.is_auth());
-                    demo_phase(state).await;
                 }
             }
         }
@@ -409,6 +418,9 @@ pub fn create_demo_item(state: AppState) {
         is_active: true,
         is_complete: false,
         is_hash_checking: false,
+        chunks_hashed: 0,
+        chunks_total: 0,
+        hash_progress_pct: 0.0,
         priority: 1,
         directory: format!("/downloads/{category}"),
         category: category.to_string(),
@@ -528,6 +540,52 @@ async fn refresh_stats_version(state: AppState, base: &str, token: &str) {
     }
 }
 
+pub async fn fetch_lifecycle(base: &str, token: &str) -> Result<DaemonLifecycle, ApiError> {
+    let url = format!("{base}/api/status");
+    let mut request = Request::get(&url);
+    if !token.is_empty() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|err| ApiError::Other(format!("Status request failed: {err}")))?;
+    if response.status() == 401 {
+        return Err(ApiError::Unauthorized(401));
+    }
+    if !response.ok() {
+        return Err(ApiError::Other(format!("HTTP {}", response.status())));
+    }
+    let val = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| ApiError::Other(format!("JSON decode error: {err}")))?;
+    let lifecycle = val
+        .get("lifecycle")
+        .and_then(|raw| serde_json::from_value::<DaemonLifecycle>(raw.clone()).ok())
+        .unwrap_or(DaemonLifecycle::Unknown);
+    Ok(lifecycle)
+}
+
+pub async fn fetch_recent_logs(state: AppState, base: &str, token: &str) -> Result<(), ApiError> {
+    let url = format!("{base}/api/logs?limit=100");
+    let mut request = Request::get(&url);
+    if !token.is_empty() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|err| ApiError::Other(format!("Logs request failed: {err}")))?;
+    if !response.ok() {
+        return Err(ApiError::Other(format!("HTTP {}", response.status())));
+    }
+    if let Ok(entries) = response.json::<Vec<LogEntry>>().await {
+        state.logs.set(entries);
+    }
+    Ok(())
+}
+
 fn settings_changed(state: AppState, base: &str, token: &str) -> bool {
     state.api_base_url.get() != base || state.api_token.get() != token
 }
@@ -632,6 +690,7 @@ async fn live_phase(state: AppState, base: &str, token: &str) {
     }
 }
 
+#[allow(dead_code)]
 async fn demo_phase(state: AppState) {
     let base = state.api_base_url.get();
     let token = state.api_token.get();
@@ -711,6 +770,23 @@ fn handle_envelope(state: AppState, text: &str) {
             {
                 push_sample(state, stats.down_rate as f64, stats.up_rate as f64);
                 state.stats.set(stats);
+            }
+        }
+        Some("log") => {
+            if let Some(entry) = value
+                .get("log")
+                .and_then(|raw| serde_json::from_value::<LogEntry>(raw.clone()).ok())
+                .or_else(|| serde_json::from_value::<LogEntry>(value.clone()).ok())
+            {
+                state.push_log(entry);
+            }
+        }
+        Some("status") => {
+            if let Some(lifecycle) = value
+                .get("lifecycle")
+                .and_then(|raw| serde_json::from_value::<DaemonLifecycle>(raw.clone()).ok())
+            {
+                state.daemon_lifecycle.set(lifecycle);
             }
         }
         _ => {}
@@ -968,6 +1044,17 @@ fn build_demo_items(rng: &mut Lcg) -> Vec<TorrentItem> {
                     is_active: matches!(state, "Downloading" | "Seeding" | "Checking"),
                     is_complete,
                     is_hash_checking: state == "Checking",
+                    chunks_hashed: if state == "Checking" {
+                        (1024.0 * progress) as u32
+                    } else {
+                        0
+                    },
+                    chunks_total: if state == "Checking" { 1024 } else { 0 },
+                    hash_progress_pct: if state == "Checking" {
+                        (progress * 100.0) as f32
+                    } else {
+                        0.0
+                    },
                     priority: rng.range_i64(0, 3) as u32,
                     directory: format!("/downloads/{category}"),
                     category: category.to_string(),
@@ -1056,6 +1143,7 @@ fn seed_demo(state: AppState) {
     state.push_event(ToastKind::Success, "Loaded 14 demo torrents", None);
 }
 
+#[allow(dead_code)]
 fn demo_tick(state: AppState, rng: &mut Lcg) {
     // TorrentItem timestamps are unix seconds, matching the backend contract.
     let now = (js_sys::Date::now() / 1000.0) as u64;
@@ -1367,6 +1455,9 @@ pub async fn add_torrent(
             is_active: payload.start_immediately,
             is_complete: false,
             is_hash_checking: false,
+            chunks_hashed: 0,
+            chunks_total: 0,
+            hash_progress_pct: 0.0,
             priority: 2,
             directory: payload
                 .download_dir

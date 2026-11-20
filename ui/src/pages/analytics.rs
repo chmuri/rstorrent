@@ -131,7 +131,7 @@ pub fn AnalyticsPage() -> impl IntoView {
             for item in items {
                 let idx = match item.status() {
                     ItemStatus::Completed => 0,
-                    ItemStatus::Downloading => 1,
+                    ItemStatus::Downloading | ItemStatus::Checking => 1,
                     ItemStatus::Warning => 2,
                     ItemStatus::Failed => 3,
                 };
@@ -488,6 +488,7 @@ pub fn AnalyticsPage() -> impl IntoView {
                                                                     BadgeKind::Warning => "bg-amber-500",
                                                                     BadgeKind::Error => "bg-rose-500",
                                                                     BadgeKind::Neutral => "bg-zinc-500",
+                                                                    BadgeKind::Checking => "bg-cyan-400 animate-pulse",
                                                                 }
                                                             })
                                                     });

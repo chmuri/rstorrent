@@ -102,6 +102,12 @@ pub struct TorrentSummary {
     pub seeds_total: u32,
     pub peers_connected: u32,
     pub peers_total: u32,
+    #[serde(default)]
+    pub chunks_hashed: u32,
+    #[serde(default)]
+    pub chunks_total: u32,
+    #[serde(default)]
+    pub hash_progress_pct: f32,
 }
 
 pub fn summary_from(download: &Download) -> TorrentSummary {
@@ -112,6 +118,13 @@ pub fn summary_from(download: &Download) -> TorrentSummary {
     };
     let seeds_total = seeds_connected;
     let peers_total = peers_connected;
+    let chunks_hashed = download.chunks_hashed();
+    let chunks_total = metadata.num_pieces as u32;
+    let hash_progress_pct = if chunks_total > 0 {
+        ((chunks_hashed as f64 / chunks_total as f64) * 100.0) as f32
+    } else {
+        0.0
+    };
     TorrentSummary {
         hash: download.info_hash_hex(),
         name: download.name().to_string(),
@@ -138,6 +151,9 @@ pub fn summary_from(download: &Download) -> TorrentSummary {
         seeds_total,
         peers_connected,
         peers_total,
+        chunks_hashed,
+        chunks_total,
+        hash_progress_pct,
     }
 }
 
