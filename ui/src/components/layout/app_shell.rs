@@ -31,11 +31,11 @@ pub fn AppShell(children: Children) -> impl IntoView {
         >
             <div
                 aria-hidden="true"
-                class="pointer-events-none fixed -top-40 -left-40 h-96 w-96 rounded-full bg-indigo-600/15 blur-[128px]"
+                class="pointer-events-none fixed -top-40 -left-40 h-96 w-96 rounded-full [background:radial-gradient(circle,rgba(79,70,229,0.15)_0%,transparent_70%)]"
             />
             <div
                 aria-hidden="true"
-                class="pointer-events-none fixed -bottom-40 -right-40 h-96 w-96 rounded-full bg-violet-600/10 blur-[128px]"
+                class="pointer-events-none fixed -bottom-40 -right-40 h-96 w-96 rounded-full [background:radial-gradient(circle,rgba(124,58,237,0.10)_0%,transparent_70%)]"
             />
             <div class="relative flex h-screen">
                 <Sidebar/>

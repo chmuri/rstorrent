@@ -118,6 +118,35 @@ async fn require_auth(State(state): State<WebuiState>, mut req: Request, next: N
     next.run(req).await
 }
 
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode(input: &str) -> String {
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let h1 = chars.next().and_then(hex_val);
+            let h2 = chars.next().and_then(hex_val);
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                bytes.push((h1 << 4) | h2);
+                continue;
+            }
+        } else if b == b'+' {
+            bytes.push(b' ');
+            continue;
+        }
+        bytes.push(b);
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 /// Extract the presented credential: the `Authorization` header wins; the
 /// `?token=` query parameter is the fallback browsers need for WebSockets.
 fn presented_token(req: &Request) -> Option<String> {
@@ -132,7 +161,7 @@ fn presented_token(req: &Request) -> Option<String> {
     for pair in query.split('&') {
         if let Some((key, value)) = pair.split_once('=') {
             if key == "token" {
-                return Some(format!("Bearer {}", value));
+                return Some(format!("Bearer {}", percent_decode(value)));
             }
         }
     }
@@ -413,6 +442,14 @@ mod tests {
         let (status, _) = send(
             test_state(Some("s3cret")),
             get("/api/version?token=s3cret", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Percent-encoded tokens with special characters (e.g. ! encoded as %21)
+        let (status, _) = send(
+            test_state(Some("Testowytoken323!")),
+            get("/api/version?token=Testowytoken323%21", None),
         )
         .await;
         assert_eq!(status, StatusCode::OK);

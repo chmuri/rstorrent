@@ -1,4 +1,4 @@
-**rstorrent v0.25.0**
+**rstorrent v0.25.1**
 
 - [Home](Home)
 - [Configuration Guide](Configuration-Guide)

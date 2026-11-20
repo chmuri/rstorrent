@@ -514,11 +514,13 @@ async fn live_phase(state: AppState, base: &str, token: &str) {
             None,
         );
     }
-    loop {
+    // Fallback polling loop when WebSocket disconnects: poll a few times, then
+    // return so the outer supervisor loop re-establishes the WebSocket connection.
+    for _ in 0..5 {
         if settings_changed(state, base, token) {
             return;
         }
-        let interval = state.poll_interval_ms.get().clamp(250, 60_000) as u32;
+        let interval = state.poll_interval_ms.get().clamp(500, 60_000) as u32;
         TimeoutFuture::new(interval).await;
         if settings_changed(state, base, token) || !state.live_stream_active.get() {
             continue;

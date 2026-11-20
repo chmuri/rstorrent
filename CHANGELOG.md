@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-11-20
+
+### Fixed
+- **WebUI WebSocket URL-Encoded Token Support** (`crates/rstorrent/src/webui/mod.rs`):
+  - Fixed query parameter token authentication (`?token=...`) failing on percent-encoded characters (such as `!` encoded as `%21`). Added percent-decoding in `presented_token`.
+  - Added unit test verifying that percent-encoded tokens authenticate properly.
+- **Web UI Performance & CPU Spikes** (`ui/src/state/api.rs`, `ui/src/components/layout/header.rs`, `ui/src/components/layout/sidebar.rs`, `ui/src/components/layout/app_shell.rs`):
+  - Eliminated 100% CPU usage in Chrome's `VizCompositorThread` under software compositing by replacing `animate-ping` inside `backdrop-blur-xl` header with static ring status indicator.
+  - Replaced expensive 128px Gaussian blur filters on full-screen fixed elements with CSS radial gradients.
+  - Prevented infinite fallback polling loop by implementing WebSocket reconnection supervisor with backoff.
+  - Optimized reactive state inspection in sidebar using `.with(...)` instead of cloning the entire 15,000+ torrent dataset on every telemetry update.
+
 ## [0.25.0] - 2026-11-20
 
 ### Added

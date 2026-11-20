@@ -9,17 +9,20 @@ pub fn Sidebar() -> impl IntoView {
     let state = use_context::<AppState>().unwrap_or_default();
     let pathname = use_location().pathname;
 
-    let explorer_count = Signal::derive(move || state.items.get().len());
+    let explorer_count = Signal::derive(move || state.items.with(|items| items.len()));
     // Demo telemetry: deterministic pseudo-load derived from session stats, not real measurements.
     let cpu_pct = Signal::derive(move || {
-        let stats = state.stats.get();
-        let mbps = stats.down_rate as f64 / (1024.0 * 1024.0);
-        (6.0 + stats.active_torrents as f64 * 4.5 + mbps * 0.8).clamp(2.0, 97.0)
+        let (down_rate, active_torrents) = state
+            .stats
+            .with(|stats| (stats.down_rate, stats.active_torrents));
+        let mbps = down_rate as f64 / (1024.0 * 1024.0);
+        (6.0 + active_torrents as f64 * 4.5 + mbps * 0.8).clamp(2.0, 97.0)
     });
     let mem_pct = Signal::derive(move || {
-        let stats = state.stats.get();
-        let gib = stats.down_total as f64 / (1024.0 * 1024.0 * 1024.0);
-        (18.0 + state.items.get().len() as f64 * 2.5 + gib * 0.4).clamp(8.0, 93.0)
+        let down_total = state.stats.with(|stats| stats.down_total);
+        let items_len = state.items.with(|items| items.len());
+        let gib = down_total as f64 / (1024.0 * 1024.0 * 1024.0);
+        (18.0 + items_len as f64 * 2.5 + gib * 0.4).clamp(8.0, 93.0)
     });
 
     view! {

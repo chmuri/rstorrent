@@ -4,7 +4,7 @@ Welcome to the **rstorrent** wiki!
 
 `rstorrent` is a modern, high-performance, memory-safe BitTorrent client and engine written from scratch in pure Rust. It is a drop-in companion to the classic rTorrent ecosystem — same command surface over XML-RPC/SCGI and gRPC — while adding modern capabilities: uTP (BEP 29) with LEDBAT congestion control, BEP 52 v2/hybrid Merkle torrents, UPnP IGD / NAT-PMP port forwarding, DHT with BEP 51, a TOML configuration system, a lock-free asynchronous I/O engine with sharded disk workers, a native Web UI, and a next-generation terminal user interface.
 
-Current release: **v0.25.0**. Licensed under GPL-2.0-or-later.
+Current release: **v0.25.1**. Licensed under GPL-2.0-or-later.
 
 ---
 

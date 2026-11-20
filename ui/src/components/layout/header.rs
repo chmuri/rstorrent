@@ -223,13 +223,9 @@ fn connection_pill(state: AppState) -> impl IntoView {
             <span class="relative flex h-2 w-2">
                 <span class=move || {
                     format!(
-                        "absolute inline-flex h-full w-full rounded-full opacity-75 {} {}",
-                        dot_class(),
-                        if state.live_stream_active.get() { "animate-ping" } else { "" },
+                        "relative inline-flex h-2 w-2 rounded-full ring-2 ring-current/30 {}",
+                        dot_class()
                     )
-                }/>
-                <span class=move || {
-                    format!("relative inline-flex h-2 w-2 rounded-full {}", dot_class())
                 }/>
             </span>
             {label}
