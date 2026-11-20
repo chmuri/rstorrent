@@ -262,9 +262,9 @@ if ! "${SSH[@]}" true 2>/dev/null; then
     exit $rc
 fi
 if [[ "${RSTORRENT_CI_SCCACHE_STATS:-1}" == "1" ]]; then
-    run_in_container bash -c 'cargo "$@"; rc=$?; echo "==> sccache statistics:" >&2; sccache --show-stats >&2 || true; exit $rc' -- "$@"
+    run_in_container bash -c 'sccache --start-server >/dev/null 2>&1 || true; cargo "$@"; rc=$?; echo "==> sccache statistics:" >&2; sccache --show-stats >&2 || true; exit $rc' -- "$@"
 else
-    run_in_container cargo "$@"
+    run_in_container bash -c 'sccache --start-server >/dev/null 2>&1 || true; exec cargo "$@"' -- "$@"
 fi
 rc=$?
 

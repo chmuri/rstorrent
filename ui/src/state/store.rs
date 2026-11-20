@@ -133,7 +133,9 @@ pub enum ViewMode {
 pub enum SortKey {
     Name,
     DownRate,
+    UpRate,
     Size,
+    Progress,
     Status,
     Updated,
 }
@@ -420,7 +422,12 @@ impl AppState {
                 let ordering = match sort_key {
                     SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
                     SortKey::DownRate => a.down_rate.cmp(&b.down_rate),
+                    SortKey::UpRate => a.up_rate.cmp(&b.up_rate),
                     SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
+                    SortKey::Progress => a
+                        .progress()
+                        .partial_cmp(&b.progress())
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     SortKey::Status => status_rank(a.status()).cmp(&status_rank(b.status())),
                     SortKey::Updated => a.state_changed.cmp(&b.state_changed),
                 };

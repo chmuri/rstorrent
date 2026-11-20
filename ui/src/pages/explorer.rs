@@ -143,48 +143,52 @@ fn toolbar(state: AppState, counts: Memo<StatusCounts>) -> impl IntoView {
                     </Show>
                 </div>
 
-                <div class="flex items-center gap-2">
-                    <select
-                        class="cursor-pointer rounded-xl border border-white/[0.08] bg-zinc-950/80 px-3 py-2 text-sm text-zinc-200 transition-all focus:border-indigo-500/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        title="Sort by"
-                        prop:value=move || sort_key_value(state.sort_key.get())
-                        on:change=move |ev| {
-                            state.sort_key.set(sort_key_from_value(&event_target_value(&ev)));
-                        }
-                    >
-                        <option value="name">"Name"</option>
-                        <option value="down_rate">"Down Rate"</option>
-                        <option value="size">"Size"</option>
-                        <option value="status">"Status"</option>
-                        <option value="updated">"Updated"</option>
-                    </select>
-                    <button
-                        class="inline-flex cursor-pointer items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] p-2 text-zinc-300 transition-all hover:bg-white/[0.08] active:scale-[0.98]"
-                        title=move || {
-                            if state.sort_desc.get() {
-                                "Sorted descending — click for ascending"
-                            } else {
-                                "Sorted ascending — click for descending"
+                <Show when=move || state.view_mode.get() == ViewMode::Cards>
+                    <div class="flex items-center gap-2">
+                        <select
+                            class="cursor-pointer rounded-xl border border-white/[0.08] bg-zinc-950/80 px-3 py-2 text-sm text-zinc-200 transition-all focus:border-indigo-500/60 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            title="Sort by"
+                            prop:value=move || sort_key_value(state.sort_key.get())
+                            on:change=move |ev| {
+                                state.sort_key.set(sort_key_from_value(&event_target_value(&ev)));
                             }
-                        }
-                        on:click=move |_| state.sort_desc.update(|d| *d = !*d)
-                    >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="h-4 w-4 transition-transform duration-200"
-                            class=("rotate-180", move || !state.sort_desc.get())
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
                         >
-                            <path d="M12 5v14"/>
-                            <path d="m19 12-7 7-7-7"/>
-                        </svg>
-                    </button>
-                </div>
+                            <option value="name">"Name"</option>
+                            <option value="down_rate">"Down Rate"</option>
+                            <option value="up_rate">"Up Rate"</option>
+                            <option value="size">"Size"</option>
+                            <option value="progress">"Progress"</option>
+                            <option value="status">"Status"</option>
+                            <option value="updated">"Updated"</option>
+                        </select>
+                        <button
+                            class="inline-flex cursor-pointer items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] p-2 text-zinc-300 transition-all hover:bg-white/[0.08] active:scale-[0.98]"
+                            title=move || {
+                                if state.sort_desc.get() {
+                                    "Sorted descending — click for ascending"
+                                } else {
+                                    "Sorted ascending — click for descending"
+                                }
+                            }
+                            on:click=move |_| state.sort_desc.update(|d| *d = !*d)
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                class="h-4 w-4 transition-transform duration-200"
+                                class=("rotate-180", move || !state.sort_desc.get())
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="M12 5v14"/>
+                                <path d="m19 12-7 7-7-7"/>
+                            </svg>
+                        </button>
+                    </div>
+                </Show>
 
                 <div class="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.04] p-1">
                     <button
@@ -299,6 +303,83 @@ fn bulk_bar(state: AppState) -> impl IntoView {
     }
 }
 
+fn sortable_th(state: AppState, key: SortKey, label: &'static str) -> impl IntoView {
+    let on_click = move |_| {
+        if state.sort_key.get() == key {
+            state.sort_desc.update(|d| *d = !*d);
+        } else {
+            state.sort_key.set(key);
+            state.sort_desc.set(!matches!(key, SortKey::Name));
+        }
+    };
+
+    view! {
+        <th
+            class=move || {
+                let active = state.sort_key.get() == key;
+                if active {
+                    "dense-row px-4 py-3 font-semibold text-zinc-100 select-none cursor-pointer group transition-colors duration-150"
+                } else {
+                    "dense-row px-4 py-3 font-medium text-zinc-500 hover:text-zinc-300 select-none cursor-pointer group transition-colors duration-150"
+                }
+            }
+            on:click=on_click
+            title=move || {
+                if state.sort_key.get() == key {
+                    if state.sort_desc.get() {
+                        format!("Sorted by {label} descending — click for ascending")
+                    } else {
+                        format!("Sorted by {label} ascending — click for descending")
+                    }
+                } else {
+                    format!("Sort by {label}")
+                }
+            }
+        >
+            <div class="inline-flex items-center gap-1.5">
+                <span>{label}</span>
+                <span class="inline-flex items-center">
+                    <Show
+                        when=move || state.sort_key.get() == key
+                        fallback=move || {
+                            view! {
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="h-3 w-3 opacity-0 transition-opacity duration-150 group-hover:opacity-40"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path d="m7 15 5 5 5-5"/>
+                                    <path d="m7 9 5-5 5 5"/>
+                                </svg>
+                            }
+                        }
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-3.5 w-3.5 text-indigo-400 transition-transform duration-200"
+                            class=("rotate-180", move || !state.sort_desc.get())
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M12 5v14"/>
+                            <path d="m19 12-7 7-7-7"/>
+                        </svg>
+                    </Show>
+                </span>
+            </div>
+        </th>
+    }
+}
+
 fn table_view(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl IntoView {
     view! {
         <div class="glass-surface relative overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-900/50 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all duration-200">
@@ -307,13 +388,13 @@ fn table_view(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl Into
                     <thead>
                         <tr class="border-b border-white/[0.08] bg-zinc-950/40 text-[11px] uppercase tracking-wider text-zinc-500">
                             <th class="dense-row w-10 px-4 py-3">{select_all_checkbox(state)}</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Name"</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Status"</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Size"</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Progress"</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Down"</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Up"</th>
-                            <th class="dense-row px-4 py-3 font-medium">"Updated"</th>
+                            {sortable_th(state, SortKey::Name, "Name")}
+                            {sortable_th(state, SortKey::Status, "Status")}
+                            {sortable_th(state, SortKey::Size, "Size")}
+                            {sortable_th(state, SortKey::Progress, "Progress")}
+                            {sortable_th(state, SortKey::DownRate, "Down")}
+                            {sortable_th(state, SortKey::UpRate, "Up")}
+                            {sortable_th(state, SortKey::Updated, "Updated")}
                             <th class="dense-row px-4 py-3">
                                 <span class="sr-only">"Actions"</span>
                             </th>
@@ -422,6 +503,8 @@ fn pagination_controls(
                     <option value="50">"50"</option>
                     <option value="100">"100"</option>
                     <option value="200">"200"</option>
+                    <option value="500">"500"</option>
+                    <option value="1000">"1000"</option>
                 </select>
                 <span>"per page"</span>
                 <span class="ml-2 font-mono tabular-nums text-zinc-500">
@@ -806,7 +889,9 @@ fn sort_key_value(key: SortKey) -> &'static str {
     match key {
         SortKey::Name => "name",
         SortKey::DownRate => "down_rate",
+        SortKey::UpRate => "up_rate",
         SortKey::Size => "size",
+        SortKey::Progress => "progress",
         SortKey::Status => "status",
         SortKey::Updated => "updated",
     }
@@ -815,7 +900,9 @@ fn sort_key_value(key: SortKey) -> &'static str {
 fn sort_key_from_value(value: &str) -> SortKey {
     match value {
         "name" => SortKey::Name,
+        "up_rate" => SortKey::UpRate,
         "size" => SortKey::Size,
+        "progress" => SortKey::Progress,
         "status" => SortKey::Status,
         "updated" => SortKey::Updated,
         _ => SortKey::DownRate,
