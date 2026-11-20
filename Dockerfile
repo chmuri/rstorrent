@@ -88,7 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create application directories for persistent volumes
-RUN mkdir -p /downloads /session /config /etc/rstorrent /etc/rtorrent
+RUN mkdir -p /downloads /session /config /watch /etc/rstorrent /etc/rtorrent
 
 # Copy compiled binary from builder and create rtorrent compatibility symlink
 COPY --from=builder /build/target/release/rstorrent /usr/local/bin/rstorrent
@@ -101,14 +101,15 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose network ports:
-# 5000: SCGI XML-RPC / JSON-RPC server (Flood Web UI)
+# 5000: SCGI XML-RPC / JSON-RPC server
+# 8080: Native Web UI
 # 50000: BitTorrent incoming P2P connections
 # 6881/udp: DHT (Distributed Hash Table)
-EXPOSE 5000 50000 6881/udp
+EXPOSE 5000 8080 50000 6881/udp
 
 # Volumes for downloads, session resume data, and configuration
-VOLUME ["/downloads", "/session", "/config"]
+VOLUME ["/downloads", "/session", "/config", "/watch"]
 
 # Start entrypoint to initialize config on empty mounts
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/usr/local/bin/rstorrent", "--daemon", "-c", "/config/.rstorrent.rc"]
+CMD ["/usr/local/bin/rstorrent", "--daemon", "-c", "/config/.rstorrent.rc", "--webui-addr", "0.0.0.0:8080", "--watch-dir", "/watch"]

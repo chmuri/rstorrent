@@ -394,43 +394,44 @@ impl AppState {
     pub fn filtered_items(self) -> Vec<TorrentItem> {
         let query = self.search_query.get().to_lowercase();
         let filter = self.status_filter.get();
-        let mut items: Vec<TorrentItem> = self
-            .items
-            .get()
-            .into_iter()
-            .filter(|item| {
-                let matches_query = query.is_empty()
-                    || item.name.to_lowercase().contains(&query)
-                    || item.hash.to_lowercase().contains(&query)
-                    || item.category.to_lowercase().contains(&query);
-                let matches_status = match filter.as_str() {
-                    "healthy" => item.status() == ItemStatus::Healthy,
-                    "processing" => item.status() == ItemStatus::Processing,
-                    "warning" => item.status() == ItemStatus::Warning,
-                    "failed" => item.status() == ItemStatus::Failed,
-                    _ => true,
-                };
-                matches_query && matches_status
-            })
-            .collect();
+        self.items.with(|raw_items| {
+            let mut items: Vec<TorrentItem> = raw_items
+                .iter()
+                .filter(|item| {
+                    let matches_query = query.is_empty()
+                        || item.name.to_lowercase().contains(&query)
+                        || item.hash.to_lowercase().contains(&query)
+                        || item.category.to_lowercase().contains(&query);
+                    let matches_status = match filter.as_str() {
+                        "healthy" => item.status() == ItemStatus::Healthy,
+                        "processing" => item.status() == ItemStatus::Processing,
+                        "warning" => item.status() == ItemStatus::Warning,
+                        "failed" => item.status() == ItemStatus::Failed,
+                        _ => true,
+                    };
+                    matches_query && matches_status
+                })
+                .cloned()
+                .collect();
 
-        let sort_key = self.sort_key.get();
-        let descending = self.sort_desc.get();
-        items.sort_by(|a, b| {
-            let ordering = match sort_key {
-                SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                SortKey::DownRate => a.down_rate.cmp(&b.down_rate),
-                SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
-                SortKey::Status => status_rank(a.status()).cmp(&status_rank(b.status())),
-                SortKey::Updated => a.state_changed.cmp(&b.state_changed),
-            };
-            if descending {
-                ordering.reverse()
-            } else {
-                ordering
-            }
-        });
-        items
+            let sort_key = self.sort_key.get();
+            let descending = self.sort_desc.get();
+            items.sort_by(|a, b| {
+                let ordering = match sort_key {
+                    SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    SortKey::DownRate => a.down_rate.cmp(&b.down_rate),
+                    SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
+                    SortKey::Status => status_rank(a.status()).cmp(&status_rank(b.status())),
+                    SortKey::Updated => a.state_changed.cmp(&b.state_changed),
+                };
+                if descending {
+                    ordering.reverse()
+                } else {
+                    ordering
+                }
+            });
+            items
+        })
     }
 
     pub fn persist_settings(self) {

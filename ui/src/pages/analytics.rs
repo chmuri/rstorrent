@@ -127,33 +127,35 @@ pub fn AnalyticsPage() -> impl IntoView {
 
     let status_counts = Memo::new(move |_| {
         let mut counts = [0usize; 4];
-        let items = state.items.get();
-        for item in &items {
-            let idx = match item.status() {
-                ItemStatus::Healthy => 0,
-                ItemStatus::Processing => 1,
-                ItemStatus::Warning => 2,
-                ItemStatus::Failed => 3,
-            };
-            counts[idx] += 1;
-        }
+        state.items.with(|items| {
+            for item in items {
+                let idx = match item.status() {
+                    ItemStatus::Healthy => 0,
+                    ItemStatus::Processing => 1,
+                    ItemStatus::Warning => 2,
+                    ItemStatus::Failed => 3,
+                };
+                counts[idx] += 1;
+            }
+        });
         counts
     });
 
     let categories = Memo::new(move |_| {
-        let items = state.items.get();
         let mut counts: Vec<(String, usize)> = Vec::new();
-        for item in &items {
-            let mut name = item.category.trim().to_lowercase();
-            if name.is_empty() {
-                name = "uncategorized".to_string();
+        state.items.with(|items| {
+            for item in items {
+                let mut name = item.category.trim().to_lowercase();
+                if name.is_empty() {
+                    name = "uncategorized".to_string();
+                }
+                if let Some(entry) = counts.iter_mut().find(|(n, _)| *n == name) {
+                    entry.1 += 1;
+                } else {
+                    counts.push((name, 1));
+                }
             }
-            if let Some(entry) = counts.iter_mut().find(|(n, _)| *n == name) {
-                entry.1 += 1;
-            } else {
-                counts.push((name, 1));
-            }
-        }
+        });
         counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         let mut top: Vec<(String, usize)> = counts.iter().take(6).cloned().collect();
         let rest: usize = counts.iter().skip(6).map(|(_, c)| c).sum();
@@ -164,13 +166,16 @@ pub fn AnalyticsPage() -> impl IntoView {
     });
 
     let matrix = Memo::new(move |_| -> Vec<HeatRow> {
-        let mut items = state.items.get();
-        items.sort_by(|a, b| {
-            b.down_rate
-                .cmp(&a.down_rate)
-                .then_with(|| a.name.cmp(&b.name))
+        let items = state.items.with(|items| {
+            let mut top = items.clone();
+            top.sort_by(|a, b| {
+                b.down_rate
+                    .cmp(&a.down_rate)
+                    .then_with(|| a.name.cmp(&b.name))
+            });
+            top.truncate(12);
+            top
         });
-        items.truncate(12);
         let history = state.down_history.get();
         let mode = state.connection.get();
         let global_rate = state

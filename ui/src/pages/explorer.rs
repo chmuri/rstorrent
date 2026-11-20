@@ -27,16 +27,52 @@ pub fn ExplorerPage() -> impl IntoView {
 
     let counts = Memo::new(move |_| {
         let mut c = StatusCounts::default();
-        for item in state.items.get().iter() {
-            c.total += 1;
-            match item.status() {
-                ItemStatus::Healthy => c.healthy += 1,
-                ItemStatus::Processing => c.processing += 1,
-                ItemStatus::Warning => c.warning += 1,
-                ItemStatus::Failed => c.failed += 1,
+        state.items.with(|items| {
+            for item in items.iter() {
+                c.total += 1;
+                match item.status() {
+                    ItemStatus::Healthy => c.healthy += 1,
+                    ItemStatus::Processing => c.processing += 1,
+                    ItemStatus::Warning => c.warning += 1,
+                    ItemStatus::Failed => c.failed += 1,
+                }
             }
-        }
+        });
         c
+    });
+
+    let current_page = RwSignal::new(1usize);
+    let page_size = RwSignal::new(50usize);
+
+    Effect::new(move |_| {
+        state.search_query.track();
+        state.status_filter.track();
+        state.sort_key.track();
+        state.sort_desc.track();
+        current_page.set(1);
+    });
+
+    let filtered = Memo::new(move |_| state.filtered_items());
+    let total_filtered = Memo::new(move |_| filtered.with(|items| items.len()));
+    let total_pages = Memo::new(move |_| {
+        let total = total_filtered.get();
+        let size = page_size.get().max(1);
+        total.div_ceil(size).max(1)
+    });
+
+    let paged_items = Memo::new(move |_| {
+        let size = page_size.get().max(1);
+        let pages = total_pages.get();
+        let cur = current_page.get().clamp(1, pages);
+        let start = (cur - 1) * size;
+        filtered.with(|items| {
+            items
+                .iter()
+                .skip(start)
+                .take(size)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
     });
 
     view! {
@@ -44,15 +80,16 @@ pub fn ExplorerPage() -> impl IntoView {
             {toolbar(state, counts)}
             {bulk_bar(state)}
             <Show
-                when=move || !state.filtered_items().is_empty()
+                when=move || total_filtered.get() != 0
                 fallback=move || empty_state(state)
             >
                 <Show
                     when=move || state.view_mode.get() == ViewMode::Table
-                    fallback=move || card_grid(state)
+                    fallback=move || card_grid(state, paged_items)
                 >
-                    {table_view(state)}
+                    {table_view(state, paged_items)}
                 </Show>
+                {pagination_controls(current_page, page_size, total_filtered, total_pages)}
             </Show>
         </div>
     }
@@ -262,7 +299,7 @@ fn bulk_bar(state: AppState) -> impl IntoView {
     }
 }
 
-fn table_view(state: AppState) -> impl IntoView {
+fn table_view(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl IntoView {
     view! {
         <div class="glass-surface relative overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-900/50 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all duration-200">
             <div class="overflow-x-auto">
@@ -284,7 +321,7 @@ fn table_view(state: AppState) -> impl IntoView {
                     </thead>
                     <tbody>
                         <For
-                            each=move || state.filtered_items()
+                            each=move || paged_items.get()
                             key=|item| item.hash.clone()
                             let(item)
                         >
@@ -297,11 +334,11 @@ fn table_view(state: AppState) -> impl IntoView {
     }
 }
 
-fn card_grid(state: AppState) -> impl IntoView {
+fn card_grid(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl IntoView {
     view! {
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <For
-                each=move || state.filtered_items()
+                each=move || paged_items.get()
                 key=|item| item.hash.clone()
                 let(item)
             >
@@ -358,10 +395,82 @@ fn empty_state(state: AppState) -> impl IntoView {
     }
 }
 
+fn pagination_controls(
+    current_page: RwSignal<usize>,
+    page_size: RwSignal<usize>,
+    total_filtered: Memo<usize>,
+    total_pages: Memo<usize>,
+) -> impl IntoView {
+    let can_prev = move || current_page.get() > 1;
+    let can_next = move || current_page.get() < total_pages.get();
+
+    view! {
+        <div class="flex flex-wrap items-center justify-between gap-3 px-2 py-2 text-xs text-zinc-400">
+            <div class="flex items-center gap-2">
+                <span>"Show"</span>
+                <select
+                    class="cursor-pointer rounded-lg border border-white/[0.08] bg-zinc-950/80 px-2 py-1 text-xs text-zinc-200 transition-all focus:border-indigo-500/60 focus:outline-none"
+                    prop:value=move || page_size.get().to_string()
+                    on:change=move |ev| {
+                        if let Ok(sz) = event_target_value(&ev).parse::<usize>() {
+                            page_size.set(sz);
+                            current_page.set(1);
+                        }
+                    }
+                >
+                    <option value="25">"25"</option>
+                    <option value="50">"50"</option>
+                    <option value="100">"100"</option>
+                    <option value="200">"200"</option>
+                </select>
+                <span>"per page"</span>
+                <span class="ml-2 font-mono tabular-nums text-zinc-500">
+                    {move || {
+                        let total = total_filtered.get();
+                        if total == 0 {
+                            "0 of 0".to_string()
+                        } else {
+                            let size = page_size.get();
+                            let cur = current_page.get();
+                            let start = (cur - 1) * size + 1;
+                            let end = (cur * size).min(total);
+                            format!("Showing {start}–{end} of {total}")
+                        }
+                    }}
+                </span>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button
+                    class="cursor-pointer rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-zinc-300 transition-all hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled=move || !can_prev()
+                    on:click=move |_| current_page.update(|p| *p = p.saturating_sub(1).max(1))
+                >
+                    "Previous"
+                </button>
+                <span class="px-2 font-mono text-zinc-300">
+                    {move || format!("Page {} of {}", current_page.get(), total_pages.get())}
+                </span>
+                <button
+                    class="cursor-pointer rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-zinc-300 transition-all hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled=move || !can_next()
+                    on:click=move |_| current_page.update(|p| *p = (*p + 1).min(total_pages.get()))
+                >
+                    "Next"
+                </button>
+            </div>
+        </div>
+    }
+}
+
 // Rows resolve their item live from state.items by hash: For is keyed by hash,
 // so a row instance always maps to the same torrent while its data keeps ticking.
 fn item_memo(state: AppState, hash: String) -> Memo<Option<TorrentItem>> {
-    Memo::new(move |_| state.items.get().into_iter().find(|i| i.hash == hash))
+    Memo::new(move |_| {
+        state
+            .items
+            .with(|items| items.iter().find(|i| i.hash == hash).cloned())
+    })
 }
 
 #[component]

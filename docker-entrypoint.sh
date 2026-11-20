@@ -14,6 +14,9 @@ elif [ -f /config/.rstorrent.rc ] && [ ! -f /config/.rtorrent.rc ]; then
 fi
 
 # Ensure required directories exist
-mkdir -p /downloads /session /config
+mkdir -p /downloads /session /config /watch
+
+# Remove stale lockfile from previous container instances
+rm -f /session/rtorrent.lock
 
 exec "$@"
