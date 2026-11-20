@@ -153,6 +153,7 @@ mod tests {
             save_path: "/tmp".into(),
             is_private: false,
             message: None,
+            finished_timestamp: 0,
         }
     }
 

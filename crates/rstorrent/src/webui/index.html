@@ -106,8 +106,8 @@
     <table>
       <thead>
         <tr>
-          <th>Name</th><th>Size</th><th>Progress</th><th>State</th><th>Tier</th>
-          <th class="num">Down</th><th class="num">Up</th><th>Actions</th>
+          <th>Name</th><th>Size</th><th>Progress</th><th>State</th><th>Seeds</th><th>Peers</th>
+          <th class="num">Down</th><th class="num">Up</th><th>Ratio</th><th>Completed</th><th>Actions</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -369,23 +369,32 @@ function renderRow(t) {
   badge.textContent = t.is_hash_checking ? "checking" : (t.state || "unknown");
   state.append(badge);
 
-  const tier = document.createElement("td");
-  const tierBadge = document.createElement("span");
-  tierBadge.className = "badge-tier";
-  tierBadge.textContent = t.tier !== null && t.tier !== undefined ? "Tier " + t.tier : "—";
-  tier.append(tierBadge);
-  if (t.move_status && t.move_status !== "Idle") {
-    const ms = document.createElement("div");
-    ms.style.fontSize = "10px";
-    ms.style.color = t.move_status.startsWith("Failed") ? "var(--err)" : "var(--warn)";
-    ms.textContent = t.move_status;
-    tier.append(ms);
-  }
+  const seeds = document.createElement("td");
+  seeds.className = "num";
+  seeds.textContent = `${t.seeds_connected || 0}/${t.seeds_total || 0}`;
+
+  const peers = document.createElement("td");
+  peers.className = "num";
+  peers.textContent = `${t.peers_connected || 0}/${t.peers_total || 0}`;
 
   const down = document.createElement("td");
   down.className = "num"; down.textContent = fmtRate(t.down_rate);
   const up = document.createElement("td");
   up.className = "num"; up.textContent = fmtRate(t.up_rate);
+
+  const ratio = document.createElement("td");
+  ratio.className = "num";
+  const r = (t.down_total > 0) ? (t.up_total / t.down_total) : (t.completed_bytes > 0 ? t.up_total / t.completed_bytes : 0);
+  ratio.textContent = r.toFixed(2);
+
+  const comp = document.createElement("td");
+  comp.style.fontSize = "11px"; comp.style.color = "var(--muted)";
+  if (t.finished && t.finished > 0) {
+    const d = new Date(t.finished * 1000);
+    comp.textContent = d.toLocaleString();
+  } else {
+    comp.textContent = "—";
+  }
 
   const actions = document.createElement("td");
   const wrap = document.createElement("div"); wrap.className = "actions";
@@ -435,7 +444,7 @@ function renderRow(t) {
   wrap.append(actionButton("Remove", "danger", t.hash, "remove"));
   actions.append(wrap);
 
-  tr.append(name, size, prog, state, tier, down, up, actions);
+  tr.append(name, size, prog, state, seeds, peers, down, up, ratio, comp, actions);
   return tr;
 }
 

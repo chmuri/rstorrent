@@ -91,9 +91,18 @@ fn focus_row_is_highlighted() {
 
 #[test]
 fn all_columns_fit_a_wide_terminal() {
-    let columns = columns_for_width(120);
+    let base_columns = columns_for_width(80);
+    assert_eq!(base_columns.len(), 8, "columns: {base_columns:?}");
 
-    assert_eq!(columns.len(), 8, "columns: {columns:?}");
+    let wide_columns = columns_for_width(120);
+    assert_eq!(wide_columns.len(), 11, "columns: {wide_columns:?}");
+    assert!(format!("{wide_columns:?}").contains("Seeds"));
+    assert!(format!("{wide_columns:?}").contains("Peers"));
+    assert!(format!("{wide_columns:?}").contains("Eta"));
+
+    let extra_wide = columns_for_width(140);
+    assert_eq!(extra_wide.len(), 12, "columns: {extra_wide:?}");
+    assert!(format!("{extra_wide:?}").contains("Finished"));
 }
 
 #[test]

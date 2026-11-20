@@ -124,6 +124,7 @@ pub fn sample_engine_snapshot(
             } else {
                 Some(d.message().to_string())
             },
+            finished_timestamp: d.timestamp_finished(),
         });
     }
 
@@ -237,6 +238,7 @@ pub fn sample_engine_snapshot_with_stats(
             } else {
                 Some(d.message().to_string())
             },
+            finished_timestamp: d.timestamp_finished(),
         });
     }
 

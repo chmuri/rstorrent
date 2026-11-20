@@ -102,6 +102,49 @@ pub struct TorrentViewModel {
     pub ratio: f64,
     /// ` 2.000`
     pub ratio_display: String,
+    /// Connected seeders.
+    pub seeds_connected: u32,
+    /// Total known seeders.
+    pub seeds_total: u32,
+    /// `12/45`
+    pub seeds_display: String,
+    /// Connected peers.
+    pub peers_connected: u32,
+    /// Total known peers.
+    pub peers_total: u32,
+    /// `3/18`
+    pub peers_display: String,
+    /// Estimated time to completion in seconds.
+    pub eta_seconds: Option<u64>,
+    /// `04m 12s` or `Done`
+    pub eta_display: String,
+    /// Timestamp when download finished (unix seconds).
+    pub finished_timestamp: u64,
+    /// Formatted completion time or `—`.
+    pub finished_display: String,
+}
+
+fn format_unix_timestamp(secs: u64) -> String {
+    if secs == 0 {
+        return "—".to_string();
+    }
+    let days = secs / 86400;
+    let rem_secs = secs % 86400;
+    let hours = rem_secs / 3600;
+    let mins = (rem_secs % 3600) / 60;
+    let s = rem_secs % 60;
+
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1024 + doe / 1461 - doe / 142401) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02} {hours:02}:{mins:02}:{s:02}")
 }
 
 impl TorrentViewModel {
@@ -117,6 +160,30 @@ impl TorrentViewModel {
             (summary.up_total_bytes as f64 / summary.down_total_bytes as f64).max(0.0)
         } else {
             0.0
+        };
+
+        let eta_seconds = if summary.down_rate_bytes_per_sec > 0
+            && summary.completed_bytes < summary.size_bytes
+        {
+            Some(
+                ((summary.size_bytes - summary.completed_bytes) / summary.down_rate_bytes_per_sec)
+                    as u64,
+            )
+        } else {
+            None
+        };
+
+        let eta_display = match eta_seconds {
+            None => {
+                if summary.is_complete {
+                    "Done".to_string()
+                } else {
+                    "—".to_string()
+                }
+            }
+            Some(s) if s > 86400 => format!("{}d", s / 86400),
+            Some(s) if s > 3600 => format!("{:02}h {:02}m", s / 3600, (s % 3600) / 60),
+            Some(s) => format!("{:02}m {:02}s", s / 60, s % 60),
         };
 
         Self {
@@ -138,6 +205,16 @@ impl TorrentViewModel {
             up_total_display: format_size(summary.up_total_bytes),
             ratio,
             ratio_display: format!("{ratio:>6.3}"),
+            seeds_connected: summary.seeds_connected,
+            seeds_total: summary.seeds_total,
+            seeds_display: format!("{}/{}", summary.seeds_connected, summary.seeds_total),
+            peers_connected: summary.peers_connected,
+            peers_total: summary.peers_total,
+            peers_display: format!("{}/{}", summary.peers_connected, summary.peers_total),
+            eta_seconds,
+            eta_display,
+            finished_timestamp: summary.finished_timestamp,
+            finished_display: format_unix_timestamp(summary.finished_timestamp),
         }
     }
 }

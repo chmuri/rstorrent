@@ -107,7 +107,7 @@ docker_prefix() {
         -e "CARGO_TERM_COLOR=always"
         -e "CARGO_PROFILE_DEV_DEBUG=0"
         -e "CARGO_PROFILE_TEST_DEBUG=0"
-        -e "RUSTC_WRAPPER=sccache"
+        -e "RUSTC_WRAPPER=${RUSTC_WRAPPER-sccache}"
         -e "SCCACHE_BUCKET=${SCCACHE_BUCKET:-sccache}"
         -e "SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT:-http://cache.example.com:9000}"
         -e "SCCACHE_S3_USE_SSL=false"

@@ -85,6 +85,14 @@ pub struct TorrentSummary {
     /// Free-form rTorrent label (`d.custom1`), persisted in the session.
     #[prost(string, tag = "20")]
     pub category: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "21")]
+    pub seeds_connected: u32,
+    #[prost(uint32, tag = "22")]
+    pub seeds_total: u32,
+    #[prost(uint32, tag = "23")]
+    pub peers_connected: u32,
+    #[prost(uint32, tag = "24")]
+    pub peers_total: u32,
 }
 #[allow(clippy::all)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

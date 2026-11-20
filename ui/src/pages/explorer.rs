@@ -394,8 +394,13 @@ fn table_view(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl Into
                             {sortable_th(state, SortKey::Category, "Label")}
                             {sortable_th(state, SortKey::Size, "Size")}
                             {sortable_th(state, SortKey::Progress, "Progress")}
+                            {sortable_th(state, SortKey::Seeds, "Seeds")}
+                            {sortable_th(state, SortKey::Peers, "Peers")}
                             {sortable_th(state, SortKey::DownRate, "Down")}
                             {sortable_th(state, SortKey::UpRate, "Up")}
+                            {sortable_th(state, SortKey::Ratio, "Ratio")}
+                            {sortable_th(state, SortKey::Eta, "ETA")}
+                            {sortable_th(state, SortKey::Finished, "Completed")}
                             {sortable_th(state, SortKey::Updated, "Updated")}
                             <th class="dense-row px-4 py-3">
                                 <span class="sr-only">"Actions"</span>
@@ -626,10 +631,39 @@ fn ExplorerRow(state: AppState, hash: String) -> impl IntoView {
             </td>
             <td class="dense-row px-4 py-3">{progress_bar(item, "h-1.5 w-24 shrink-0")}</td>
             <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-emerald-400/90">
+                {move || item.get().map(|i| format!("{}/{}", i.seeds_connected, i.seeds_total)).unwrap_or_default()}
+            </td>
+            <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-blue-400/90">
+                {move || item.get().map(|i| format!("{}/{}", i.peers_connected, i.peers_total)).unwrap_or_default()}
+            </td>
+            <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-emerald-400/90">
                 {move || item.get().map(|i| format_rate(i.down_rate)).unwrap_or_default()}
             </td>
             <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                 {move || item.get().map(|i| format_rate(i.up_rate)).unwrap_or_default()}
+            </td>
+            <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums">
+                {move || {
+                    item.get().map(|i| {
+                        let r = i.ratio();
+                        let style = if r >= 2.0 {
+                            "font-semibold text-purple-400"
+                        } else if r >= 1.0 {
+                            "text-emerald-400"
+                        } else if r >= 0.5 {
+                            "text-amber-400"
+                        } else {
+                            "text-zinc-400"
+                        };
+                        view! { <span class=style>{format!("{r:.2}")}</span> }
+                    })
+                }}
+            </td>
+            <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                {move || item.get().map(|i| i.format_eta()).unwrap_or_default()}
+            </td>
+            <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-500">
+                {move || item.get().map(|i| i.format_completed()).unwrap_or_default()}
             </td>
             <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-500">
                 {move || {
@@ -721,13 +755,39 @@ fn ExplorerCard(state: AppState, hash: String) -> impl IntoView {
                         {move || item.get().map(|i| format_rate(i.up_rate)).unwrap_or_default()}
                     </span>
                 </div>
+                <div class="flex flex-col gap-0.5 border-t border-white/[0.04] pt-1.5">
+                    <span class="text-[10px] uppercase tracking-wider text-zinc-500">"Swarm (S/P)"</span>
+                    <span class="font-mono text-xs tabular-nums text-zinc-300">
+                        {move || {
+                            item.get()
+                                .map(|i| format!("{}/{}s • {}/{}p", i.seeds_connected, i.seeds_total, i.peers_connected, i.peers_total))
+                                .unwrap_or_default()
+                        }}
+                    </span>
+                </div>
+                <div class="flex flex-col gap-0.5 border-t border-white/[0.04] pt-1.5">
+                    <span class="text-[10px] uppercase tracking-wider text-zinc-500">"Ratio / ETA"</span>
+                    <span class="font-mono text-xs tabular-nums text-zinc-300">
+                        {move || {
+                            item.get()
+                                .map(|i| format!("{:.2} • {}", i.ratio(), i.format_eta()))
+                                .unwrap_or_default()
+                        }}
+                    </span>
+                </div>
             </div>
 
-            <div class="flex items-center justify-between border-t border-white/[0.06] pt-3">
-                <span class="font-mono text-[10px] tabular-nums text-zinc-500">
+            <div class="flex items-center justify-between border-t border-white/[0.06] pt-3 text-[10px] text-zinc-500 font-mono">
+                <span>
                     {move || {
                         item.get()
-                            .map(|i| format!("Updated {}", format_timestamp(i.state_changed * 1000)))
+                            .map(|i| {
+                                if i.finished > 0 {
+                                    format!("Done {}", i.format_completed())
+                                } else {
+                                    format!("Updated {}", format_timestamp(i.state_changed * 1000))
+                                }
+                            })
                             .unwrap_or_default()
                     }}
                 </span>
@@ -902,6 +962,11 @@ fn sort_key_value(key: SortKey) -> &'static str {
         SortKey::Status => "status",
         SortKey::Category => "category",
         SortKey::Updated => "updated",
+        SortKey::Seeds => "seeds",
+        SortKey::Peers => "peers",
+        SortKey::Ratio => "ratio",
+        SortKey::Eta => "eta",
+        SortKey::Finished => "finished",
     }
 }
 
@@ -914,6 +979,11 @@ fn sort_key_from_value(value: &str) -> SortKey {
         "status" => SortKey::Status,
         "category" | "label" => SortKey::Category,
         "updated" => SortKey::Updated,
+        "seeds" => SortKey::Seeds,
+        "peers" => SortKey::Peers,
+        "ratio" => SortKey::Ratio,
+        "eta" => SortKey::Eta,
+        "finished" | "completed" => SortKey::Finished,
         _ => SortKey::DownRate,
     }
 }

@@ -98,10 +98,20 @@ pub struct TorrentSummary {
     pub finished: u64,
     pub tier: Option<u8>,
     pub move_status: String,
+    pub seeds_connected: u32,
+    pub seeds_total: u32,
+    pub peers_connected: u32,
+    pub peers_total: u32,
 }
 
 pub fn summary_from(download: &Download) -> TorrentSummary {
     let metadata = download.metadata();
+    let (seeds_connected, peers_connected) = {
+        let eng = download.download();
+        (eng.seeder_peer_count() as u32, eng.peer_count() as u32)
+    };
+    let seeds_total = seeds_connected;
+    let peers_total = peers_connected;
     TorrentSummary {
         hash: download.info_hash_hex(),
         name: download.name().to_string(),
@@ -124,6 +134,10 @@ pub fn summary_from(download: &Download) -> TorrentSummary {
         finished: download.timestamp_finished(),
         tier: download.tier_state().current_tier,
         move_status: format!("{:?}", download.move_status()),
+        seeds_connected,
+        seeds_total,
+        peers_connected,
+        peers_total,
     }
 }
 

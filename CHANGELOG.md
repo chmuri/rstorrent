@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.25.2] - 2026-11-20
+## [0.25.3] - 2026-11-20
+
+### Added
+- **Torrent Telemetry in Web UI & CLI** (`ui/`, `crates/rstorrent/`, `crates/rt-grpc/`, `crates/rt-tui/`, `crates/rt-tui-client/`):
+  - Added Swarm Telemetry (`Seeds` & `Peers` connected/total), `Ratio`, `ETA` remaining time, and `Completed` timestamp to:
+    - **Web UI Explorer Table & Card Views**: Dedicated sortable columns for Seeds, Peers, Ratio, ETA, and Completed with ruTorrent / Flood styling.
+    - **Fallback Web UI**: Added Seeds, Peers, Ratio, and Completed date to the built-in single-page web interface.
+    - **Standalone TUI Client (`rt-tui-client`)**: Dynamic viewport-aware columns for `Seeds`, `Peers`, `ETA`, and `Completed` (Finished) dates.
+    - **Embedded TUI (`rt-tui`)**: Added Completed date column for wide screens alongside Seeds/Peers (`S/P`), ETA, and Ratio.
+  - Added `seeds_connected`, `seeds_total`, `peers_connected`, and `peers_total` to gRPC `TorrentSummary` and Web REST API.
 
 ### Added
 - **First-Class Labels & Categories** (`ui/`, `crates/rt-core/`, `crates/rstorrent/`):

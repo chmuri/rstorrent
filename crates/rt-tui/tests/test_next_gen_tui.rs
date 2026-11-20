@@ -50,6 +50,7 @@ fn mock_torrent(name: &str, down: u64, size: u64, state: TorrentUiState) -> Torr
         save_path: "/downloads/linux".into(),
         is_private: false,
         message: None,
+        finished_timestamp: 0,
     }
 }
 

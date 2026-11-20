@@ -114,6 +114,7 @@ impl<'a> Widget for TorrentTableWidget<'a> {
         }
 
         let is_compact = area.width < 110;
+        let is_wide = area.width >= 135;
         let border_type = if self.theme.is_ascii {
             ratatui::widgets::BorderType::Plain
         } else {
@@ -153,6 +154,19 @@ impl<'a> Widget for TorrentTableWidget<'a> {
                 Cell::from("Size").style(self.theme.table_header_style()),
                 Cell::from("Down").style(self.theme.table_header_style()),
                 Cell::from("ETA").style(self.theme.table_header_style()),
+            ])
+        } else if is_wide {
+            Row::new(vec![
+                Cell::from("S").style(self.theme.table_header_style()),
+                Cell::from("Name").style(self.theme.table_header_style()),
+                Cell::from("Progress").style(self.theme.table_header_style()),
+                Cell::from("Size").style(self.theme.table_header_style()),
+                Cell::from("Down").style(self.theme.table_header_style()),
+                Cell::from("Up").style(self.theme.table_header_style()),
+                Cell::from("S/P").style(self.theme.table_header_style()),
+                Cell::from("ETA").style(self.theme.table_header_style()),
+                Cell::from("Ratio").style(self.theme.table_header_style()),
+                Cell::from("Completed").style(self.theme.table_header_style()),
             ])
         } else {
             Row::new(vec![
@@ -245,6 +259,20 @@ impl<'a> Widget for TorrentTableWidget<'a> {
                         Cell::from(eta_cell),
                     ])
                     .style(row_style)
+                } else if is_wide {
+                    Row::new(vec![
+                        Cell::from(status_icon).style(status_style),
+                        Cell::from(name_cell),
+                        Cell::from(progress_cell).style(status_style),
+                        Cell::from(size_cell),
+                        Cell::from(down_cell).style(self.theme.download_style()),
+                        Cell::from(up_cell).style(self.theme.upload_style()),
+                        Cell::from(sp_cell),
+                        Cell::from(eta_cell),
+                        Cell::from(ratio_cell).style(self.ratio_style(rec.ratio())),
+                        Cell::from(rec.finished_display()),
+                    ])
+                    .style(row_style)
                 } else {
                     Row::new(vec![
                         Cell::from(status_icon).style(status_style),
@@ -270,6 +298,19 @@ impl<'a> Widget for TorrentTableWidget<'a> {
                 Constraint::Length(9),
                 Constraint::Length(10),
                 Constraint::Length(9),
+            ]
+        } else if is_wide {
+            vec![
+                Constraint::Length(2),
+                Constraint::Min(30),
+                Constraint::Length(18),
+                Constraint::Length(9),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Length(7),
+                Constraint::Length(19),
             ]
         } else {
             vec![

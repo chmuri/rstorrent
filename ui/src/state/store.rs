@@ -29,6 +29,14 @@ pub struct TorrentItem {
     pub state_changed: u64,
     pub started: u64,
     pub finished: u64,
+    #[serde(default)]
+    pub seeds_connected: u32,
+    #[serde(default)]
+    pub seeds_total: u32,
+    #[serde(default)]
+    pub peers_connected: u32,
+    #[serde(default)]
+    pub peers_total: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -293,6 +301,11 @@ pub enum SortKey {
     Status,
     Category,
     Updated,
+    Seeds,
+    Peers,
+    Ratio,
+    Eta,
+    Finished,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -343,6 +356,47 @@ impl TorrentItem {
             "Closed" => "Closed".to_string(),
             "Checking" => "Checking".to_string(),
             other => other.to_string(),
+        }
+    }
+
+    pub fn ratio(&self) -> f64 {
+        if self.down_total > 0 {
+            (self.up_total as f64 / self.down_total as f64).max(0.0)
+        } else if self.completed_bytes > 0 {
+            (self.up_total as f64 / self.completed_bytes as f64).max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    pub fn eta_seconds(&self) -> Option<u64> {
+        if self.down_rate > 0 && self.completed_bytes < self.size_bytes {
+            Some(((self.size_bytes - self.completed_bytes) / self.down_rate) as u64)
+        } else {
+            None
+        }
+    }
+
+    pub fn format_eta(&self) -> String {
+        match self.eta_seconds() {
+            None => {
+                if self.is_complete || self.status() == ItemStatus::Completed {
+                    "Done".to_string()
+                } else {
+                    "—".to_string()
+                }
+            }
+            Some(s) if s > 86400 => format!("{}d", s / 86400),
+            Some(s) if s > 3600 => format!("{:02}h {:02}m", s / 3600, (s % 3600) / 60),
+            Some(s) => format!("{:02}m {:02}s", s / 60, s % 60),
+        }
+    }
+
+    pub fn format_completed(&self) -> String {
+        if self.finished == 0 {
+            "—".to_string()
+        } else {
+            format_timestamp(self.finished * 1000)
         }
     }
 }
@@ -588,6 +642,14 @@ impl AppState {
                     SortKey::Status => status_rank(a.status()).cmp(&status_rank(b.status())),
                     SortKey::Category => a.category.to_lowercase().cmp(&b.category.to_lowercase()),
                     SortKey::Updated => a.state_changed.cmp(&b.state_changed),
+                    SortKey::Seeds => a.seeds_connected.cmp(&b.seeds_connected),
+                    SortKey::Peers => a.peers_connected.cmp(&b.peers_connected),
+                    SortKey::Ratio => a
+                        .ratio()
+                        .partial_cmp(&b.ratio())
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    SortKey::Eta => a.eta_seconds().cmp(&b.eta_seconds()),
+                    SortKey::Finished => a.finished.cmp(&b.finished),
                 };
                 if descending {
                     ordering.reverse()

@@ -103,6 +103,22 @@ pub fn download_to_summary(download: &Download) -> TorrentSummary {
         finished_timestamp: download.timestamp_finished(),
         message: download.message().to_string(),
         category: download.custom_field(1).to_string(),
+        seeds_connected: {
+            let eng = download.download();
+            eng.seeder_peer_count() as u32
+        },
+        seeds_total: {
+            let eng = download.download();
+            eng.seeder_peer_count() as u32
+        },
+        peers_connected: {
+            let eng = download.download();
+            eng.peer_count() as u32
+        },
+        peers_total: {
+            let eng = download.download();
+            eng.peer_count() as u32
+        },
     }
 }
 

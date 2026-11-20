@@ -416,6 +416,10 @@ pub fn create_demo_item(state: AppState) {
         state_changed: now,
         started: now,
         finished: 0,
+        seeds_connected: 12,
+        seeds_total: 45,
+        peers_connected: 5,
+        peers_total: 28,
     };
     let name = item.name.clone();
     let hash = item.hash.clone();
@@ -983,6 +987,18 @@ fn build_demo_items(rng: &mut Lcg) -> Vec<TorrentItem> {
                     } else {
                         0
                     },
+                    seeds_connected: if is_complete {
+                        rng.range_i64(5, 30) as u32
+                    } else {
+                        rng.range_i64(1, 15) as u32
+                    },
+                    seeds_total: rng.range_i64(20, 80) as u32,
+                    peers_connected: if is_complete {
+                        rng.range_i64(0, 5) as u32
+                    } else {
+                        rng.range_i64(2, 25) as u32
+                    },
+                    peers_total: rng.range_i64(10, 50) as u32,
                 }
             },
         )
@@ -1360,6 +1376,10 @@ pub async fn add_torrent(
             state_changed: now,
             started: if payload.start_immediately { now } else { 0 },
             finished: 0,
+            seeds_connected: if payload.start_immediately { 8 } else { 0 },
+            seeds_total: 35,
+            peers_connected: if payload.start_immediately { 4 } else { 0 },
+            peers_total: 22,
         };
         state.items.update(|list| list.insert(0, item));
         state.push_toast(

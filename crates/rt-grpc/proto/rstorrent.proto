@@ -65,6 +65,10 @@ message TorrentSummary {
   string message = 19;
   // Free-form rTorrent label (`d.custom1`), persisted in the session.
   string category = 20;
+  uint32 seeds_connected = 21;
+  uint32 seeds_total = 22;
+  uint32 peers_connected = 23;
+  uint32 peers_total = 24;
 }
 
 message FileInfo {

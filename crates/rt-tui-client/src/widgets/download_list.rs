@@ -14,6 +14,12 @@ pub const HEADER_ROWS: u16 = 1;
 /// Width at which the progress bar and the ratio column appear.
 const FULL_WIDTH: u16 = 80;
 
+/// Width at which seeds, peers and ETA appear.
+const WIDE_WIDTH: u16 = 110;
+
+/// Width at which completion date appears.
+const EXTRA_WIDE_WIDTH: u16 = 135;
+
 /// Width at which progress, rates and state appear.
 const COMPACT_WIDTH: u16 = 60;
 
@@ -42,6 +48,14 @@ pub enum Column {
     State,
     /// Share ratio.
     Ratio,
+    /// Connected / total seeds.
+    Seeds,
+    /// Connected / total peers.
+    Peers,
+    /// Estimated time remaining.
+    Eta,
+    /// Completion timestamp.
+    Finished,
 }
 
 impl Column {
@@ -56,6 +70,10 @@ impl Column {
             Self::Up => "↑ Rate",
             Self::State => "State",
             Self::Ratio => "Ratio",
+            Self::Seeds => "Seeds",
+            Self::Peers => "Peers",
+            Self::Eta => "ETA",
+            Self::Finished => "Completed",
         }
     }
 
@@ -69,6 +87,9 @@ impl Column {
             Self::Down | Self::Up => Constraint::Length(9),
             Self::State => Constraint::Length(11),
             Self::Ratio => Constraint::Length(6),
+            Self::Seeds | Self::Peers => Constraint::Length(7),
+            Self::Eta => Constraint::Length(9),
+            Self::Finished => Constraint::Length(19),
         }
     }
 }
@@ -99,6 +120,14 @@ pub fn columns_for_width(width: u16) -> Vec<Column> {
     columns.push(Column::State);
     if full {
         columns.push(Column::Ratio);
+    }
+    if width >= WIDE_WIDTH {
+        columns.push(Column::Seeds);
+        columns.push(Column::Peers);
+        columns.push(Column::Eta);
+    }
+    if width >= EXTRA_WIDE_WIDTH {
+        columns.push(Column::Finished);
     }
 
     columns
@@ -203,6 +232,10 @@ fn cell_for(column: Column, torrent: &TorrentViewModel, is_selected: bool) -> Ce
         Column::Up => Cell::from(torrent.up_rate_display.as_str()),
         Column::State => Cell::from(torrent.state_name.as_str()),
         Column::Ratio => Cell::from(torrent.ratio_display.as_str()),
+        Column::Seeds => Cell::from(torrent.seeds_display.as_str()),
+        Column::Peers => Cell::from(torrent.peers_display.as_str()),
+        Column::Eta => Cell::from(torrent.eta_display.as_str()),
+        Column::Finished => Cell::from(torrent.finished_display.as_str()),
     }
 }
 
