@@ -53,6 +53,7 @@ All endpoints live under `/api` and speak JSON.
 | POST | `/api/torrents/{hash}/stop` | Runs `d.stop`. |
 | POST | `/api/torrents/{hash}/remove` | Runs `d.erase` (removes from session; does not delete data). |
 | POST | `/api/torrents/{hash}/recheck` | Runs `d.check_hash`. |
+| POST | `/api/torrents/add` | Add a new torrent via magnet URI, HTTP(S) URL, or base64-encoded `.torrent` file payload. |
 | POST | `/api/torrents/{hash}/move` | Live move torrent payload to a new target directory (`{"target": "/path"}`) preserving all statistics. |
 | POST | `/api/torrents/{hash}/tier` | Set active storage tier index (`{"tier": 0}`). |
 | POST | `/api/command` | Generic command invocation (see below). |
@@ -168,6 +169,48 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/api/stats"
 ```
 
 WebSocket clients (browser): `new WebSocket("ws://127.0.0.1:8080/api/events?token=secret")`.
+
+---
+
+## Adding Torrents (`+ New Torrent` Modal)
+
+The top navigation header features a prominent **+ New Torrent** button that triggers an interactive modal dialog:
+
+- **Source Input**:
+  - **Magnet / URL**: Paste any standard `magnet:?xt=urn:btih:...` link or direct HTTP/HTTPS `.torrent` URL.
+  - **Torrent File**: Drag-and-drop or file picker uploading `.torrent` files, automatically encoded to Base64 in the browser and transmitted to `/api/torrents/add`.
+- **Download Path**: Specify an optional custom destination directory (defaults to daemon configured download dir).
+- **Category / Label**: Assign custom category/tag (`d.custom1`).
+- **Start Immediately**: Toggle between loading paused or starting transfer immediately.
+
+---
+
+## Settings Interface
+
+The **Settings** page provides a unified 3-tab configuration center:
+
+1. **Client UI**:
+   - Connection endpoint (`API base URL`, optional Bearer token, connection test probe).
+   - Polling interval fallback slider (500 ms – 10 s).
+   - Themes (Dark / Light) and Accent color presets (Indigo, Emerald, Rose, Cyan).
+   - UI density (Compact / Comfortable) and UI animation toggles.
+   - State JSON export and local cache reset.
+
+2. **Daemon Config (`rstorrent.toml`)**:
+   - Visual Bento cards for all `rstorrent.toml` daemon parameters:
+     - **Network & Limits**: Listen port, max/min peers, global upload & download throttles (KiB/s), max open files.
+     - **Storage & Paths**: Download directory, session path, watch directory, disk pre-allocation toggle.
+     - **Protocol & Encryption**: Encryption handshake rules (`allow_incoming`, `try_outgoing`, `require`, `require_rc4`), PEX, LPD.
+     - **DHT**: Mode (`off`, `auto`, `on`) and custom UDP port.
+     - **RPC & WebUI**: SCGI/XML-RPC sockets, WebUI bind address and token.
+     - **Logging & Metrics**: Log levels, destinations, and Prometheus scrape endpoint.
+     - **Tiering**: Fast scratch tier, cold archive tier, and ratio/age criteria.
+     - **RSS**: Background worker enable, refresh interval, and auto-download switch.
+   - Save options: **Apply to Runtime (In-Memory)** or **Save to rstorrent.toml**.
+
+3. **Raw TOML Editor**:
+   - Direct inline syntax editor for power users.
+   - Live reload from server, client-side syntax verification, disk persistence, and local `.toml` file download.
 
 ---
 

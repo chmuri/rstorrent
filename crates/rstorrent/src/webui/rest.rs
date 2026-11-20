@@ -404,3 +404,193 @@ pub async fn save_config_file(
         ))),
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct AddTorrentRequest {
+    /// Magnet URI, HTTP(S) URL, or local file path.
+    pub source: Option<String>,
+    /// Raw base64-encoded .torrent file payload (alternative to source).
+    pub torrent_file_base64: Option<String>,
+    /// Custom download destination directory (overrides default).
+    pub download_dir: Option<String>,
+    /// Whether to start the download immediately or leave it paused. Defaults to true.
+    #[serde(default = "default_start_true")]
+    pub start_immediately: bool,
+    /// Category / label (stored in custom1).
+    pub category: Option<String>,
+}
+
+fn default_start_true() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize)]
+pub struct AddTorrentResponse {
+    pub success: bool,
+    pub hash: String,
+    pub name: String,
+    pub error: String,
+}
+
+pub async fn add_torrent(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+    Json(payload): Json<AddTorrentRequest>,
+) -> Json<AddTorrentResponse> {
+    if !trusted.0 {
+        return Json(AddTorrentResponse {
+            success: false,
+            hash: String::new(),
+            name: String::new(),
+            error: "trusted authentication required to add torrents".into(),
+        });
+    }
+
+    let source_or_data = if let Some(b64) = payload
+        .torrent_file_base64
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let cleaned: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
+        format!("data:application/x-bittorrent;base64,{cleaned}")
+    } else if let Some(src) = payload
+        .source
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        src.to_string()
+    } else {
+        return Json(AddTorrentResponse {
+            success: false,
+            hash: String::new(),
+            name: String::new(),
+            error: "either source URL/magnet or torrent_file_base64 must be provided".into(),
+        });
+    };
+
+    let command_name = if payload.start_immediately {
+        "load.start"
+    } else {
+        "load.normal"
+    };
+
+    let mut args = vec![Object::from(source_or_data.as_str())];
+    if let Some(dir) = payload
+        .download_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+    {
+        args.push(Object::from(format!("d.directory.set=\"{dir}\"").as_str()));
+    }
+    if let Some(cat) = payload
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        args.push(Object::from(format!("d.custom1.set=\"{cat}\"").as_str()));
+    }
+
+    let before_hashes: std::collections::HashSet<String> = {
+        let list = state
+            .download_list
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        list.all()
+            .iter()
+            .map(|d| d.read().unwrap_or_else(|e| e.into_inner()).info_hash_hex())
+            .collect()
+    };
+
+    let map = state.command_map.clone();
+    let cmd = command_name.to_string();
+    let arg_obj = Object::create_list_with(args);
+
+    let res = tokio::task::spawn_blocking(move || {
+        let map = map.read().unwrap_or_else(|e| e.into_inner());
+        map.call_command(&cmd, &arg_obj, &Target::None, true)
+    })
+    .await;
+
+    match res {
+        Ok(Ok(_)) => {
+            let list = state
+                .download_list
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
+
+            let found = list
+                .all()
+                .iter()
+                .find(|d| {
+                    let guard = d.read().unwrap_or_else(|e| e.into_inner());
+                    !before_hashes.contains(&guard.info_hash_hex())
+                })
+                .cloned()
+                .or_else(|| {
+                    if let Some(pos) = source_or_data.find("urn:btih:") {
+                        let hash_part = &source_or_data[pos + 9..];
+                        let hex_str: String = hash_part
+                            .chars()
+                            .take_while(|c| c.is_ascii_hexdigit())
+                            .collect();
+                        if let Some(hs) = lt_common::HashString::from_hex(&hex_str) {
+                            return list.find(&hs);
+                        }
+                    }
+                    list.all().last().cloned()
+                });
+
+            if let Some(dl) = found {
+                {
+                    let mut guard = dl.write().unwrap_or_else(|e| e.into_inner());
+                    if let Some(dir) = payload
+                        .download_dir
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|d| !d.is_empty())
+                    {
+                        guard.set_directory(dir);
+                    }
+                    if let Some(cat) = payload
+                        .category
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|c| !c.is_empty())
+                    {
+                        guard.custom_set("1", cat);
+                    }
+                }
+                let guard = dl.read().unwrap_or_else(|e| e.into_inner());
+                Json(AddTorrentResponse {
+                    success: true,
+                    hash: guard.info_hash_hex(),
+                    name: guard.name().to_string(),
+                    error: String::new(),
+                })
+            } else {
+                Json(AddTorrentResponse {
+                    success: true,
+                    hash: String::new(),
+                    name: String::new(),
+                    error: String::new(),
+                })
+            }
+        }
+        Ok(Err(e)) => Json(AddTorrentResponse {
+            success: false,
+            hash: String::new(),
+            name: String::new(),
+            error: format!("Failed to load torrent: {e}"),
+        }),
+        Err(e) => Json(AddTorrentResponse {
+            success: false,
+            hash: String::new(),
+            name: String::new(),
+            error: format!("Task execution failed: {e}"),
+        }),
+    }
+}

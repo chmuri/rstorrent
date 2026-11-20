@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-20
+
+### Added
+- **Terminal & CLI Configuration Management** (`crates/rstorrent/src/lib.rs`, `crates/rstorrent/src/toml_config.rs`, `crates/rstorrent/src/cli.rs`):
+  - CLI subcommand suite: `rstorrent config show`, `rstorrent config get <key>`, `rstorrent config set <key> <value>` / `<key=value>`, and `rstorrent config validate`.
+  - Non-breaking CLI integration via positional arguments; full compatibility with existing integration tests.
+  - Dot-delimited TOML key traversal (`get_toml_value`, `set_toml_value`) supporting all top-level and nested sections (`network`, `storage`, `protocol`, `dht`, `rpc`, `logging`, `metrics`, `tiering`, `rss`, `webui`).
+  - Added `-c` and `--config` argument support for specifying target configuration files.
+  - Dedicated integration test suite in `crates/rstorrent/tests/test_cli_config.rs`.
+- **Full `rstorrent.toml` Daemon Settings in Web UI** (`ui/src/pages/settings.rs`, `ui/src/state/api.rs`, `ui/src/state/store.rs`):
+  - Overhauled Settings page with a clean 3-tab architecture:
+    1. **Client UI**: API connection parameters, dark/light themes, accent swatches (Indigo, Emerald, Rose, Cyan), UI density, animation toggles, state JSON export, and local storage reset.
+    2. **Daemon Config (`rstorrent.toml`)**: Structured visual Bento cards covering every daemon configuration option (Network & Limits, Storage & Paths, BitTorrent Protocol & Encryption, DHT, RPC & WebUI, Logging, Prometheus Metrics, Multi-tier Storage, and RSS Automation).
+    3. **Raw TOML Editor**: Direct in-browser syntax editor with live reload, validation, file export, and instant persistence.
+  - Dual save modes: *Apply to Runtime (In-Memory)* and *Save to rstorrent.toml*.
+- **Interactive "+ New Torrent" Modal** (`ui/src/components/ui/add_torrent_modal.rs`, `ui/src/components/layout/header.rs`, `crates/rstorrent/src/webui/rest.rs`):
+  - Connected the header `+ New Torrent` button to a modal dialog.
+  - Dual input modes: Magnet links / HTTP URLs and `.torrent` file upload via drag-and-drop or file picker.
+  - Base64 encoding for `.torrent` payloads in browser via HTML5 FileReader.
+  - Configurable download destination path, category/tag (`d.custom1`), and immediate start toggle.
+  - Added `/api/torrents/add` REST endpoint with token authorization, validation, and demo mode simulation.
+
 ## [0.24.1] - 2026-11-20
 
 ### Added

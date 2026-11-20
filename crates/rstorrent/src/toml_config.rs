@@ -955,6 +955,73 @@ impl RtorrentTomlConfig {
     }
 }
 
+/// Helper for getting a dotted key from a TOML string/value
+pub fn get_toml_value(toml_str: &str, key_path: &str) -> Option<String> {
+    let value: toml::Value = toml::from_str(toml_str).ok()?;
+    let mut current = &value;
+    for part in key_path.split('.') {
+        match current {
+            toml::Value::Table(table) => {
+                current = table.get(part)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(match current {
+        toml::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    })
+}
+
+/// Helper for setting a dotted key in a TOML string and returning the updated TOML string
+pub fn set_toml_value(toml_str: &str, key_path: &str, new_val_str: &str) -> Result<String, String> {
+    let mut value: toml::Value = if toml_str.trim().is_empty() {
+        toml::Value::Table(toml::map::Map::new())
+    } else {
+        toml::from_str(toml_str).map_err(|e| format!("Invalid TOML: {e}"))?
+    };
+
+    let parts: Vec<&str> = key_path.split('.').collect();
+    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) {
+        return Err("Invalid or empty key path".into());
+    }
+
+    let mut current = &mut value;
+    for &part in &parts[..parts.len() - 1] {
+        if !current.is_table() {
+            *current = toml::Value::Table(toml::map::Map::new());
+        }
+        let table = current.as_table_mut().unwrap();
+        if !table.contains_key(part) {
+            table.insert(part.to_string(), toml::Value::Table(toml::map::Map::new()));
+        }
+        current = table.get_mut(part).unwrap();
+    }
+
+    let last = parts[parts.len() - 1];
+    let parsed_val: toml::Value = if let Ok(b) = new_val_str.parse::<bool>() {
+        toml::Value::Boolean(b)
+    } else if let Ok(i) = new_val_str.parse::<i64>() {
+        toml::Value::Integer(i)
+    } else if let Ok(f) = new_val_str.parse::<f64>() {
+        toml::Value::Float(f)
+    } else {
+        toml::Value::String(new_val_str.to_string())
+    };
+
+    if let toml::Value::Table(table) = current {
+        table.insert(last.to_string(), parsed_val);
+    } else {
+        return Err("Target parent is not a TOML table".into());
+    }
+
+    let serialized =
+        toml::to_string_pretty(&value).map_err(|e| format!("Serialization error: {e}"))?;
+    let _validated: RtorrentTomlConfig =
+        toml::from_str(&serialized).map_err(|e| format!("Config validation error: {e}"))?;
+    Ok(serialized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1330,5 +1397,36 @@ mod tests {
         assert!(reparsed.rss.enabled.is_none());
         assert!(reparsed.rss.refresh_interval_secs.is_none());
         assert!(reparsed.rss.max_response_mb.is_none());
+    }
+
+    #[test]
+    fn test_get_and_set_toml_value() {
+        let original = r#"
+            [network]
+            port = 6881
+            download_throttle_kb = 1000
+
+            [storage]
+            directory = "~/Downloads"
+        "#;
+
+        assert_eq!(
+            get_toml_value(original, "network.port").as_deref(),
+            Some("6881")
+        );
+        assert_eq!(
+            get_toml_value(original, "storage.directory").as_deref(),
+            Some("~/Downloads")
+        );
+        assert_eq!(get_toml_value(original, "network.missing"), None);
+
+        let updated = set_toml_value(original, "network.download_throttle_kb", "5000").unwrap();
+        assert_eq!(
+            get_toml_value(&updated, "network.download_throttle_kb").as_deref(),
+            Some("5000")
+        );
+
+        let updated2 = set_toml_value(&updated, "dht.mode", "on").unwrap();
+        assert_eq!(get_toml_value(&updated2, "dht.mode").as_deref(), Some("on"));
     }
 }

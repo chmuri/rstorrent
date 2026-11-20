@@ -52,7 +52,7 @@ pub struct Cli {
     pub no_rc: bool,
 
     /// Specify config file location
-    #[arg(short = 'c', value_name = "CONFIG_FILE")]
+    #[arg(short = 'c', long = "config", value_name = "CONFIG_FILE")]
     pub config_file: Option<String>,
 
     /// Run as daemon without interactive TUI

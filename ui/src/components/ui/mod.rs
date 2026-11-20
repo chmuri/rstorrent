@@ -1,3 +1,4 @@
+pub mod add_torrent_modal;
 pub mod badge;
 pub mod bento_card;
 pub mod button;
@@ -7,6 +8,7 @@ pub mod skeleton;
 pub mod sparkline;
 pub mod toast;
 
+pub use add_torrent_modal::AddTorrentModal;
 pub use badge::{status_kind, Badge, BadgeKind};
 pub use bento_card::BentoCard;
 pub use button::{Button, ButtonVariant};

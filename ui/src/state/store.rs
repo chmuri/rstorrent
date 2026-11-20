@@ -63,6 +63,160 @@ pub struct CommandResponse {
     pub error: String,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct NetworkTomlConfig {
+    pub port_range: Option<String>,
+    pub port: Option<u16>,
+    pub bind_address: Option<String>,
+    pub local_address: Option<String>,
+    pub enable_upnp: Option<bool>,
+    pub enable_utp: Option<bool>,
+    pub proxy: Option<String>,
+    pub download_throttle_kb: Option<u64>,
+    pub upload_throttle_kb: Option<u64>,
+    pub max_uploads: Option<u32>,
+    pub max_downloads: Option<u32>,
+    pub max_peers: Option<u32>,
+    pub max_peers_seed: Option<u32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct StorageTomlConfig {
+    pub directory: Option<String>,
+    pub session: Option<String>,
+    pub watch_directory: Option<String>,
+    pub disk_threads: Option<usize>,
+    pub max_open_files: Option<usize>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ProtocolTomlConfig {
+    pub encryption: Option<String>,
+    pub peer_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RpcTomlConfig {
+    pub scgi_port: Option<u16>,
+    pub scgi_socket: Option<String>,
+    pub grpc_port: Option<u16>,
+    pub grpc_socket: Option<String>,
+    pub scgi_token: Option<String>,
+    pub grpc_token: Option<String>,
+    pub grpc_tls_cert: Option<String>,
+    pub grpc_tls_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DhtTomlConfig {
+    pub mode: Option<String>,
+    pub port: Option<u16>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LoggingTomlConfig {
+    pub level: Option<String>,
+    pub file: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MetricsTomlConfig {
+    pub addr: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WebuiTomlConfig {
+    pub addr: Option<String>,
+    pub token: Option<String>,
+    pub tls_cert: Option<String>,
+    pub tls_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TierTomlItem {
+    pub name: String,
+    pub path: String,
+    pub capacity_gb: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TierRuleTomlItem {
+    pub from: u8,
+    pub to: u8,
+    pub min_ratio: Option<f64>,
+    pub time_on_tier_secs: Option<u64>,
+    pub is_complete: Option<bool>,
+    pub min_uploaded_bytes: Option<u64>,
+    pub inactive_secs: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TieringTomlConfig {
+    pub enabled: Option<bool>,
+    pub check_interval: Option<u64>,
+    #[serde(default)]
+    pub tiers: Vec<TierTomlItem>,
+    #[serde(default)]
+    pub rules: Vec<TierRuleTomlItem>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RssTomlConfig {
+    pub enabled: Option<bool>,
+    pub refresh_interval_secs: Option<u64>,
+    pub max_items_per_feed: Option<usize>,
+    pub request_timeout_secs: Option<u64>,
+    pub max_response_mb: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DaemonConfig {
+    #[serde(default)]
+    pub network: NetworkTomlConfig,
+    #[serde(default)]
+    pub storage: StorageTomlConfig,
+    #[serde(default)]
+    pub protocol: ProtocolTomlConfig,
+    #[serde(default)]
+    pub rpc: RpcTomlConfig,
+    #[serde(default)]
+    pub dht: DhtTomlConfig,
+    #[serde(default)]
+    pub logging: LoggingTomlConfig,
+    #[serde(default)]
+    pub metrics: MetricsTomlConfig,
+    #[serde(default)]
+    pub webui: WebuiTomlConfig,
+    #[serde(default)]
+    pub tiering: TieringTomlConfig,
+    #[serde(default)]
+    pub rss: RssTomlConfig,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DaemonConfigResponse {
+    pub config: DaemonConfig,
+    pub toml: String,
+    pub config_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AddTorrentPayload {
+    pub source: Option<String>,
+    pub torrent_file_base64: Option<String>,
+    pub download_dir: Option<String>,
+    pub start_immediately: bool,
+    pub category: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AddTorrentResult {
+    pub success: bool,
+    pub hash: String,
+    pub name: String,
+    pub error: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemStatus {
     Healthy,
@@ -299,6 +453,7 @@ pub struct AppState {
     pub sort_desc: RwSignal<bool>,
     pub time_range: RwSignal<TimeRange>,
     pub selected_hashes: RwSignal<Vec<String>>,
+    pub add_torrent_modal_open: RwSignal<bool>,
 }
 
 impl AppState {
@@ -351,6 +506,7 @@ impl AppState {
             sort_desc: RwSignal::new(true),
             time_range: RwSignal::new(TimeRange::FifteenMin),
             selected_hashes: RwSignal::new(Vec::new()),
+            add_torrent_modal_open: RwSignal::new(false),
         }
     }
 

@@ -164,14 +164,7 @@ pub fn Header() -> impl IntoView {
                     }
                         .into_any()
                     on_click=Callback::new(move |()| {
-                        match state.connection.get() {
-                            ConnectionMode::Demo => crate::state::api::create_demo_item(state),
-                            _ => state.push_toast(
-                                ToastKind::Info,
-                                "New Torrent",
-                                "Adding torrents via RPC/CLI is not exposed in the web UI yet",
-                            ),
-                        }
+                        state.add_torrent_modal_open.set(true);
                     })
                 />
             </div>

@@ -4,14 +4,14 @@ Welcome to the **rstorrent** wiki!
 
 `rstorrent` is a modern, high-performance, memory-safe BitTorrent client and engine written from scratch in pure Rust. It is a drop-in companion to the classic rTorrent ecosystem — same command surface over XML-RPC/SCGI and gRPC — while adding modern capabilities: uTP (BEP 29) with LEDBAT congestion control, BEP 52 v2/hybrid Merkle torrents, UPnP IGD / NAT-PMP port forwarding, DHT with BEP 51, a TOML configuration system, a lock-free asynchronous I/O engine with sharded disk workers, a native Web UI, and a next-generation terminal user interface.
 
-Current release: **v0.23.0**. Licensed under GPL-2.0-or-later.
+Current release: **v0.25.0**. Licensed under GPL-2.0-or-later.
 
 ---
 
 ## Wiki Pages
 
 - **[Configuration Guide](Configuration-Guide)** — the three config layers (`rstorrent.toml`, `.rtorrent.rc`, Lua), file lookup order, full TOML reference, command namespaces, schedules, and environment variables.
-- **[CLI Reference](CLI-Reference)** — every `rstorrent` and `rstorrent-tui` flag, config precedence, signals, and environment variables.
+- **[CLI Reference](CLI-Reference)** — every `rstorrent` and `rstorrent-tui` flag, configuration commands (`show`, `get`, `set`, `validate`), config precedence, signals, and environment variables.
 - **[Terminal UI & Keybindings](Terminal-UI-and-Keybindings)** — the two shipped terminal surfaces, views, layout, inspector, themes, and mouse support.
 - **[Keyboard Shortcuts](Keyboard-Shortcuts)** — complete, source-verified key tables for both surfaces.
 - **[Protocol Support & Performance](Protocol-Support-and-Performance)** — the BEP implementation matrix, transports (MSE, UPnP, NAT-PMP, SOCKS5/HTTP), uTP/LEDBAT, and known limitations.
@@ -19,7 +19,8 @@ Current release: **v0.23.0**. Licensed under GPL-2.0-or-later.
 - **[Architecture & Algorithms](Architecture-and-Algorithms)** — piece selection, sharded disk pool, BEP 52 Merkle verification, throttling, and choke heuristics.
 - **[gRPC & Remote Control](gRPC-and-Remote-Control)** — headless daemon mode, the three gRPC services, connection security, and client integrations.
 - **[XML-RPC & SCGI](XML-RPC-and-SCGI)** — listeners, netstring framing, codecs, authentication, the command surface, and compatibility stubs.
-- **[Web UI](WebUI)** — the opt-in native Web UI: REST + WebSocket API, authentication, and TLS.
+- **[Web UI](WebUI)** — the opt-in native Web UI: REST + WebSocket API, authentication, settings tabs, torrent addition modal, and TLS.
+- **[RSS Auto-Downloads](RSS)** — feed tracking, regex and episode filters, auto-downloads, and REST API.
 
 ---
 

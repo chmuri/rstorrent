@@ -381,6 +381,12 @@ rstorrent -c /path/to/rstorrent.toml      # explicit config
 rstorrent -n                              # no config file
 rstorrent --webui-addr 127.0.0.1:8080 --webui-token change-me
 rstorrent --metrics-addr 127.0.0.1:9090
+
+# Configuration inspection, editing, and validation subcommands:
+rstorrent config show                     # display full configuration
+rstorrent config get network.port         # query a specific setting
+rstorrent config set network.port 6882    # update a setting in rstorrent.toml
+rstorrent config validate                 # validate syntax and schema integrity
 ```
 
 Torrent arguments accept file paths, `data:` URIs, magnet links, and HTTP(S)
@@ -395,7 +401,14 @@ The daemon ships an opt-in native Web UI: an axum REST + WebSocket backend servi
 an embedded [Leptos](https://leptos.dev/) WebAssembly single-page app (Tailwind v4,
 compiled with Trunk and embedded into the binary at compile time — no external
 assets or CDN). It provides a torrent explorer, inspector, analytics dashboard,
-settings, command palette, and live WebSocket updates.
+RSS feed manager, full daemon settings, command palette, live WebSocket updates,
+and an interactive **+ New Torrent** modal supporting magnet links, HTTP URLs, and
+drag-and-drop `.torrent` file uploads.
+
+The **Settings** page features three specialized views:
+- **Client UI**: Appearance, themes, accent colors, density, animations, connection settings, and state export.
+- **Daemon Config (`rstorrent.toml`)**: Structured visual Bento cards for all engine settings (network limits, storage directories, protocol/encryption, DHT, RPC/WebUI, logging, metrics, tiering, and RSS).
+- **Raw TOML Editor**: Direct syntax-highlighted editor with validation and live reload.
 Enable it with `--webui-addr` / `--webui-token` or the `[webui]` TOML table:
 
 ```bash

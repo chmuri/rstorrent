@@ -30,4 +30,5 @@ web-sys = { version = "0.3", features = [
   "CssStyleDeclaration", "DomRect", "ScrollToOptions", "ScrollBehavior",
   "NodeList", "HtmlCollection", "DomTokenList", "Performance", "Navigator",
   "Blob", "BlobPropertyBag", "MediaQueryList", "DocumentFragment",
+  "File", "FileList", "FileReader", "ProgressEvent", "DragEvent", "DataTransfer",
 ] }

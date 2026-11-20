@@ -143,6 +143,7 @@ fn presented_token(req: &Request) -> Option<String> {
 pub fn router(state: WebuiState) -> Router {
     let api = Router::new()
         .route("/torrents", get(rest::list_torrents))
+        .route("/torrents/add", post(rest::add_torrent))
         .route("/torrents/{hash}", get(rest::get_torrent))
         .route("/torrents/{hash}/start", post(rest::start_torrent))
         .route("/torrents/{hash}/stop", post(rest::stop_torrent))
@@ -533,6 +534,33 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], json!(true));
+    }
+
+    #[tokio::test]
+    async fn add_torrent_requires_auth_and_validates_input() {
+        let state = test_state(Some("secret"));
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                "/api/torrents/add",
+                None,
+                &json!({ "source": "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let (status, body) = send(
+            state,
+            post_json("/api/torrents/add", Some("secret"), &json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("either source URL/magnet or torrent_file_base64"));
     }
 
     #[test]

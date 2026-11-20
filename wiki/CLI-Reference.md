@@ -11,9 +11,34 @@ Two binaries ship with the project:
 
 ```
 rstorrent [OPTIONS] [FILES]...
+rstorrent [OPTIONS] config <show|get|set|validate> [ARGS]...
 ```
 
-There are no subcommands. Torrent files, magnet links and URLs given as positional arguments are loaded **started** at startup. `data:` URIs with base64-bencoded metainfo are also accepted.
+Torrent files, magnet links and URLs given as positional arguments are loaded **started** at startup. `data:` URIs with base64-bencoded metainfo are also accepted.
+
+### Configuration Management Commands
+
+`rstorrent` provides built-in commands to inspect, query, update, and validate `rstorrent.toml` directly from the terminal without launching the daemon or TUI:
+
+```bash
+# Display entire configuration (or default template if file does not exist)
+rstorrent config show
+rstorrent -c /custom/path.toml config show
+
+# Query a specific dot-delimited configuration key
+rstorrent config get network.port
+rstorrent config get storage.directory
+rstorrent config get dht.mode
+
+# Set or update configuration keys (supports key value or key=value syntax)
+rstorrent config set network.port 6882
+rstorrent config set network.download_throttle_kb=5000
+rstorrent config set dht.mode=auto
+
+# Validate TOML syntax and schema integrity
+rstorrent config validate
+rstorrent -c /custom/path.toml config validate
+```
 
 ### Options
 
@@ -27,7 +52,7 @@ There are no subcommands. Torrent files, magnet links and URLs given as position
 | `--proxy` | `URL` | Outbound peer proxy: `socks5://`, `socks5h://`, `http://`, `https://`. |
 | `-s` | `DIR` | Session directory. |
 | `-n` | — | Do not load any config file. Also skips TOML-only features (metrics, Web UI, log file). |
-| `-c` | `FILE` | Explicit config file (`.toml` or `.rc`); overrides the [search order](Configuration-Guide#file-lookup-order). |
+| `-c`, `--config` | `FILE` | Explicit config file (`.toml` or `.rc`); overrides the [search order](Configuration-Guide#file-lookup-order). |
 | `--daemon` | — | Run headless without the TUI. |
 | `--grpc-port` | `PORT` | Open a gRPC TCP server. A bare port binds `127.0.0.1`. |
 | `--grpc-socket` | `PATH` | Open a gRPC Unix socket (`~/` expanded). |

@@ -53,6 +53,33 @@ See the [CLI Reference](CLI-Reference) for the full flag list.
 
 ---
 
+## Managing Configuration via CLI & Web UI
+
+### CLI Configuration Commands
+You can view, query, update, and validate `rstorrent.toml` directly using the `rstorrent config` command family:
+```bash
+# Print current configuration
+rstorrent config show
+
+# Get a setting
+rstorrent config get network.port
+rstorrent config get storage.directory
+
+# Set a setting (persists to file and validates types)
+rstorrent config set network.port 6882
+rstorrent config set network.download_throttle_kb=5000
+
+# Validate configuration file
+rstorrent config validate
+```
+
+### Web UI Configuration
+In the Web UI, navigate to the **Settings** view:
+- **Daemon Config (`rstorrent.toml`)**: Visual forms and sliders for all network, storage, protocol, DHT, RPC, logging, metrics, tiering, and RSS settings. Apply in-memory or save directly to `rstorrent.toml`.
+- **Raw TOML Editor**: Direct in-browser editor with syntax validation, reload, and export options.
+
+---
+
 ## TOML Reference (`rstorrent.toml`)
 
 All keys are optional; an unset key keeps its runtime default.

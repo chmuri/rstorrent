@@ -1075,3 +1075,213 @@ fn demo_tick(state: AppState, rng: &mut Lcg) {
         }
     }
 }
+
+pub async fn fetch_daemon_config(
+    base_url: &str,
+    token: &str,
+) -> Result<DaemonConfigResponse, String> {
+    let base = base_url.trim_end_matches('/');
+    fetch_json::<DaemonConfigResponse>(base, token, "/api/config")
+        .await
+        .map_err(|err| format!("{err}"))
+}
+
+pub async fn update_daemon_config(
+    base_url: &str,
+    token: &str,
+    config: Option<DaemonConfig>,
+    toml: Option<String>,
+    save_file: bool,
+) -> Result<CommandResponse, String> {
+    let base = base_url.trim_end_matches('/');
+    let url = format!("{base}/api/config");
+    let mut request = Request::post(&url);
+    if !token.is_empty() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let body = serde_json::json!({
+        "config": config,
+        "toml": toml,
+        "save_file": save_file,
+    });
+    let response = request
+        .json(&body)
+        .map_err(|err| format!("Serialization error: {err}"))?
+        .send()
+        .await
+        .map_err(|err| format!("Request failed: {err}"))?;
+    if !response.ok() {
+        return Err(format!("Server returned HTTP {}", response.status()));
+    }
+    response
+        .json::<CommandResponse>()
+        .await
+        .map_err(|err| format!("Invalid payload: {err}"))
+}
+
+#[allow(dead_code)]
+pub async fn save_daemon_config_file(
+    base_url: &str,
+    token: &str,
+) -> Result<CommandResponse, String> {
+    let base = base_url.trim_end_matches('/');
+    let url = format!("{base}/api/config/save");
+    let mut request = Request::post(&url);
+    if !token.is_empty() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|err| format!("Request failed: {err}"))?;
+    if !response.ok() {
+        return Err(format!("Server returned HTTP {}", response.status()));
+    }
+    response
+        .json::<CommandResponse>()
+        .await
+        .map_err(|err| format!("Invalid payload: {err}"))
+}
+
+pub async fn add_torrent(
+    state: AppState,
+    payload: AddTorrentPayload,
+) -> Result<AddTorrentResult, String> {
+    if state.connection.get() == ConnectionMode::Live {
+        let base = state.api_base_url.get();
+        let token = state.api_token.get();
+        let url = format!("{}/api/torrents/add", base.trim_end_matches('/'));
+        let mut request = Request::post(&url);
+        if !token.is_empty() {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
+        let body = serde_json::json!({
+            "source": payload.source,
+            "torrent_file_base64": payload.torrent_file_base64,
+            "download_dir": payload.download_dir,
+            "start_immediately": payload.start_immediately,
+            "category": payload.category,
+        });
+        let outcome = async {
+            let response = request
+                .json(&body)
+                .map_err(|err| format!("Serialization failed: {err}"))?
+                .send()
+                .await
+                .map_err(|err| format!("Request failed: {err}"))?;
+            if !response.ok() {
+                return Err(format!("Server returned HTTP {}", response.status()));
+            }
+            response
+                .json::<AddTorrentResult>()
+                .await
+                .map_err(|err| format!("Invalid response: {err}"))
+        }
+        .await;
+
+        match outcome {
+            Ok(res) if res.success => {
+                let name = if res.name.is_empty() {
+                    "New Torrent".to_string()
+                } else {
+                    res.name.clone()
+                };
+                state.push_toast(
+                    ToastKind::Success,
+                    "Torrent added",
+                    format!("{name} queued successfully"),
+                );
+                state.push_event(
+                    ToastKind::Success,
+                    format!("Added: {name}"),
+                    Some(res.hash.clone()),
+                );
+                spawn_local(async move {
+                    if let Ok(items) = fetch_items(&base, &token).await {
+                        state.items.set(items);
+                    }
+                });
+                Ok(res)
+            }
+            Ok(res) => {
+                let msg = if res.error.is_empty() {
+                    "Failed to add torrent".to_string()
+                } else {
+                    res.error.clone()
+                };
+                state.push_toast(ToastKind::Error, "Add torrent failed", msg.clone());
+                Err(msg)
+            }
+            Err(e) => {
+                state.push_toast(ToastKind::Error, "Add torrent failed", e.clone());
+                Err(e)
+            }
+        }
+    } else {
+        // Demo mode
+        let name = payload
+            .source
+            .as_deref()
+            .and_then(|s| {
+                if s.starts_with("magnet:") {
+                    s.split("&dn=").nth(1).and_then(|dn| dn.split('&').next())
+                } else {
+                    s.rsplit('/').next()
+                }
+            })
+            .filter(|n| !n.is_empty())
+            .unwrap_or("Custom Added Torrent")
+            .to_string();
+
+        let hash: String = (0..40).map(|i| format!("{:x}", (i * 7 + 3) % 16)).collect();
+        let now = (js_sys::Date::now() / 1000.0) as u64;
+        let item = TorrentItem {
+            hash: hash.clone(),
+            name: name.clone(),
+            size_bytes: 2 * 1024 * 1024 * 1024,
+            completed_bytes: 0,
+            up_rate: 0,
+            down_rate: if payload.start_immediately {
+                5 * 1024 * 1024
+            } else {
+                0
+            },
+            up_total: 0,
+            down_total: 0,
+            state: if payload.start_immediately {
+                "Downloading".to_string()
+            } else {
+                "Paused".to_string()
+            },
+            is_active: payload.start_immediately,
+            is_complete: false,
+            is_hash_checking: false,
+            priority: 2,
+            directory: payload
+                .download_dir
+                .unwrap_or_else(|| "/downloads".to_string()),
+            category: payload.category.unwrap_or_default(),
+            message: String::new(),
+            state_changed: now,
+            started: if payload.start_immediately { now } else { 0 },
+            finished: 0,
+        };
+        state.items.update(|list| list.insert(0, item));
+        state.push_toast(
+            ToastKind::Success,
+            "Torrent added (Demo)",
+            format!("{name} created"),
+        );
+        state.push_event(
+            ToastKind::Success,
+            format!("Added (Demo): {name}"),
+            Some(hash.clone()),
+        );
+        Ok(AddTorrentResult {
+            success: true,
+            hash,
+            name,
+            error: String::new(),
+        })
+    }
+}

@@ -46,6 +46,10 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    if handle_cli_config(&cli)? {
+        return Ok(());
+    }
+
     signals::install_panic_hook();
 
     let is_interactive =
@@ -512,4 +516,130 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     println!("rstorrent shutdown completed cleanly.");
 
     Ok(())
+}
+
+fn resolve_config_path(cli: &Cli) -> Option<std::path::PathBuf> {
+    cli.config_file
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .or_else(|| find_config_file(cli.no_rc))
+}
+
+fn handle_cli_config(cli: &Cli) -> Result<bool, Box<dyn std::error::Error>> {
+    let is_config_cmd = cli.files.first().map(|s| s.as_str()) == Some("config");
+    let sub = if is_config_cmd {
+        cli.files.get(1).map(|s| s.as_str())
+    } else {
+        None
+    };
+
+    // 1. Show config
+    if sub == Some("show") {
+        let p = resolve_config_path(cli);
+        let content = if let Some(ref path) = p {
+            std::fs::read_to_string(path)?
+        } else {
+            RtorrentTomlConfig::template().generate_annotated_toml()
+        };
+        println!("{content}");
+        return Ok(true);
+    }
+
+    // 2. Get key
+    if sub == Some("get") {
+        if let Some(key) = cli.files.get(2).map(|s| s.as_str()) {
+            let p = resolve_config_path(cli);
+            let content = if let Some(ref path) = p {
+                std::fs::read_to_string(path)?
+            } else {
+                RtorrentTomlConfig::template().generate_annotated_toml()
+            };
+            match toml_config::get_toml_value(&content, key) {
+                Some(val) => {
+                    println!("{val}");
+                    return Ok(true);
+                }
+                None => {
+                    eprintln!("Configuration key '{key}' not found");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            eprintln!("Usage: rtorrent config get <section.key>");
+            std::process::exit(1);
+        }
+    }
+
+    // 3. Set key
+    if sub == Some("set") {
+        if let Some(arg) = cli.files.get(2).map(|s| s.as_str()) {
+            let (key, val) = if let Some((k, v)) = arg.split_once('=') {
+                (k.trim(), v.trim())
+            } else if let Some(v) = cli.files.get(3).map(|s| s.as_str()) {
+                (arg.trim(), v.trim())
+            } else {
+                eprintln!(
+                    "Usage: rtorrent config set <key=value> or rtorrent config set <key> <value>"
+                );
+                std::process::exit(1);
+            };
+
+            let target_path = resolve_config_path(cli)
+                .unwrap_or_else(|| std::path::PathBuf::from("rstorrent.toml"));
+            let existing = if target_path.exists() {
+                std::fs::read_to_string(&target_path)?
+            } else {
+                RtorrentTomlConfig::template().generate_annotated_toml()
+            };
+
+            match toml_config::set_toml_value(&existing, key, val) {
+                Ok(updated) => {
+                    std::fs::write(&target_path, updated)?;
+                    println!("Updated {key} = {val} in {}", target_path.display());
+                    return Ok(true);
+                }
+                Err(e) => {
+                    eprintln!("Failed to set {key}: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            eprintln!(
+                "Usage: rtorrent config set <key=value> or rtorrent config set <key> <value>"
+            );
+            std::process::exit(1);
+        }
+    }
+
+    // 4. Validate
+    if sub == Some("validate") {
+        let explicit_path = cli.files.get(2).map(|s| s.as_str());
+        let target_path = explicit_path
+            .map(std::path::PathBuf::from)
+            .or_else(|| resolve_config_path(cli))
+            .unwrap_or_else(|| std::path::PathBuf::from("rstorrent.toml"));
+
+        if !target_path.exists() {
+            eprintln!("Configuration file not found: {}", target_path.display());
+            std::process::exit(1);
+        }
+
+        let content = std::fs::read_to_string(&target_path)?;
+        match RtorrentTomlConfig::parse(&content) {
+            Ok(_) => {
+                println!("Configuration is valid: {}", target_path.display());
+                return Ok(true);
+            }
+            Err(e) => {
+                eprintln!(
+                    "Configuration syntax/validation error in {}: {}",
+                    target_path.display(),
+                    e
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+
+    Ok(false)
 }
