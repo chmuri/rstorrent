@@ -232,6 +232,7 @@ pub fn router(state: WebuiState) -> Router {
         .route("/torrents", get(rest::list_torrents))
         .route("/torrents/add", post(rest::add_torrent))
         .route("/torrents/{hash}", get(rest::get_torrent))
+        .route("/torrents/{hash}/trackers", get(rest::get_torrent_trackers))
         .route("/torrents/{hash}/start", post(rest::start_torrent))
         .route("/torrents/{hash}/stop", post(rest::stop_torrent))
         .route("/torrents/{hash}/remove", post(rest::remove_torrent))
@@ -609,6 +610,194 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// Insert a download whose announce-list yields one HTTP and one UDP
+    /// tracker, mirroring the ws-event test fixture.
+    fn state_with_trackers(token: Option<&str>) -> (WebuiState, String) {
+        let state = test_state(token);
+        let metadata = lt_engine::TorrentMetadata {
+            info_hash: lt_common::HashString::from_hex("4242424242424242424242424242424242424242")
+                .unwrap(),
+            name: "tracker-health".into(),
+            piece_length: 16384,
+            pieces: vec![0u8; 20],
+            num_pieces: 1,
+            total_size: 16384,
+            is_multi_file: false,
+            files: Vec::new(),
+            announce: None,
+            announce_list: vec![
+                vec!["http://tracker.example.com/announce".to_string()],
+                vec!["udp://tracker.example.org:6969/announce".to_string()],
+            ],
+            is_private: false,
+            is_meta_download: false,
+            v2: None,
+        };
+        let hash = metadata.info_hash.to_hex();
+        let download = Arc::new(RwLock::new(rt_core::Download::from_metadata(metadata)));
+        state.download_list.write().unwrap().insert(download);
+        (state, hash)
+    }
+
+    #[tokio::test]
+    async fn trackers_unknown_torrent_is_not_found() {
+        let hash = "0123456789abcdef0123456789abcdef01234567";
+        let (status, _) = send(
+            test_state(None),
+            get(&format!("/api/torrents/{}/trackers", hash), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, _) = send(
+            test_state(None),
+            get("/api/torrents/not-a-hash/trackers", None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn trackers_require_auth_like_other_reads() {
+        let (state, hash) = state_with_trackers(Some("s3cret"));
+        let (status, _) = send(
+            state,
+            get(&format!("/api/torrents/{}/trackers", hash), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn trackers_report_health_snapshot() {
+        let (state, hash) = state_with_trackers(None);
+        // Seed announce/scrape history on the first tracker so counters,
+        // timestamps and scrape stats are exercised end to end. The event and
+        // busy flags are driven through the public controller API: activating
+        // the controller and sending a start event marks the first usable
+        // tracker as requesting with latest_event = Started.
+        {
+            let list = state.download_list.read().unwrap();
+            let dl = list
+                .find(&lt_common::HashString::from_hex(&hash).unwrap())
+                .unwrap();
+            let mut guard = dl.write().unwrap();
+            let mut engine = guard.download_mut();
+            let controller = engine.tracker_controller_mut();
+            {
+                let st = controller.tracker_list.at_mut(0).unwrap().state_mut();
+                st.counters.success_counter = 3;
+                st.counters.success_time_last = 1_700_000_000;
+                st.counters.scrape_counter = 2;
+                st.scrape_complete = 40;
+                st.scrape_incomplete = 7;
+                st.scrape_downloaded = 120;
+            }
+            controller.enable(0);
+            controller.send_start_event();
+        }
+        let (status, body) = send(
+            state.clone(),
+            get(&format!("/api/torrents/{}/trackers", hash), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = body.as_array().expect("trackers response is an array");
+        assert_eq!(rows.len(), 2);
+
+        let http = &rows[0];
+        assert_eq!(http["url"], json!("http://tracker.example.com/announce"));
+        assert_eq!(http["tracker_type"], json!("http"));
+        assert_eq!(http["group"], json!(0));
+        assert_eq!(http["is_enabled"], json!(true));
+        assert_eq!(http["is_usable"], json!(true));
+        assert_eq!(http["is_in_use"], json!(true));
+        assert_eq!(http["is_busy"], json!(true));
+        assert_eq!(http["latest_event"], json!("started"));
+        assert_eq!(http["success_counter"], json!(3));
+        assert_eq!(http["failed_counter"], json!(0));
+        assert_eq!(http["success_time_last"], json!(1_700_000_000u64));
+        assert_eq!(http["failed_time_last"], json!(0));
+        assert_eq!(http["scrape_complete"], json!(40));
+        assert_eq!(http["scrape_incomplete"], json!(7));
+        assert_eq!(http["scrape_downloaded"], json!(120));
+        assert_eq!(http["scrape_counter"], json!(2));
+        assert_eq!(http["scrape_failed_counter"], json!(0));
+        assert!(http["normal_interval"].as_u64().unwrap() >= 600);
+        assert!(http["min_interval"].as_u64().unwrap() >= 300);
+        // success_time_last + normal_interval clamped to >= 600.
+        assert_eq!(
+            http["activity_time_next"].as_u64().unwrap(),
+            1_700_000_000 + http["normal_interval"].as_u64().unwrap().max(600)
+        );
+
+        let udp = &rows[1];
+        assert_eq!(udp["url"], json!("udp://tracker.example.org:6969/announce"));
+        assert_eq!(udp["tracker_type"], json!("udp"));
+        assert_eq!(udp["group"], json!(1));
+        assert_eq!(udp["is_in_use"], json!(false));
+        assert_eq!(udp["latest_event"], json!("none"));
+        assert_eq!(udp["success_counter"], json!(0));
+
+        // A failed announce flips the health fields: failed counters and the
+        // backoff-based activity_time_next, while the tracker stays usable.
+        {
+            let list = state.download_list.read().unwrap();
+            let dl = list
+                .find(&lt_common::HashString::from_hex(&hash).unwrap())
+                .unwrap();
+            let mut guard = dl.write().unwrap();
+            let mut engine = guard.download_mut();
+            let controller = engine.tracker_controller_mut();
+            // Pin the controller clock so failure timestamps are deterministic.
+            controller.set_cached_time(1_700_000_100);
+            controller.receive_failure(0, "connection timed out");
+        }
+        let (status, body) = send(
+            state,
+            get(&format!("/api/torrents/{}/trackers", hash), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let http = &body.as_array().unwrap()[0];
+        assert_eq!(http["is_busy"], json!(false));
+        assert_eq!(http["failed_counter"], json!(1));
+        assert_eq!(http["failed_time_last"], json!(1_700_000_100u64));
+        // min_interval defaults to 300, so the first retry backs off 5s.
+        assert_eq!(http["activity_time_next"], json!(1_700_000_105u64));
+    }
+
+    #[tokio::test]
+    async fn trackers_empty_list_returns_empty_array() {
+        let state = test_state(None);
+        let metadata = lt_engine::TorrentMetadata {
+            info_hash: lt_common::HashString::from_hex("4343434343434343434343434343434343434343")
+                .unwrap(),
+            name: "no-trackers".into(),
+            piece_length: 16384,
+            pieces: vec![0u8; 20],
+            num_pieces: 1,
+            total_size: 16384,
+            is_multi_file: false,
+            files: Vec::new(),
+            announce: None,
+            announce_list: Vec::new(),
+            is_private: false,
+            is_meta_download: false,
+            v2: None,
+        };
+        let hash = metadata.info_hash.to_hex();
+        let download = Arc::new(RwLock::new(rt_core::Download::from_metadata(metadata)));
+        state.download_list.write().unwrap().insert(download);
+        let (status, body) = send(
+            state,
+            get(&format!("/api/torrents/{}/trackers", hash), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!([]));
     }
 
     #[tokio::test]

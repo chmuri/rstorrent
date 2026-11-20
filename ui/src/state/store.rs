@@ -70,6 +70,59 @@ pub struct VersionInfo {
     pub uptime_seconds: u64,
 }
 
+/// Per-tracker health snapshot from `GET /api/torrents/{hash}/trackers`.
+/// Mirrors `webui::rest::TrackerStatus`; timestamps are unix seconds (0 = never).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TrackerInfo {
+    pub url: String,
+    pub tracker_type: String,
+    pub group: u32,
+    pub is_enabled: bool,
+    pub is_usable: bool,
+    pub is_in_use: bool,
+    pub is_busy: bool,
+    pub latest_event: String,
+    pub success_counter: u32,
+    pub failed_counter: u32,
+    pub normal_interval: u64,
+    pub min_interval: u64,
+    pub success_time_last: u64,
+    pub failed_time_last: u64,
+    pub activity_time_next: u64,
+    pub scrape_complete: u32,
+    pub scrape_incomplete: u32,
+    pub scrape_downloaded: u32,
+    pub scrape_counter: u32,
+    pub scrape_failed_counter: u32,
+}
+
+impl TrackerInfo {
+    /// Short host:port label for compact display.
+    pub fn host(&self) -> String {
+        let rest = self
+            .url
+            .split_once("://")
+            .map(|(_, r)| r)
+            .unwrap_or(&self.url);
+        rest.split('/').next().unwrap_or(rest).to_string()
+    }
+
+    /// Health classification for the status dot/badge.
+    pub fn health(&self) -> &'static str {
+        if !self.is_enabled {
+            "disabled"
+        } else if self.is_busy {
+            "busy"
+        } else if self.failed_counter > 0 && self.success_counter == 0 {
+            "failed"
+        } else if self.success_counter > 0 {
+            "ok"
+        } else {
+            "pending"
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CommandResponse {
     pub success: bool,

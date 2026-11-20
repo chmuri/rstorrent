@@ -80,6 +80,110 @@ pub async fn get_torrent(
     Ok(Json(convert::summary_from(&guard)))
 }
 
+/// Per-tracker health snapshot for `GET /api/torrents/{hash}/trackers`.
+///
+/// Field names mirror the `t.*` RPC commands (snake_case, like
+/// [`TorrentSummary`]). Timestamps are unix seconds; `0` means "never".
+/// The snapshot is taken under the same short-lived locks as `get_torrent`,
+/// reading the tracker controller directly so it stays independent of the
+/// summary conversion layer.
+#[derive(Debug, Serialize)]
+pub struct TrackerStatus {
+    pub url: String,
+    /// Protocol family: "http", "udp" or "dht".
+    pub tracker_type: &'static str,
+    pub group: u32,
+    pub is_enabled: bool,
+    pub is_usable: bool,
+    pub is_in_use: bool,
+    /// An announce or scrape request is in flight (includes starting requests,
+    /// matching the `t.is_busy` command).
+    pub is_busy: bool,
+    /// Last event sent: none/completed/started/stopped/scrape.
+    pub latest_event: &'static str,
+    pub success_counter: u32,
+    pub failed_counter: u32,
+    pub normal_interval: u64,
+    pub min_interval: u64,
+    pub success_time_last: u64,
+    pub failed_time_last: u64,
+    pub activity_time_next: u64,
+    pub scrape_complete: u32,
+    pub scrape_incomplete: u32,
+    pub scrape_downloaded: u32,
+    pub scrape_counter: u32,
+    pub scrape_failed_counter: u32,
+}
+
+pub async fn get_torrent_trackers(
+    State(state): State<WebuiState>,
+    Path(hash): Path<String>,
+) -> Result<Json<Vec<TrackerStatus>>, (StatusCode, String)> {
+    let hs = lt_common::HashString::from_hex(&hash)
+        .ok_or((StatusCode::BAD_REQUEST, "invalid info hash".to_string()))?;
+    let list = state
+        .download_list
+        .read()
+        .unwrap_or_else(|e| e.into_inner());
+    let dl = list
+        .find(&hs)
+        .ok_or((StatusCode::NOT_FOUND, "torrent not found".to_string()))?;
+    let guard = dl.read().unwrap_or_else(|e| e.into_inner());
+    let engine = guard.download();
+    let trackers = engine
+        .tracker_controller()
+        .tracker_list
+        .trackers
+        .iter()
+        .map(|tracker| {
+            let st = tracker.state();
+            // Derive the protocol from the URL exactly like
+            // `lt_tracker::Tracker::new` (and the rt-tui tracker window), so
+            // this crate needs no direct `lt-tracker` dependency for the enums.
+            let url = tracker.url();
+            let tracker_type = if url.starts_with("udp://") {
+                "udp"
+            } else if url.starts_with("dht://") {
+                "dht"
+            } else {
+                "http"
+            };
+            // Numeric TrackerEvent discriminants (0..4), mapped like the
+            // rt-tui tracker window's `event_label`.
+            let latest_event = match st.latest_event as i64 {
+                1 => "completed",
+                2 => "started",
+                3 => "stopped",
+                4 => "scrape",
+                _ => "none",
+            };
+            TrackerStatus {
+                url: url.to_string(),
+                tracker_type,
+                group: tracker.group(),
+                is_enabled: st.is_enabled(),
+                is_usable: tracker.is_usable(),
+                is_in_use: tracker.is_in_use(),
+                is_busy: tracker.is_requesting() || st.is_starting_request(),
+                latest_event,
+                success_counter: st.counters.success_counter,
+                failed_counter: st.counters.failed_counter,
+                normal_interval: st.normal_interval,
+                min_interval: st.min_interval,
+                success_time_last: st.counters.success_time_last,
+                failed_time_last: st.counters.failed_time_last,
+                activity_time_next: st.activity_time_next(),
+                scrape_complete: st.scrape_complete,
+                scrape_incomplete: st.scrape_incomplete,
+                scrape_downloaded: st.scrape_downloaded,
+                scrape_counter: st.counters.scrape_counter,
+                scrape_failed_counter: st.counters.scrape_failed_counter,
+            }
+        })
+        .collect();
+    Ok(Json(trackers))
+}
+
 pub async fn get_stats(State(state): State<WebuiState>) -> Json<SessionStats> {
     let stats = {
         let list = state

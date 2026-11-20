@@ -2623,6 +2623,27 @@ fn register_download_extended_commands(
         };
         Object::from(count)
     })?;
+    // Swarm totals reported by trackers (announce/scrape). Fall back to the
+    // locally connected counts until a tracker reports the swarm size, matching
+    // the web UI and gRPC summary semantics.
+    add_getter(map, download_list, "d.seeds_total", |dl| {
+        let eng = dl.download();
+        let connected = eng.seeder_peer_count() as i64;
+        let total = eng
+            .swarm_totals()
+            .map(|(s, _)| s as i64)
+            .unwrap_or(connected);
+        Object::from(total)
+    })?;
+    add_getter(map, download_list, "d.peers_total", |dl| {
+        let eng = dl.download();
+        let connected = eng.peer_count() as i64;
+        let total = eng
+            .swarm_totals()
+            .map(|(_, p)| p as i64)
+            .unwrap_or(connected);
+        Object::from(total)
+    })?;
     add_getter(map, download_list, "d.peers_accounted", |dl| {
         let count = if dl.is_hash_checking() {
             0

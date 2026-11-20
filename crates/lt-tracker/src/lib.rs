@@ -9,6 +9,7 @@
 pub mod client;
 pub mod controller;
 pub mod http;
+pub mod identity;
 pub mod list;
 pub mod state;
 pub mod tracker;
@@ -26,6 +27,7 @@ pub use http::{
     build_announce_url, uri_can_scrape, uri_generate_scrape_url, url_encode_bytes,
     HttpAnnounceResponse, HttpTrackerError,
 };
+pub use identity::{client_key, set_client_key};
 pub use list::TrackerList;
 pub use state::{TrackerCounters, TrackerEvent, TrackerFlags, TrackerParams, TrackerState};
 pub use tracker::{Tracker, TrackerType};
@@ -34,4 +36,4 @@ pub use udp::{
     ScrapeFileStats, ScrapeRequest, ScrapeResponse, UdpTrackerError, ACTION_ANNOUNCE,
     ACTION_CONNECT, ACTION_ERROR, ACTION_SCRAPE, MAGIC_CONNECTION_ID,
 };
-pub use udp_router::{CachedConnection, RandomEngine, UdpRouter};
+pub use udp_router::{CachedConnection, RandomEngine, SharedUdpRouter, UdpRouter};

@@ -1982,6 +1982,42 @@ impl Download {
         self.uploaded_bytes
     }
 
+    /// Best available swarm totals `(seeders, leechers)` reported by trackers
+    /// via announce responses or scrapes.
+    ///
+    /// Prefers a tracker that is currently in use; among candidates the largest
+    /// reported swarm wins (different trackers may see different subsets of the
+    /// same swarm). Returns `None` when no tracker has reported counts yet, so
+    /// callers can fall back to locally connected peer counts.
+    pub fn swarm_totals(&self) -> Option<(u32, u32)> {
+        let mut best_in_use: Option<(u32, u32)> = None;
+        let mut best_any: Option<(u32, u32)> = None;
+        for tracker in self.tracker_controller.tracker_list.trackers.iter() {
+            if !tracker.is_usable() {
+                continue;
+            }
+            let state = tracker.state();
+            let complete = state.scrape_complete;
+            let incomplete = state.scrape_incomplete;
+            if complete == 0 && incomplete == 0 {
+                continue;
+            }
+            let slot = if tracker.is_in_use() {
+                &mut best_in_use
+            } else {
+                &mut best_any
+            };
+            let replaces = match slot {
+                None => true,
+                Some((c, i)) => complete + incomplete > *c + *i,
+            };
+            if replaces {
+                *slot = Some((complete, incomplete));
+            }
+        }
+        best_in_use.or(best_any)
+    }
+
     pub fn downloaded_bytes(&self) -> u64 {
         self.downloaded_bytes
     }
@@ -3583,6 +3619,61 @@ mod tests {
         }
         assert!(download.is_seeder());
         download
+    }
+
+    #[test]
+    fn swarm_totals_prefers_in_use_tracker_and_reports_none_without_data() {
+        let mut download = Download::new(multi_piece_metadata(4, 2));
+        // No tracker has reported swarm counts yet.
+        assert_eq!(download.swarm_totals(), None);
+
+        {
+            let controller = download.tracker_controller_mut();
+            controller
+                .tracker_list
+                .insert(lt_tracker::tracker::Tracker::new(
+                    0,
+                    "http://a.example/announce".into(),
+                ));
+            controller
+                .tracker_list
+                .insert(lt_tracker::tracker::Tracker::new(
+                    1,
+                    "http://b.example/announce".into(),
+                ));
+        }
+
+        // Tracker 0: usable, not in use, small swarm.
+        // Tracker 1: in use (successful announce), larger swarm -> wins.
+        {
+            let controller = download.tracker_controller_mut();
+            let t0 = controller.tracker_list.at_mut(0).unwrap().state_mut();
+            t0.scrape_complete = 3;
+            t0.scrape_incomplete = 1;
+            let t1 = controller.tracker_list.at_mut(1).unwrap().state_mut();
+            t1.scrape_complete = 10;
+            t1.scrape_incomplete = 2;
+            t1.counters.success_counter = 1;
+        }
+        assert_eq!(download.swarm_totals(), Some((10, 2)));
+
+        // An in-use tracker beats a larger swarm reported by an unused one.
+        {
+            let controller = download.tracker_controller_mut();
+            let t0 = controller.tracker_list.at_mut(0).unwrap().state_mut();
+            t0.scrape_complete = 50;
+            t0.scrape_incomplete = 5;
+        }
+        assert_eq!(download.swarm_totals(), Some((10, 2)));
+
+        // Zero-count reports are ignored entirely.
+        {
+            let controller = download.tracker_controller_mut();
+            let t1 = controller.tracker_list.at_mut(1).unwrap().state_mut();
+            t1.scrape_complete = 0;
+            t1.scrape_incomplete = 0;
+        }
+        assert_eq!(download.swarm_totals(), Some((50, 5)));
     }
 
     #[test]

@@ -344,6 +344,16 @@ impl TrackerController {
             peers.len() as u32
         };
 
+        // A success recorded before the first clock tick would otherwise store
+        // timestamp 0 and leave the tracker permanently "due" (interval seconds
+        // after the Unix epoch). Floor the clock to the real time instead.
+        if self.current_time == 0 {
+            self.current_time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(1);
+            self.tracker_list.set_cached_time(self.current_time);
+        }
         let now = self.current_time;
         let promoted = self
             .tracker_list
@@ -367,6 +377,13 @@ impl TrackerController {
     }
 
     pub fn receive_failure(&mut self, index: usize, msg: &str) {
+        if self.current_time == 0 {
+            self.current_time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(1);
+            self.tracker_list.set_cached_time(self.current_time);
+        }
         let now = self.current_time;
         self.tracker_list.receive_failure(index, now);
         self.flags.insert(ControllerFlags::FAILURE_MODE);

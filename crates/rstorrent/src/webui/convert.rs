@@ -112,12 +112,15 @@ pub struct TorrentSummary {
 
 pub fn summary_from(download: &Download) -> TorrentSummary {
     let metadata = download.metadata();
-    let (seeds_connected, peers_connected) = {
+    let (seeds_connected, peers_connected, seeds_total, peers_total) = {
         let eng = download.download();
-        (eng.seeder_peer_count() as u32, eng.peer_count() as u32)
+        let sc = eng.seeder_peer_count() as u32;
+        let pc = eng.peer_count() as u32;
+        // Real swarm totals from tracker announce/scrape responses; fall back
+        // to connected counts until a tracker reports the swarm size.
+        let (st, pt) = eng.swarm_totals().unwrap_or((sc, pc));
+        (sc, pc, st, pt)
     };
-    let seeds_total = seeds_connected;
-    let peers_total = peers_connected;
     let chunks_hashed = download.chunks_hashed();
     let chunks_total = metadata.num_pieces as u32;
     let hash_progress_pct = if chunks_total > 0 {
@@ -215,7 +218,7 @@ pub fn stats_from(download_list: &DownloadList, map: &CommandMap) -> SessionStat
         down_total,
         active_torrents,
         total_torrents,
-        listen_port: command_i64(map, "network.listen.port") as u32,
+        listen_port: effective_listen_port(map),
         throttle_up_limit: command_i64(map, "throttle.global_up.max_rate"),
         throttle_down_limit: command_i64(map, "throttle.global_down.max_rate"),
         dht_active,
@@ -231,6 +234,32 @@ fn command_i64(map: &CommandMap, name: &str) -> i64 {
         .ok()
         .and_then(|obj| obj.as_value().ok())
         .unwrap_or(0)
+}
+
+/// The port the daemon actually listens on for peer connections.
+///
+/// `network.listen.port` alone reports the legacy default (6881) even when a
+/// `network.port_range` is configured; the runtime binds the first port of the
+/// range (see `Control::initialize`). Mirror that resolution here so the UI
+/// shows the reachable port instead of the unused default.
+fn effective_listen_port(map: &CommandMap) -> u32 {
+    let range_first = map
+        .call_command(
+            "network.port_range",
+            &Object::create_empty(),
+            &Target::None,
+            true,
+        )
+        .ok()
+        .and_then(|obj| obj.as_str().ok().map(|s| s.to_string()))
+        .and_then(|s| {
+            let first = s.split_once('-').map(|(f, _)| f).unwrap_or(&s);
+            first.trim().parse::<u16>().ok().filter(|&p| p != 0)
+        });
+    match range_first {
+        Some(p) => u32::from(p),
+        None => command_i64(map, "network.listen.port").max(0) as u32,
+    }
 }
 
 /// Build/version metadata, equivalent to the gRPC `VersionResponse`.

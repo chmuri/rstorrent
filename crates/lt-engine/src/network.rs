@@ -32,9 +32,10 @@ use lt_protocol::request_list::{
 };
 use lt_tracker::client::{
     announce_http_detailed, announce_udp_detailed_with_router, scrape_with_router, AnnounceParams,
+    ScrapeStats, TrackerAnnounceResult, TrackerClientError,
 };
 use lt_tracker::state::TrackerEvent;
-use lt_tracker::udp_router::UdpRouter;
+use lt_tracker::udp_router::SharedUdpRouter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
@@ -673,6 +674,16 @@ pub struct DownloadNetworkCoordinator {
     shutdown_rx: watch::Receiver<bool>,
 }
 
+/// Maximum stagger applied to a coordinator's first announce. Bulk session
+/// restore spawns thousands of coordinators at once; without jitter they would
+/// all hit the tracker concurrency limit simultaneously. Tests set this to 0.
+static ANNOUNCE_JITTER_MAX_MS: AtomicU64 = AtomicU64::new(30_000);
+
+/// Configures the upper bound of the first-announce stagger (milliseconds).
+pub fn set_announce_jitter_max_ms(ms: u64) {
+    ANNOUNCE_JITTER_MAX_MS.store(ms, Ordering::Relaxed);
+}
+
 impl DownloadNetworkCoordinator {
     pub fn new(
         download: Arc<Mutex<Download>>,
@@ -790,10 +801,53 @@ impl DownloadNetworkCoordinator {
             };
 
             let mut is_first_announce = true;
-            let mut udp_router = UdpRouter::new();
+            let udp_router = SharedUdpRouter::new();
             let mut connect_tasks: JoinSet<()> = JoinSet::new();
+            // Announces and scrapes run as bounded background tasks so one slow
+            // or dead tracker can never stall the whole coordinator loop. The
+            // sets persist across iterations; results are drained as they land.
+            let mut announce_tasks: JoinSet<(
+                usize,
+                String,
+                Result<TrackerAnnounceResult, TrackerClientError>,
+            )> = JoinSet::new();
+            let mut scrape_tasks: JoinSet<(
+                usize,
+                String,
+                Result<ScrapeStats, TrackerClientError>,
+            )> = JoinSet::new();
             let mut dht_private_state: Option<bool> = None;
             let mut dht_announced = false;
+            let mut dht_first_lookup_done = false;
+
+            // Initialize the controller clock before the first announce. Without
+            // this, a success recorded while `cached_time` is still 0 produces
+            // `activity_time_next() == interval` (a 1970 timestamp), leaving the
+            // tracker permanently "due" and flooding the concurrency semaphore.
+            {
+                let now_secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or_default();
+                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                dl.tracker_controller_mut().set_cached_time(now_secs);
+            }
+
+            // Stagger the first announce across torrents restored in bulk so a
+            // session with tens of thousands of downloads does not hit the
+            // tracker concurrency limit all at once. Peer discovery and DHT are
+            // not delayed by this jitter.
+            let announce_not_before = {
+                let max_ms = ANNOUNCE_JITTER_MAX_MS.load(Ordering::Relaxed);
+                if max_ms == 0 {
+                    Instant::now()
+                } else {
+                    let mut bytes = [0u8; 2];
+                    let _ = getrandom::fill(&mut bytes);
+                    let jitter_ms = (u16::from_ne_bytes(bytes) as u64) % max_ms.max(1);
+                    Instant::now() + Duration::from_millis(jitter_ms)
+                }
+            };
 
             info!(
                 torrent = %download.lock().unwrap_or_else(|e| e.into_inner()).name(),
@@ -803,12 +857,7 @@ impl DownloadNetworkCoordinator {
             while !*shutdown_rx.borrow() {
                 let (
                     info_hash,
-                    total_size,
-                    downloaded,
-                    uploaded,
-                    trackers,
                     is_active,
-                    is_done,
                     is_private,
                     is_meta_download,
                     max_peers,
@@ -817,24 +866,10 @@ impl DownloadNetworkCoordinator {
                 ) = {
                     let dl = download.lock().unwrap_or_else(|e| e.into_inner());
                     let meta = dl.metadata().clone();
-                    // Use the live controller list so extra trackers inserted
-                    // at runtime and per-tracker state changes are respected.
-                    let tracker_urls: Vec<String> = dl
-                        .tracker_controller()
-                        .tracker_list
-                        .trackers
-                        .iter()
-                        .map(|tracker| tracker.url().to_string())
-                        .collect();
                     (
                         *dl.info_hash(),
-                        meta.total_size,
-                        dl.downloaded_bytes(),
-                        dl.uploaded_bytes(),
-                        tracker_urls,
                         dl.state() == &crate::download::DownloadState::Downloading
                             || dl.state() == &crate::download::DownloadState::Seeding,
-                        dl.is_done(),
                         meta.is_private,
                         meta.is_meta_download,
                         dl.client_config().max_peers() as usize,
@@ -870,7 +905,7 @@ impl DownloadNetworkCoordinator {
                     p.reap_stale(Instant::now(), connect_timeout + Duration::from_secs(30));
                 }
 
-                let dht_lookup_due = is_first_announce;
+                let dht_lookup_due = !dht_first_lookup_done;
 
                 // Merge peers learned out-of-band (PEX and future sources).
                 let discovered = download
@@ -887,167 +922,292 @@ impl DownloadNetworkCoordinator {
                     }
                 }
 
-                if is_active {
-                    let left = if is_done {
-                        0
-                    } else {
-                        total_size.saturating_sub(downloaded)
+                // Apply finished announce results before scheduling new ones so
+                // interval/backoff state is fresh and REQUESTING flags clear.
+                while let Some(joined) = announce_tasks.try_join_next() {
+                    let Ok((_, url, result)) = joined else {
+                        continue;
                     };
-                    let event = if is_first_announce {
-                        is_first_announce = false;
-                        Some("started".to_string())
-                    } else {
-                        None
-                    };
+                    match result {
+                        Ok(result) => {
+                            // Merge peers before taking the download lock so the
+                            // pool and download mutexes are never held nested.
+                            let added = pool.lock().unwrap_or_else(|e| e.into_inner()).merge(
+                                result.peers.clone(),
+                                PeerSource::Tracker,
+                                is_private,
+                            );
+                            debug!(
+                                url = %url,
+                                count = result.peers.len(),
+                                added,
+                                "Tracker announce succeeded"
+                            );
 
-                    let announce_event = if event.is_some() {
-                        TrackerEvent::Started
-                    } else {
-                        TrackerEvent::None
-                    };
+                            let mut addresses = AddressList::new();
+                            for peer in &result.peers {
+                                addresses.push(SocketAddress::from(*peer));
+                            }
 
-                    let params = AnnounceParams {
-                        info_hash,
-                        peer_id: our_peer_id,
-                        port: listen_port,
-                        uploaded,
-                        downloaded,
-                        left,
-                        numwant: 50,
-                        event,
-                    };
-
-                    let cached_time = download
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .tracker_controller()
-                        .cached_time();
-
-                    for tracker_url in &trackers {
-                        if *shutdown_rx.borrow() {
-                            break;
-                        }
-
-                        // Respect the controller's per-tracker interval and
-                        // backoff. A failed tracker is retried only when its
-                        // failed_time_next() deadline has been reached.
-                        let should_send = {
                             let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
                             let controller = dl.tracker_controller_mut();
-                            if let Some(index) = controller.tracker_list.find_url(tracker_url) {
-                                let due = controller
-                                    .tracker_list
-                                    .at(index)
-                                    .map(|tracker| {
-                                        if !tracker.is_usable() {
-                                            return false;
-                                        }
-
-                                        let state = tracker.state();
-                                        // A request queued through the
-                                        // controller (manual announce/start)
-                                        // must be completed by this loop even
-                                        // though it is already marked busy.
-                                        let queued_announce = tracker.is_requesting()
-                                            && state.latest_event != TrackerEvent::Scrape;
-                                        let scheduled = !tracker.is_requesting()
-                                            && state.activity_time_next() <= cached_time;
-
-                                        queued_announce || scheduled
-                                    })
-                                    .unwrap_or(false);
-
-                                if due {
-                                    controller.tracker_list.send_event(index, announce_event);
-                                    controller
-                                        .tracker_list
-                                        .at(index)
-                                        .map(|tracker| tracker.is_requesting())
-                                        .unwrap_or(false)
-                                } else {
-                                    false
+                            // The list may have changed while the request was in
+                            // flight (promotion reorders trackers); resolve by URL.
+                            let Some(index) = controller.tracker_list.find_url(&url) else {
+                                continue;
+                            };
+                            {
+                                let state =
+                                    controller.tracker_list.at_mut(index).unwrap().state_mut();
+                                if let Some(interval) = result.interval {
+                                    state.set_normal_interval(interval);
                                 }
-                            } else {
-                                false
+                                if let Some(min_interval) = result.min_interval {
+                                    state.set_min_interval(min_interval);
+                                }
+                                if let (Some(complete), Some(incomplete)) =
+                                    (result.complete, result.incomplete)
+                                {
+                                    state.scrape_complete = complete;
+                                    state.scrape_incomplete = incomplete;
+                                }
                             }
-                        };
 
-                        if !should_send {
-                            continue;
+                            controller.receive_success(index, &addresses);
                         }
-
-                        debug!(url = %tracker_url, "Announcing to tracker...");
-
-                        let result = if tracker_url.starts_with("udp://") {
-                            announce_udp_detailed_with_router(tracker_url, &params, &mut udp_router)
-                                .await
-                        } else if tracker_url.starts_with("http://")
-                            || tracker_url.starts_with("https://")
-                        {
-                            announce_http_detailed(tracker_url, &params).await
-                        } else {
-                            // Unknown tracker schemes never reach this point in
-                            // practice; leave them for the controller's state.
-                            continue;
-                        };
-
-                        match result {
-                            Ok(result) => {
-                                info!(
-                                    url = %tracker_url,
-                                    count = result.peers.len(),
-                                    "Discovered peers from tracker"
-                                );
-
-                                let added = pool.lock().unwrap_or_else(|e| e.into_inner()).merge(
-                                    result.peers.clone(),
-                                    PeerSource::Tracker,
-                                    is_private,
-                                );
-                                debug!(added, "Merged tracker peers into pool");
-
-                                let mut addresses = AddressList::new();
-                                for peer in &result.peers {
-                                    addresses.push(SocketAddress::from(*peer));
-                                }
-
-                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
-                                let controller = dl.tracker_controller_mut();
-                                if let Some(index) = controller.tracker_list.find_url(tracker_url) {
-                                    {
-                                        let state = controller
-                                            .tracker_list
-                                            .at_mut(index)
-                                            .unwrap()
-                                            .state_mut();
-                                        if let Some(interval) = result.interval {
-                                            state.set_normal_interval(interval);
-                                        }
-                                        if let Some(min_interval) = result.min_interval {
-                                            state.set_min_interval(min_interval);
-                                        }
-                                        if let (Some(complete), Some(incomplete)) =
-                                            (result.complete, result.incomplete)
-                                        {
-                                            state.scrape_complete = complete;
-                                            state.scrape_incomplete = incomplete;
-                                        }
-                                    }
-
-                                    controller.receive_success(index, &addresses);
-                                }
-                            }
-                            Err(e) => {
-                                debug!(url = %tracker_url, error = %e, "Announce failed");
-                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
-                                let controller = dl.tracker_controller_mut();
-                                if let Some(index) = controller.tracker_list.find_url(tracker_url) {
-                                    controller.receive_failure(index, &e.to_string());
-                                }
+                        Err(e) => {
+                            debug!(url = %url, error = %e, "Announce failed");
+                            let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                            let controller = dl.tracker_controller_mut();
+                            if let Some(index) = controller.tracker_list.find_url(&url) {
+                                controller.receive_failure(index, &e.to_string());
                             }
                         }
                     }
+                }
 
+                // Apply finished scrape results (same reasoning as announces).
+                while let Some(joined) = scrape_tasks.try_join_next() {
+                    let Ok((_, url, result)) = joined else {
+                        continue;
+                    };
+                    let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                    let controller = dl.tracker_controller_mut();
+                    let Some(index) = controller.tracker_list.find_url(&url) else {
+                        continue;
+                    };
+                    match result {
+                        Ok(stats) => {
+                            controller.receive_scrape_stats(index, stats);
+                        }
+                        Err(err) => {
+                            debug!(url = %url, error = %err, "Tracker scrape failed");
+                            if err.is_scrape_unsupported() {
+                                controller.receive_scrape_unsupported(index, &err.to_string());
+                            } else {
+                                controller
+                                    .receive_scrape_failure_with_reason(index, &err.to_string());
+                            }
+                        }
+                    }
+                }
+
+                if is_active && Instant::now() >= announce_not_before {
+                    // Select due trackers under one short lock. Explicit events
+                    // queued through the controller (started/completed/stopped or
+                    // a manual update) are honored with their own event type;
+                    // regular periodic updates pick at most one tracker per tier
+                    // (earliest deadline), matching BEP 12 tier semantics and
+                    // keeping request volume sustainable for huge sessions.
+                    let first = is_first_announce;
+                    let chosen: Vec<(usize, String, TrackerEvent)> = {
+                        let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                        let controller = dl.tracker_controller_mut();
+                        let cached_time = controller.cached_time();
+                        let mut chosen: Vec<(usize, String, TrackerEvent)> = Vec::new();
+                        let mut best_per_group: HashMap<u32, (usize, u64, String)> = HashMap::new();
+                        for (i, tracker) in controller.tracker_list.trackers.iter().enumerate() {
+                            if !tracker.is_usable() {
+                                continue;
+                            }
+                            let state = tracker.state();
+                            if tracker.is_requesting() {
+                                // A request queued through the controller must be
+                                // completed by this loop even though it is already
+                                // marked busy; scrapes are driven separately.
+                                if state.latest_event != TrackerEvent::Scrape {
+                                    chosen.push((i, tracker.url().to_string(), state.latest_event));
+                                }
+                                continue;
+                            }
+                            if state.activity_time_next() > cached_time {
+                                continue;
+                            }
+                            let group = tracker.group();
+                            let deadline = state.activity_time_next();
+                            let replace = match best_per_group.get(&group) {
+                                Some((_, d, _)) => deadline < *d,
+                                None => true,
+                            };
+                            if replace {
+                                best_per_group
+                                    .insert(group, (i, deadline, tracker.url().to_string()));
+                            }
+                        }
+                        for (_, (i, _, url)) in best_per_group {
+                            chosen.push((i, url, TrackerEvent::None));
+                        }
+                        // Recover explicit events whose per-tracker REQUESTING
+                        // mark was lost to a concurrent scrape result or close.
+                        // Controller flags stay authoritative until a success
+                        // clears them, so re-queue on the appropriate trackers.
+                        let flags = controller.flags;
+                        let already = |chosen: &[(usize, String, TrackerEvent)], i: usize| {
+                            chosen.iter().any(|(ci, _, _)| *ci == i)
+                        };
+                        if flags.contains(lt_tracker::ControllerFlags::SEND_COMPLETED) {
+                            for (i, t) in controller.tracker_list.trackers.iter().enumerate() {
+                                if t.is_in_use() && !t.is_requesting() && !already(&chosen, i) {
+                                    chosen.push((i, t.url().to_string(), TrackerEvent::Completed));
+                                }
+                            }
+                        }
+                        if flags.contains(lt_tracker::ControllerFlags::SEND_STOP) {
+                            for (i, t) in controller.tracker_list.trackers.iter().enumerate() {
+                                if t.is_in_use() && !t.is_requesting() && !already(&chosen, i) {
+                                    chosen.push((i, t.url().to_string(), TrackerEvent::Stopped));
+                                }
+                            }
+                        }
+                        if flags.contains(lt_tracker::ControllerFlags::SEND_START) {
+                            if let Some((i, t)) = controller
+                                .tracker_list
+                                .trackers
+                                .iter()
+                                .enumerate()
+                                .find(|(_, t)| t.is_usable() && !t.is_requesting())
+                            {
+                                if !already(&chosen, i) {
+                                    chosen.push((i, t.url().to_string(), TrackerEvent::Started));
+                                }
+                            }
+                        }
+                        if flags.contains(lt_tracker::ControllerFlags::SEND_UPDATE)
+                            && chosen.is_empty()
+                        {
+                            // A manual announce must go out even when no tracker
+                            // is due yet (mirrors controller.send_update_event).
+                            if let Some((i, t)) = controller
+                                .tracker_list
+                                .trackers
+                                .iter()
+                                .enumerate()
+                                .find(|(_, t)| t.can_request_state())
+                            {
+                                chosen.push((i, t.url().to_string(), TrackerEvent::None));
+                            }
+                        }
+                        // Mark REQUESTING and record the event actually sent. The
+                        // very first regular update carries "started"; explicit
+                        // queued events keep their own type.
+                        for (i, _, ev) in &mut chosen {
+                            if first && *ev == TrackerEvent::None {
+                                *ev = TrackerEvent::Started;
+                            }
+                            controller.tracker_list.send_event(*i, *ev);
+                        }
+                        chosen
+                    };
+
+                    let mut spawned_any = false;
+                    for (index, url, ev) in chosen {
+                        if *shutdown_rx.borrow() {
+                            break;
+                        }
+                        // send_event can no-op on state races; only spawn when the
+                        // tracker is actually marked for this event and the index
+                        // still addresses the same URL (runtime inserts/promotions
+                        // can reorder the list).
+                        let ready = {
+                            let dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                            dl.tracker_controller()
+                                .tracker_list
+                                .at(index)
+                                .map(|t| {
+                                    t.url() == url
+                                        && t.is_requesting()
+                                        && t.state().latest_event == ev
+                                })
+                                .unwrap_or(false)
+                        };
+                        if !ready {
+                            continue;
+                        }
+                        let event_str = match ev {
+                            TrackerEvent::Started => Some("started".to_string()),
+                            TrackerEvent::Completed => Some("completed".to_string()),
+                            TrackerEvent::Stopped => Some("stopped".to_string()),
+                            _ => None,
+                        };
+                        let dl_ref = Arc::clone(&download);
+                        let router = udp_router.clone();
+                        announce_tasks.spawn(async move {
+                            // Fresh counters at send time: a task may wait for a
+                            // concurrency permit, and stale values would misreport
+                            // transfer accounting to the tracker.
+                            let (uploaded, downloaded, left) = {
+                                let dl = dl_ref.lock().unwrap_or_else(|e| e.into_inner());
+                                let done = dl.is_done();
+                                let downloaded = dl.downloaded_bytes();
+                                let total = dl.metadata().total_size;
+                                (
+                                    dl.uploaded_bytes(),
+                                    downloaded,
+                                    if done {
+                                        0
+                                    } else {
+                                        total.saturating_sub(downloaded)
+                                    },
+                                )
+                            };
+                            let params = AnnounceParams {
+                                info_hash,
+                                peer_id: our_peer_id,
+                                port: listen_port,
+                                uploaded,
+                                downloaded,
+                                left,
+                                numwant: 50,
+                                event: event_str,
+                                key: lt_tracker::client_key(),
+                            };
+                            debug!(url = %url, "Announcing to tracker...");
+                            let work = async {
+                                if url.starts_with("udp://") {
+                                    announce_udp_detailed_with_router(&url, &params, &router).await
+                                } else if url.starts_with("http://") || url.starts_with("https://")
+                                {
+                                    announce_http_detailed(&url, &params).await
+                                } else {
+                                    Err(TrackerClientError::UnsupportedScheme(url.clone()))
+                                }
+                            };
+                            // Hard bound including permit waits; UDP also has its
+                            // own internal deadline.
+                            let result = match timeout(Duration::from_secs(45), work).await {
+                                Ok(r) => r,
+                                Err(_) => Err(TrackerClientError::Timeout),
+                            };
+                            (index, url, result)
+                        });
+                        spawned_any = true;
+                    }
+                    if spawned_any {
+                        is_first_announce = false;
+                    }
+                }
+
+                if is_active {
                     if let Some(dht) = &dht {
                         // A configured but stopped/off controller has no
                         // socket; tracker peers remain the only source.
@@ -1106,6 +1266,7 @@ impl DownloadNetworkCoordinator {
                             }
                         }
                     }
+                    dht_first_lookup_done = true;
 
                     // Single connect scheduler: fill every free slot from the
                     // merged pool, regardless of which source produced the peer.
@@ -1186,32 +1347,19 @@ impl DownloadNetworkCoordinator {
                             continue;
                         };
 
-                        match scrape_with_router(&url, info_hash, &mut udp_router).await {
-                            Ok(stats) => {
-                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
-                                let controller = dl.tracker_controller_mut();
-                                if let Some(index) = controller.tracker_list.find_url(&url) {
-                                    controller.receive_scrape_stats(index, stats);
-                                } else {
-                                    controller.receive_scrape_failure(index);
-                                }
-                            }
-                            Err(err) => {
-                                debug!(url = %url, error = %err, "Tracker scrape failed");
-                                let mut dl = download.lock().unwrap_or_else(|e| e.into_inner());
-                                let controller = dl.tracker_controller_mut();
-                                let index = controller.tracker_list.find_url(&url).unwrap_or(index);
-
-                                if err.is_scrape_unsupported() {
-                                    controller.receive_scrape_unsupported(index, &err.to_string());
-                                } else {
-                                    controller.receive_scrape_failure_with_reason(
-                                        index,
-                                        &err.to_string(),
-                                    );
-                                }
-                            }
-                        }
+                        let router = udp_router.clone();
+                        scrape_tasks.spawn(async move {
+                            let result = match timeout(
+                                Duration::from_secs(45),
+                                scrape_with_router(&url, info_hash, &router),
+                            )
+                            .await
+                            {
+                                Ok(r) => r,
+                                Err(_) => Err(TrackerClientError::Timeout),
+                            };
+                            (index, url, result)
+                        });
                     }
                 }
 
@@ -1239,12 +1387,135 @@ impl DownloadNetworkCoordinator {
                 } else {
                     base_sleep_secs
                 };
+                // While requests are in flight, wake up promptly so results are
+                // applied and REQUESTING flags clear without waiting a full cycle.
+                let sleep_secs = if announce_tasks.is_empty() && scrape_tasks.is_empty() {
+                    sleep_secs
+                } else {
+                    sleep_secs.min(5)
+                };
+                // Explicit events queued through the controller (completed,
+                // stopped, manual announce) must not wait for the next polling
+                // cycle; wake up almost immediately to transmit them.
+                let has_queued_announce = {
+                    let dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                    let controller = dl.tracker_controller();
+                    controller
+                        .flags
+                        .intersects(lt_tracker::controller::TrackerController::MASK_SEND)
+                        || controller.tracker_list.trackers.iter().any(|t| {
+                            t.is_requesting() && t.state().latest_event != TrackerEvent::Scrape
+                        })
+                };
+                let sleep_secs = if has_queued_announce {
+                    sleep_secs.min(1)
+                } else {
+                    sleep_secs
+                };
+
+                // Sleep in 1s chunks so explicitly queued controller events
+                // (completed/stopped/manual announce) are picked up promptly
+                // even when they arrive mid-cycle, without paying a full
+                // iteration every second.
+                let sleep_fut = async {
+                    let mut left = sleep_secs;
+                    while left > 0 {
+                        let chunk = left.min(1);
+                        sleep(Duration::from_secs(chunk)).await;
+                        left = left.saturating_sub(chunk);
+                        if left == 0 {
+                            break;
+                        }
+                        let queued = {
+                            let dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                            let controller = dl.tracker_controller();
+                            controller
+                                .flags
+                                .intersects(lt_tracker::controller::TrackerController::MASK_SEND)
+                                || controller.tracker_list.trackers.iter().any(|t| {
+                                    t.is_requesting()
+                                        && t.state().latest_event != TrackerEvent::Scrape
+                                })
+                        };
+                        if queued {
+                            break;
+                        }
+                    }
+                };
 
                 tokio::select! {
                     _ = shutdown_rx.changed() => {
                         break;
                     }
-                    _ = sleep(Duration::from_secs(sleep_secs)) => {}
+                    _ = sleep_fut => {}
+                }
+            }
+
+            // Best-effort "stopped" announces so trackers drop the peer promptly
+            // and finalize transfer accounting instead of waiting for a timeout.
+            // Bounded: shutdown must not hang on an unreachable tracker.
+            {
+                let info_hash = *download
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .info_hash();
+                let stopped_targets: Vec<(usize, String)> = {
+                    let dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                    dl.tracker_controller()
+                        .tracker_list
+                        .trackers
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, t)| t.is_in_use())
+                        .map(|(i, t)| (i, t.url().to_string()))
+                        .collect()
+                };
+                if !stopped_targets.is_empty() {
+                    let (uploaded, downloaded, left) = {
+                        let dl = download.lock().unwrap_or_else(|e| e.into_inner());
+                        let done = dl.is_done();
+                        let downloaded = dl.downloaded_bytes();
+                        let total = dl.metadata().total_size;
+                        (
+                            dl.uploaded_bytes(),
+                            downloaded,
+                            if done {
+                                0
+                            } else {
+                                total.saturating_sub(downloaded)
+                            },
+                        )
+                    };
+                    let router = udp_router.clone();
+                    let _ = timeout(Duration::from_secs(5), async {
+                        let mut stop_tasks: JoinSet<()> = JoinSet::new();
+                        for (_index, url) in stopped_targets {
+                            let router = router.clone();
+                            let params = AnnounceParams {
+                                info_hash,
+                                peer_id: our_peer_id,
+                                port: listen_port,
+                                uploaded,
+                                downloaded,
+                                left,
+                                numwant: 0,
+                                event: Some("stopped".to_string()),
+                                key: lt_tracker::client_key(),
+                            };
+                            stop_tasks.spawn(async move {
+                                if url.starts_with("udp://") {
+                                    let _ =
+                                        announce_udp_detailed_with_router(&url, &params, &router)
+                                            .await;
+                                } else if url.starts_with("http://") || url.starts_with("https://")
+                                {
+                                    let _ = announce_http_detailed(&url, &params).await;
+                                }
+                            });
+                        }
+                        while stop_tasks.join_next().await.is_some() {}
+                    })
+                    .await;
                 }
             }
 
@@ -1257,6 +1528,10 @@ impl DownloadNetworkCoordinator {
             .await;
             connect_tasks.abort_all();
             while connect_tasks.join_next().await.is_some() {}
+            announce_tasks.abort_all();
+            while announce_tasks.join_next().await.is_some() {}
+            scrape_tasks.abort_all();
+            while scrape_tasks.join_next().await.is_some() {}
 
             // Flush verified pieces before the coordinator exits. This blocks,
             // so run it on a blocking pool rather than a reactor worker, only if needed.
@@ -3181,7 +3456,9 @@ async fn run_peer_session<R, W>(
                             }
                         }
                         PeerMessage::Piece { index, begin, data } => {
-                            info!(peer = %peer_addr, index, begin, size = data.len(), "Received Piece block!");
+                            // Per-block logging at INFO floods daemon logs (millions
+                            // of lines per hour on busy swarms); keep it at DEBUG.
+                            debug!(peer = %peer_addr, index, begin, size = data.len(), "Received Piece block");
 
                             // Record downloaded bytes and rate on the peer connection
                             {

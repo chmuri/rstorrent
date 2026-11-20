@@ -109,7 +109,8 @@ pub fn download_to_summary(download: &Download) -> TorrentSummary {
         },
         seeds_total: {
             let eng = download.download();
-            eng.seeder_peer_count() as u32
+            let connected = eng.seeder_peer_count() as u32;
+            eng.swarm_totals().map(|(s, _)| s).unwrap_or(connected)
         },
         peers_connected: {
             let eng = download.download();
@@ -117,7 +118,8 @@ pub fn download_to_summary(download: &Download) -> TorrentSummary {
         },
         peers_total: {
             let eng = download.download();
-            eng.peer_count() as u32
+            let connected = eng.peer_count() as u32;
+            eng.swarm_totals().map(|(_, p)| p).unwrap_or(connected)
         },
     }
 }

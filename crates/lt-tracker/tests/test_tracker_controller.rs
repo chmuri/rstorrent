@@ -146,3 +146,52 @@ fn test_scrape_scheduling() {
         1
     );
 }
+
+#[test]
+fn success_before_first_tick_does_not_leave_tracker_permanently_due() {
+    // Regression: coordinators used to announce during startup before the first
+    // `tick()` set the controller clock. A success recorded at cached_time == 0
+    // stored success_time_last = 0, making activity_time_next() == interval (a
+    // 1970 timestamp) so the tracker was always "due" and flooded the request
+    // semaphore. The clock must floor to real time instead.
+    let mut list = TrackerList::new();
+    list.insert(Tracker::new(0, "http://example.com/announce".to_string()));
+    let mut controller = TrackerController::new(list);
+    controller.enable(0);
+    assert_eq!(controller.cached_time(), 0);
+
+    let empty = AddressList::new();
+    controller.receive_success(0, &empty);
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let state = controller.tracker_list.at(0).unwrap().state();
+    assert!(state.counters.success_time_last >= now.saturating_sub(5));
+    assert!(state.counters.success_time_last <= now + 5);
+    // Next activity is one normal interval in the future, not in 1970.
+    let next = state.activity_time_next();
+    assert!(next > now);
+    assert!(next <= now + state.normal_interval + 5);
+    assert!(controller.seconds_to_next_timeout() > 0);
+}
+
+#[test]
+fn failure_before_first_tick_floors_clock_too() {
+    let mut list = TrackerList::new();
+    list.insert(Tracker::new(0, "http://example.com/announce".to_string()));
+    let mut controller = TrackerController::new(list);
+    controller.enable(0);
+
+    controller.receive_failure(0, "connection refused");
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let state = controller.tracker_list.at(0).unwrap().state();
+    assert!(state.counters.failed_time_last >= now.saturating_sub(5));
+    // Backoff stays relative (5s for the first failure), not epoch-anchored.
+    assert_eq!(controller.seconds_to_next_timeout(), 5);
+}

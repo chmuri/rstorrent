@@ -17,21 +17,39 @@ use crate::udp::{
     ScrapeRequest, ScrapeResponse, UdpTrackerError, ACTION_ANNOUNCE, ACTION_CONNECT, ACTION_ERROR,
     ACTION_SCRAPE,
 };
-use crate::udp_router::UdpRouter;
+use crate::udp_router::{SharedUdpRouter, UdpRouter};
 
 /// Shared router used by the convenience UDP entry points. Every transaction
 /// gets an ID reserved in this router, so concurrent tracker operations never
-/// accept each other's responses.
-fn global_udp_router() -> &'static tokio::sync::Mutex<UdpRouter> {
-    static ROUTER: OnceLock<tokio::sync::Mutex<UdpRouter>> = OnceLock::new();
-    ROUTER.get_or_init(|| tokio::sync::Mutex::new(UdpRouter::new()))
+/// accept each other's responses. The handle locks only for bookkeeping, never
+/// across a network exchange.
+fn global_udp_router() -> &'static SharedUdpRouter {
+    static ROUTER: OnceLock<SharedUdpRouter> = OnceLock::new();
+    ROUTER.get_or_init(SharedUdpRouter::new)
 }
 
-/// Global concurrency limit for tracker requests to prevent exhausting sockets and DNS threads.
-fn tracker_concurrency_semaphore() -> &'static tokio::sync::Semaphore {
+/// Global concurrency limit for tracker announces. Sized so that a large
+/// session (tens of thousands of torrents) can keep its periodic announces
+/// flowing even when some trackers are slow; individual operations are still
+/// bounded by [`UDP_OP_DEADLINE`] and the HTTP client timeout, so permits
+/// cannot be held indefinitely.
+fn announce_concurrency_semaphore() -> &'static tokio::sync::Semaphore {
+    static SEMAPHORE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(128))
+}
+
+/// Scrapes get their own, smaller budget so a scrape storm can never starve
+/// announces (which carry the upload/download accounting).
+fn scrape_concurrency_semaphore() -> &'static tokio::sync::Semaphore {
     static SEMAPHORE: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
     SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(32))
 }
+
+/// Hard wall-clock budget for one UDP announce/scrape operation, including
+/// DNS resolution, connection handshake, retries, backoff sleeps and any time
+/// spent waiting for a concurrency permit. BEP 15 backoff alone must never be
+/// able to pin a coordinator loop on a single dead tracker.
+const UDP_OP_DEADLINE: Duration = Duration::from_secs(30);
 
 /// In-memory cache for resolved UDP tracker hostnames to prevent thousands of redundant DNS lookups.
 fn tracker_dns_cache(
@@ -124,6 +142,9 @@ pub struct AnnounceParams {
     pub left: u64,
     pub numwant: i32,
     pub event: Option<String>,
+    /// Stable per-client key (BEP 7). Trackers use it to recognize the same
+    /// client across restarts/IP changes and to credit upload deltas.
+    pub key: u32,
 }
 
 /// Dispatches an announce request to either an HTTP/HTTPS or UDP tracker.
@@ -144,9 +165,7 @@ pub async fn announce_detailed(
     if url.starts_with("http://") || url.starts_with("https://") {
         announce_http_detailed(url, params).await
     } else if url.starts_with("udp://") {
-        let router = global_udp_router();
-        let mut router = router.lock().await;
-        announce_udp_detailed_with_router(url, params, &mut router).await
+        announce_udp_detailed_with_router(url, params, global_udp_router()).await
     } else {
         Err(TrackerClientError::UnsupportedScheme(url.to_string()))
     }
@@ -167,7 +186,7 @@ pub async fn announce_http_detailed(
     url: &str,
     params: &AnnounceParams,
 ) -> Result<TrackerAnnounceResult, TrackerClientError> {
-    let _permit = tracker_concurrency_semaphore()
+    let _permit = announce_concurrency_semaphore()
         .acquire()
         .await
         .map_err(|_| TrackerClientError::Timeout)?;
@@ -182,7 +201,7 @@ pub async fn announce_http_detailed(
         left: params.left,
         numwant: params.numwant,
         event: params.event.as_deref(),
-        key: 0x12345678,
+        key: params.key,
         compact: true,
     });
 
@@ -271,13 +290,23 @@ async fn bind_udp_socket(tracker_addr: SocketAddr) -> Result<UdpSocket, TrackerC
 /// errors. A tracker error packet is surfaced as a protocol failure. The
 /// timeout grows with `attempt`, providing the retry/backoff described by BEP
 /// 15.
+///
+/// A concurrency permit is held only for this single exchange (send + bounded
+/// receive), never for the backoff sleeps between attempts, so a dead tracker
+/// cannot pin permits while it backs off.
 async fn udp_exchange(
     socket: &UdpSocket,
     payload: &[u8],
     expected_tx: u32,
     expected_action: u32,
     attempt: u32,
+    semaphore: &tokio::sync::Semaphore,
 ) -> Result<Vec<u8>, TrackerClientError> {
+    let _permit = semaphore
+        .acquire()
+        .await
+        .map_err(|_| TrackerClientError::Timeout)?;
+
     socket.send(payload).await?;
 
     let wait = UdpRouter::retry_timeout(attempt);
@@ -330,8 +359,9 @@ async fn udp_exchange(
 
 async fn ensure_udp_connection(
     socket: &UdpSocket,
-    router: &mut UdpRouter,
+    router: &SharedUdpRouter,
     tracker_addr: &SocketAddress,
+    semaphore: &tokio::sync::Semaphore,
 ) -> Result<u64, TrackerClientError> {
     if let Some(connection_id) = router.get_connection_id(tracker_addr) {
         return Ok(connection_id);
@@ -344,7 +374,15 @@ async fn ensure_udp_connection(
         let transaction_id = router.allocate_transaction_id();
         let request = ConnectRequest::new(transaction_id).encode();
 
-        let result = udp_exchange(socket, &request, transaction_id, ACTION_CONNECT, attempt).await;
+        let result = udp_exchange(
+            socket,
+            &request,
+            transaction_id,
+            ACTION_CONNECT,
+            attempt,
+            semaphore,
+        )
+        .await;
 
         router.release_transaction_id(transaction_id);
 
@@ -377,16 +415,14 @@ pub async fn announce_udp(
     url: &str,
     params: &AnnounceParams,
 ) -> Result<Vec<SocketAddr>, TrackerClientError> {
-    let router = global_udp_router();
-    let mut router = router.lock().await;
-    announce_udp_with_router(url, params, &mut router).await
+    announce_udp_with_router(url, params, global_udp_router()).await
 }
 
-/// Announces to a UDP tracker using a caller-supplied [`UdpRouter`].
+/// Announces to a UDP tracker using a caller-supplied shared [`UdpRouter`].
 pub async fn announce_udp_with_router(
     url: &str,
     params: &AnnounceParams,
-    router: &mut UdpRouter,
+    router: &SharedUdpRouter,
 ) -> Result<Vec<SocketAddr>, TrackerClientError> {
     announce_udp_detailed_with_router(url, params, router)
         .await
@@ -394,16 +430,32 @@ pub async fn announce_udp_with_router(
 }
 
 /// Announces to a UDP tracker and returns the optional interval/swarm stats.
+///
+/// The whole operation (DNS, connect handshake, retries, backoff sleeps and
+/// permit waits) is bounded by [`UDP_OP_DEADLINE`] so one unreachable tracker
+/// can never stall the caller's announce loop indefinitely.
 pub async fn announce_udp_detailed_with_router(
     url: &str,
     params: &AnnounceParams,
-    router: &mut UdpRouter,
+    router: &SharedUdpRouter,
 ) -> Result<TrackerAnnounceResult, TrackerClientError> {
-    let _permit = tracker_concurrency_semaphore()
-        .acquire()
-        .await
-        .map_err(|_| TrackerClientError::Timeout)?;
+    match timeout(
+        UDP_OP_DEADLINE,
+        announce_udp_inner(url, params, router, announce_concurrency_semaphore()),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(TrackerClientError::Timeout),
+    }
+}
 
+async fn announce_udp_inner(
+    url: &str,
+    params: &AnnounceParams,
+    router: &SharedUdpRouter,
+    semaphore: &tokio::sync::Semaphore,
+) -> Result<TrackerAnnounceResult, TrackerClientError> {
     let tracker_addr = resolve_udp_tracker(url).await?;
     let tracker_address = SocketAddress::from(tracker_addr);
     let socket = bind_udp_socket(tracker_addr).await?;
@@ -419,10 +471,11 @@ pub async fn announce_udp_detailed_with_router(
     let mut last_error = TrackerClientError::Timeout;
 
     for attempt in 0..attempts {
-        let connection_id = match ensure_udp_connection(&socket, router, &tracker_address).await {
-            Ok(id) => id,
-            Err(err) => return Err(err),
-        };
+        let connection_id =
+            match ensure_udp_connection(&socket, router, &tracker_address, semaphore).await {
+                Ok(id) => id,
+                Err(err) => return Err(err),
+            };
 
         let transaction_id = router.allocate_transaction_id();
         let request = AnnounceRequest {
@@ -435,14 +488,21 @@ pub async fn announce_udp_detailed_with_router(
             uploaded: params.uploaded,
             event: event_code,
             ip_address: 0,
-            key: 0x12345678,
+            key: params.key,
             num_want: params.numwant,
             port: params.port,
         }
         .encode();
 
-        let result =
-            udp_exchange(&socket, &request, transaction_id, ACTION_ANNOUNCE, attempt).await;
+        let result = udp_exchange(
+            &socket,
+            &request,
+            transaction_id,
+            ACTION_ANNOUNCE,
+            attempt,
+            semaphore,
+        )
+        .await;
 
         router.release_transaction_id(transaction_id);
 
@@ -484,11 +544,11 @@ pub async fn scrape(url: &str, info_hash: HashString) -> Result<ScrapeStats, Tra
     }
 }
 
-/// Like [`scrape`], but uses a caller-supplied [`UdpRouter`] for UDP trackers.
+/// Like [`scrape`], but uses a caller-supplied shared router for UDP trackers.
 pub async fn scrape_with_router(
     url: &str,
     info_hash: HashString,
-    router: &mut UdpRouter,
+    router: &SharedUdpRouter,
 ) -> Result<ScrapeStats, TrackerClientError> {
     if url.starts_with("http://") || url.starts_with("https://") {
         scrape_http(url, info_hash).await
@@ -504,7 +564,7 @@ pub async fn scrape_http(
     url: &str,
     info_hash: HashString,
 ) -> Result<ScrapeStats, TrackerClientError> {
-    let _permit = tracker_concurrency_semaphore()
+    let _permit = scrape_concurrency_semaphore()
         .acquire()
         .await
         .map_err(|_| TrackerClientError::Timeout)?;
@@ -572,22 +632,34 @@ pub async fn scrape_udp(
     url: &str,
     info_hash: HashString,
 ) -> Result<ScrapeStats, TrackerClientError> {
-    let router = global_udp_router();
-    let mut router = router.lock().await;
-    scrape_udp_with_router(url, info_hash, &mut router).await
+    scrape_udp_with_router(url, info_hash, global_udp_router()).await
 }
 
-/// Scrapes a UDP tracker using a caller-supplied [`UdpRouter`].
+/// Scrapes a UDP tracker using a caller-supplied shared [`UdpRouter`].
+///
+/// Bounded by [`UDP_OP_DEADLINE`] exactly like UDP announces.
 pub async fn scrape_udp_with_router(
     url: &str,
     info_hash: HashString,
-    router: &mut UdpRouter,
+    router: &SharedUdpRouter,
 ) -> Result<ScrapeStats, TrackerClientError> {
-    let _permit = tracker_concurrency_semaphore()
-        .acquire()
-        .await
-        .map_err(|_| TrackerClientError::Timeout)?;
+    match timeout(
+        UDP_OP_DEADLINE,
+        scrape_udp_inner(url, info_hash, router, scrape_concurrency_semaphore()),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(TrackerClientError::Timeout),
+    }
+}
 
+async fn scrape_udp_inner(
+    url: &str,
+    info_hash: HashString,
+    router: &SharedUdpRouter,
+    semaphore: &tokio::sync::Semaphore,
+) -> Result<ScrapeStats, TrackerClientError> {
     let tracker_addr = resolve_udp_tracker(url).await?;
     let tracker_address = SocketAddress::from(tracker_addr);
     let socket = bind_udp_socket(tracker_addr).await?;
@@ -596,10 +668,11 @@ pub async fn scrape_udp_with_router(
     let mut last_error = TrackerClientError::Timeout;
 
     for attempt in 0..attempts {
-        let connection_id = match ensure_udp_connection(&socket, router, &tracker_address).await {
-            Ok(id) => id,
-            Err(err) => return Err(err),
-        };
+        let connection_id =
+            match ensure_udp_connection(&socket, router, &tracker_address, semaphore).await {
+                Ok(id) => id,
+                Err(err) => return Err(err),
+            };
 
         let transaction_id = router.allocate_transaction_id();
         let request = ScrapeRequest {
@@ -609,7 +682,15 @@ pub async fn scrape_udp_with_router(
         }
         .encode();
 
-        let result = udp_exchange(&socket, &request, transaction_id, ACTION_SCRAPE, attempt).await;
+        let result = udp_exchange(
+            &socket,
+            &request,
+            transaction_id,
+            ACTION_SCRAPE,
+            attempt,
+            semaphore,
+        )
+        .await;
 
         router.release_transaction_id(transaction_id);
 
@@ -655,6 +736,7 @@ mod tests {
             left: 1000,
             numwant: 50,
             event: None,
+            key: 0x1234_5678,
         };
         let err = announce("ftp://tracker.example.com", &params)
             .await

@@ -394,7 +394,12 @@ impl TrackerList {
 
     pub fn receive_scrape_success(&mut self, index: usize, now: u64) {
         if let Some(t) = self.trackers.get_mut(index) {
-            t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            // Only clear the busy flag when the outstanding request is
+            // this scrape; an announce event queued while the scrape was
+            // in flight must keep its REQUESTING mark.
+            if t.state().latest_event == TrackerEvent::Scrape {
+                t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            };
             t.state_mut().add_scrape_request(now);
             t.state_mut().counters.scrape_failed_counter = 0;
         }
@@ -406,7 +411,12 @@ impl TrackerList {
     /// every counter is always written here.
     pub fn receive_scrape_stats(&mut self, index: usize, stats: ScrapeStats, now: u64) {
         if let Some(t) = self.trackers.get_mut(index) {
-            t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            // Only clear the busy flag when the outstanding request is
+            // this scrape; an announce event queued while the scrape was
+            // in flight must keep its REQUESTING mark.
+            if t.state().latest_event == TrackerEvent::Scrape {
+                t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            };
             t.state_mut().add_scrape_request(now);
             t.state_mut().scrape_complete = stats.seeders;
             t.state_mut().scrape_incomplete = stats.leechers;
@@ -416,7 +426,12 @@ impl TrackerList {
 
     pub fn receive_scrape_failure(&mut self, index: usize, now: u64) {
         if let Some(t) = self.trackers.get_mut(index) {
-            t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            // Only clear the busy flag when the outstanding request is
+            // this scrape; an announce event queued while the scrape was
+            // in flight must keep its REQUESTING mark.
+            if t.state().latest_event == TrackerEvent::Scrape {
+                t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            };
             // Scrape is optional: do not touch failed_counter/success_counter.
             t.state_mut().add_scrape_failure(now);
         }
@@ -426,7 +441,12 @@ impl TrackerList {
     /// the scrape endpoint. The tracker remains usable for announces.
     pub fn receive_scrape_unsupported(&mut self, index: usize, now: u64) {
         if let Some(t) = self.trackers.get_mut(index) {
-            t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            // Only clear the busy flag when the outstanding request is
+            // this scrape; an announce event queued while the scrape was
+            // in flight must keep its REQUESTING mark.
+            if t.state().latest_event == TrackerEvent::Scrape {
+                t.state_mut().flags.remove(TrackerFlags::REQUESTING);
+            };
             t.state_mut().set_scrapable(false);
             t.state_mut().add_scrape_failure(now);
         }

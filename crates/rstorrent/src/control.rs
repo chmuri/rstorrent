@@ -31,10 +31,14 @@ use std::time::{Duration, Instant};
 /// process exit forever.
 const LISTENER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const DHT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
-const COORDINATOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+// Coordinators send best-effort "stopped" announces (up to 5s) before exiting;
+// give them room so trackers finalize transfer accounting promptly.
+const COORDINATOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(6);
 const DISK_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 const DISK_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
-const SESSION_SAVE_TIMEOUT: Duration = Duration::from_secs(30);
+// Large sessions (tens of thousands of torrents) need more than a few seconds
+// to commit every resume entry; keep this within the container stop grace.
+const SESSION_SAVE_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long a timed-out session writer gets to stop at an entry boundary
 /// before the shutdown proceeds without it.
 const WRITER_ABORT_GRACE: Duration = Duration::from_secs(2);
@@ -187,6 +191,9 @@ impl Control {
     pub fn initialize(&mut self, cli: &Cli) -> Result<(), String> {
         let init_started = Instant::now();
         let mut watch_loaded = 0usize;
+        // Set when TOML `protocol.peer_id` explicitly configures the identity;
+        // the persisted session peer_id must not override an explicit choice.
+        let mut peer_id_from_config = false;
 
         // 1. Setup default views
         self.set_phase("Setting up default views", 1, 10, None);
@@ -372,6 +379,7 @@ impl Control {
                                     disk_threads_from_toml = cfg.storage.disk_threads;
                                     max_open_files_from_toml = cfg.storage.max_open_files;
                                     if let Some(pid) = &cfg.protocol.peer_id {
+                                        peer_id_from_config = true;
                                         // A peer_id is 20 bytes: accept a 40-char
                                         // hex string or a raw (ASCII) identifier,
                                         // padded/truncated to 20 bytes.
@@ -771,6 +779,62 @@ impl Control {
                     // lock is the only guard against two writers.
                     return Err(format!("Failed to lock/start session: {}", e));
                 }
+            }
+        }
+
+        // Stable client identity for tracker accounting (BEP 7 / BEP 15).
+        // A fresh random peer_id on every process start makes trackers treat
+        // each restart as a brand-new peer, which breaks delta-based upload and
+        // download crediting (the "started" announce only sets a baseline).
+        // Persist the peer_id and the announce key next to the session files so
+        // the same installation keeps one identity across restarts.
+        {
+            let session_path = {
+                let sm = self
+                    .session_manager
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                sm.path().to_string()
+            };
+            if !session_path.is_empty() {
+                let dir = std::path::Path::new(&session_path);
+                let peer_id_path = dir.join("peer_id");
+                let key_path = dir.join("announce_key");
+
+                if peer_id_from_config {
+                    // Explicit TOML choice wins; keep the persisted copy in sync.
+                    let _ = std::fs::write(&peer_id_path, self.our_peer_id.to_hex());
+                } else {
+                    match std::fs::read_to_string(&peer_id_path) {
+                        Ok(text) => {
+                            match lt_common::hash_string::HashString::from_hex(text.trim()) {
+                                Some(h) => self.our_peer_id = h,
+                                None => {
+                                    tracing::warn!(
+                                        path = %peer_id_path.display(),
+                                        "Ignoring corrupt persisted peer_id; keeping generated one"
+                                    );
+                                    let _ =
+                                        std::fs::write(&peer_id_path, self.our_peer_id.to_hex());
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            let _ = std::fs::write(&peer_id_path, self.our_peer_id.to_hex());
+                        }
+                    }
+                }
+
+                let persisted_key = std::fs::read_to_string(&key_path)
+                    .ok()
+                    .and_then(|text| u32::from_str_radix(text.trim(), 16).ok())
+                    .filter(|k| *k != 0);
+                let key = persisted_key.unwrap_or_else(|| {
+                    let k = lt_tracker::client_key();
+                    let _ = std::fs::write(&key_path, format!("{k:08x}"));
+                    k
+                });
+                lt_tracker::set_client_key(key);
             }
         }
 

@@ -76,8 +76,10 @@ pub fn sample_engine_snapshot(
         let eng_guard = d.download();
         let seeds_connected = eng_guard.seeder_peer_count() as u32;
         let peers_connected = eng_guard.peer_count() as u32;
-        let seeds_total = seeds_connected;
-        let peers_total = peers_connected;
+        // Real swarm totals from tracker reports; fall back to connected counts.
+        let (seeds_total, peers_total) = eng_guard
+            .swarm_totals()
+            .unwrap_or((seeds_connected, peers_connected));
         let verified_pieces = eng_guard.completed_chunks() as u32;
         drop(eng_guard);
 
@@ -190,8 +192,10 @@ pub fn sample_engine_snapshot_with_stats(
         let eng_guard = d.download();
         let seeds_connected = eng_guard.seeder_peer_count() as u32;
         let peers_connected = eng_guard.peer_count() as u32;
-        let seeds_total = seeds_connected;
-        let peers_total = peers_connected;
+        // Real swarm totals from tracker reports; fall back to connected counts.
+        let (seeds_total, peers_total) = eng_guard
+            .swarm_totals()
+            .unwrap_or((seeds_connected, peers_connected));
         let verified_pieces = eng_guard.completed_chunks() as u32;
         drop(eng_guard);
 

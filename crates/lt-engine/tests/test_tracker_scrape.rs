@@ -12,7 +12,7 @@ use lt_tracker::list::TrackerList;
 use lt_tracker::udp::{
     ConnectRequest, ConnectResponse, ScrapeFileStats, ScrapeRequest, ScrapeResponse,
 };
-use lt_tracker::udp_router::UdpRouter;
+use lt_tracker::udp_router::SharedUdpRouter;
 use tokio::net::UdpSocket;
 
 fn id(byte: u8) -> HashString {
@@ -67,13 +67,13 @@ async fn udp_scrape_applies_stats_and_schedules_next_scrape() {
     controller.scrape_request(0);
     controller.do_scrape();
 
-    let mut router = UdpRouter::new();
+    let router = SharedUdpRouter::new();
     let stats = tokio::time::timeout(
         Duration::from_secs(10),
         scrape_udp_with_router(
             controller.tracker_list.at(0).unwrap().url(),
             info_hash,
-            &mut router,
+            &router,
         ),
     )
     .await

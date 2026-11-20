@@ -14,6 +14,7 @@ lt-sys.workspace = true
 lt-net.workspace = true
 lt-storage.workspace = true
 lt-engine.workspace = true
+lt-tracker.workspace = true
 rt-core.workspace = true
 rt-rpc.workspace = true
 rt-scgi.workspace = true

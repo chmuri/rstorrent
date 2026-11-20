@@ -221,6 +221,22 @@ pub async fn test_connection(base_url: &str, token: &str) -> Result<VersionInfo,
         })
 }
 
+/// Fetches per-tracker health for one torrent. In demo mode there is no live
+/// daemon, so an empty list is returned and the drawer shows a placeholder.
+pub async fn fetch_torrent_trackers(
+    state: AppState,
+    hash: &str,
+) -> Result<Vec<TrackerInfo>, String> {
+    if state.connection.get() != ConnectionMode::Live {
+        return Ok(Vec::new());
+    }
+    let base = state.api_base_url.get();
+    let token = state.api_token.get();
+    fetch_json::<Vec<TrackerInfo>>(&base, &token, &format!("/api/torrents/{hash}/trackers"))
+        .await
+        .map_err(|err| err.to_string())
+}
+
 pub async fn update_torrent_label(
     state: AppState,
     hash: &str,

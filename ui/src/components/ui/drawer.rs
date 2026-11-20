@@ -76,6 +76,23 @@ pub fn SlideOverDrawer() -> impl IntoView {
     let open = Memo::new(move |_| state.selected_item.get().is_some());
     let close = move || state.selected_item.set(None);
 
+    // Tracker health for the selected torrent. Reload only when the selection
+    // changes (not on every rate tick) plus an explicit refresh button.
+    let trackers = RwSignal::new(None::<Result<Vec<TrackerInfo>, String>>);
+    let selected_hash = Memo::new(move |_| current_item.get().map(|i| i.hash.clone()));
+    let load_trackers = move |hash: String| {
+        trackers.set(None);
+        spawn_local(async move {
+            let result = api::fetch_torrent_trackers(state, &hash).await;
+            trackers.set(Some(result));
+        });
+    };
+    Effect::new(move |_| {
+        if let Some(hash) = selected_hash.get() {
+            load_trackers(hash);
+        }
+    });
+
     let run_command = move |verb: &'static str| {
         if busy.get_untracked() {
             return;
@@ -250,6 +267,89 @@ pub fn SlideOverDrawer() -> impl IntoView {
                                     {meta_cell("Finished", format_item_time(item.finished), true, false)}
                                     {meta_cell("State changed", format_item_time(item.state_changed), true, false)}
                                 </dl>
+                            </div>
+                            <div>
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">"Trackers"</h3>
+                                    <button
+                                        class="cursor-pointer rounded-md px-2 py-0.5 text-[10px] font-medium text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-zinc-200"
+                                        title="Refresh tracker health"
+                                        on:click=move |_| {
+                                            if let Some(hash) = selected_hash.get_untracked() {
+                                                load_trackers(hash);
+                                            }
+                                        }
+                                    >
+                                        "Refresh"
+                                    </button>
+                                </div>
+                                {move || match trackers.get() {
+                                    None => view! {
+                                        <p class="mt-2 text-xs text-zinc-500">"Loading tracker health…"</p>
+                                    }.into_any(),
+                                    Some(Err(err)) => view! {
+                                        <p class="mt-2 text-xs text-rose-400">"Tracker data unavailable: " {err}</p>
+                                    }.into_any(),
+                                    Some(Ok(list)) if list.is_empty() => view! {
+                                        <p class="mt-2 text-xs text-zinc-500">"No trackers reported for this torrent."</p>
+                                    }.into_any(),
+                                    Some(Ok(list)) => view! {
+                                        <ul class="mt-2 space-y-2">
+                                            {list.into_iter().map(|t| {
+                                                let dot = match t.health() {
+                                                    "ok" => "bg-emerald-400",
+                                                    "busy" => "bg-cyan-400 animate-pulse",
+                                                    "failed" => "bg-rose-400",
+                                                    "disabled" => "bg-zinc-600",
+                                                    _ => "bg-amber-400",
+                                                };
+                                                let last = if t.success_time_last > 0 {
+                                                    format_item_time(t.success_time_last)
+                                                } else if t.failed_time_last > 0 {
+                                                    format!("failed {}", format_item_time(t.failed_time_last))
+                                                } else {
+                                                    "never".to_string()
+                                                };
+                                                let swarm = if t.scrape_complete > 0 || t.scrape_incomplete > 0 {
+                                                    format!("{}S / {}L", t.scrape_complete, t.scrape_incomplete)
+                                                } else {
+                                                    "—".to_string()
+                                                };
+                                                let fail_class = if t.failed_counter > 0 {
+                                                    "text-rose-400/80"
+                                                } else {
+                                                    ""
+                                                };
+                                                view! {
+                                                    <li class="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                                                        <div class="flex items-center gap-2">
+                                                            <span class=format!("h-1.5 w-1.5 shrink-0 rounded-full {}", dot)></span>
+                                                            <span class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200" title={t.url.clone()}>
+                                                                {t.host()}
+                                                            </span>
+                                                            <span class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9px] uppercase text-zinc-500">
+                                                                {t.tracker_type.clone()}
+                                                            </span>
+                                                            <span class="font-mono text-[10px] tabular-nums text-zinc-500">
+                                                                {format!("tier {}", t.group)}
+                                                            </span>
+                                                        </div>
+                                                        <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] tabular-nums text-zinc-500">
+                                                            <span class="text-emerald-400/80">{format!("✓{}", t.success_counter)}</span>
+                                                            <span class=fail_class>
+                                                                {format!("✗{}", t.failed_counter)}
+                                                            </span>
+                                                            <span>{format!("every {}s", t.normal_interval)}</span>
+                                                            <span>{swarm}</span>
+                                                            <span class="text-zinc-600">{last}</span>
+                                                            <span class="text-zinc-600">{format!("event: {}", t.latest_event)}</span>
+                                                        </div>
+                                                    </li>
+                                                }
+                                            }).collect::<Vec<_>>()}
+                                        </ul>
+                                    }.into_any(),
+                                }}
                             </div>
                             <div>
                                 <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">"Activity"</h3>

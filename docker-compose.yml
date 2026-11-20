@@ -6,6 +6,10 @@ services:
       dockerfile: Dockerfile
     container_name: rstorrent
     restart: unless-stopped
+    # Large sessions need time to commit resume data on SIGTERM before Docker
+    # escalates to SIGKILL (which would lose transfer counters since the last
+    # periodic checkpoint).
+    stop_grace_period: 180s
     ports:
       - "8080:8080"           # Native Web UI (open http://localhost:8080)
       - "50000:50000"         # P2P BitTorrent incoming connections

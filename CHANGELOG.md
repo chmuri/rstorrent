@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.5] - 2026-11-21
+
+### Fixed
+- **Tracker upload/download accounting** (`crates/lt-tracker/`, `crates/lt-engine/`): periodic announces were effectively starved on large sessions — a success recorded before the first controller tick stored timestamp 0 (leaving every tracker permanently "due"), the per-coordinator announce loop was sequential (one dead UDP tracker stalled all others), and a single 32-permit global semaphore was held across UDP backoff sleeps. Announces now run as concurrent bounded tasks (30s UDP deadline, 45s wall clock including permit waits), the controller clock is initialized before the first announce and floored to real time on success/failure, permits are held only per packet exchange (128 announce / 32 scrape), regular updates select one tracker per tier, and bulk-restored coordinators stagger their first announce (0–30s jitter). Trackers such as linuxtracker.org now receive the periodic counter updates they credit.
+- **Tracker event delivery** (`crates/lt-tracker/`, `crates/lt-engine/`): `completed` and `stopped` events queued through the controller were silently downgraded to plain updates and never transmitted; shutdown sent no `stopped` at all. The coordinator now transmits the queued event type, sends best-effort `stopped` announces on shutdown (5s budget), recovers explicit events from controller flags when a concurrent scrape result cleared the per-tracker busy mark, and scrape results no longer clobber an announce queued while the scrape was in flight. Queued events wake the coordinator within ~1s instead of waiting for the next polling cycle.
+- **Stable tracker identity** (`crates/rstorrent/`, `crates/lt-tracker/`): `peer_id` was re-randomized on every process start and the announce `key` was hardcoded to `0x12345678`, so trackers treated each restart as a new peer and delta-based upload crediting never accumulated. Both are now persisted in the session directory (`peer_id`, `announce_key`) and reused across restarts; an explicit TOML `protocol.peer_id` still wins.
+- **Swarm totals** (`crates/rstorrent/webui/`, `crates/rt-grpc/`, `crates/rt-tui/`, `crates/rt-core/`): Seeds/Peers "total" columns were placeholders equal to connected counts. They now report tracker-provided swarm sizes (announce/scrape), preferring in-use trackers, with connected-count fallback; added `d.seeds_total` / `d.peers_total` RPC getters.
+- **Session stats listen port** (`crates/rstorrent/webui/`): `/api/stats` reported the legacy default (6881) instead of the effective first port of `network.port_range`.
+
+### Added
+- **Tracker health API & UI** (`crates/rstorrent/webui/`, `ui/`): `GET /api/torrents/{hash}/trackers` exposes per-tracker counters, intervals, last activity, event state and scrape stats; the torrent details drawer gained a Trackers panel with live health dots and a refresh action.
+
+### Changed
+- **Shutdown robustness** (`crates/rstorrent/`, `docker-compose.yml`): coordinator drain timeout raised to 6s (fits the stopped-announce budget), session save timeout to 60s, and the reference compose sets `stop_grace_period: 180s` so large sessions commit resume data before SIGKILL.
+- **Log volume** (`crates/lt-engine/`): per-block "Received Piece block" logging moved from INFO to DEBUG (millions of lines per hour on busy swarms).
+
 ## [0.25.4] - 2026-11-20
 
 ### Added

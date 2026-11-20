@@ -1,5 +1,6 @@
 use lt_net::addr::SocketAddress;
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A random engine that satisfies the requirement that its internal state
@@ -174,5 +175,61 @@ impl UdpRouter {
 impl Default for UdpRouter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A shareable handle around [`UdpRouter`] for concurrent tracker operations.
+///
+/// Every method takes the internal mutex only for the short bookkeeping step
+/// (allocate/release a transaction id, look up or cache a connection id) and
+/// never holds it across an `.await`, so several announces/scrapes can share
+/// one router without serializing their network exchanges. Transaction ids
+/// stay reserved for the whole operation, preserving the guarantee that
+/// concurrent requests never accept each other's replies.
+#[derive(Clone, Default)]
+pub struct SharedUdpRouter(Arc<Mutex<UdpRouter>>);
+
+impl SharedUdpRouter {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(UdpRouter::new())))
+    }
+
+    /// Wraps an existing router (e.g. one pre-seeded by a test).
+    pub fn from_router(router: UdpRouter) -> Self {
+        Self(Arc::new(Mutex::new(router)))
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, UdpRouter> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn allocate_transaction_id(&self) -> u32 {
+        self.lock().allocate_transaction_id()
+    }
+
+    pub fn release_transaction_id(&self, transaction_id: u32) {
+        self.lock().release_transaction_id(transaction_id);
+    }
+
+    pub fn get_connection_id(&self, sa: &SocketAddress) -> Option<u64> {
+        self.lock().get_connection_id(sa)
+    }
+
+    pub fn cache_connection_id(&self, sa: SocketAddress, connection_id: u64) {
+        self.lock().cache_connection_id(sa, connection_id);
+    }
+
+    pub fn remove_connection(&self, sa: &SocketAddress) {
+        self.lock().remove_connection(sa);
+    }
+
+    pub fn active_transaction_count(&self) -> usize {
+        self.lock().active_transaction_count()
+    }
+}
+
+impl From<UdpRouter> for SharedUdpRouter {
+    fn from(router: UdpRouter) -> Self {
+        Self::from_router(router)
     }
 }

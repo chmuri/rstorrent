@@ -12,7 +12,7 @@ use lt_tracker::udp::{
     AnnounceRequest, AnnounceResponse, ConnectRequest, ConnectResponse, ScrapeFileStats,
     ScrapeRequest, ScrapeResponse,
 };
-use lt_tracker::udp_router::UdpRouter;
+use lt_tracker::udp_router::SharedUdpRouter;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 
@@ -261,7 +261,7 @@ async fn udp_announce_uses_router_and_returns_interval() {
         socket.send_to(&response.encode(), client).await.unwrap();
     });
 
-    let mut router = UdpRouter::new();
+    let router = SharedUdpRouter::new();
     let params = AnnounceParams {
         info_hash,
         peer_id,
@@ -271,6 +271,7 @@ async fn udp_announce_uses_router_and_returns_interval() {
         left: 30,
         numwant: 50,
         event: Some("started".into()),
+        key: 0x1234_5678,
     };
 
     let result = tokio::time::timeout(
@@ -278,7 +279,7 @@ async fn udp_announce_uses_router_and_returns_interval() {
         announce_udp_detailed_with_router(
             &format!("udp://127.0.0.1:{port}/announce"),
             &params,
-            &mut router,
+            &router,
         ),
     )
     .await
@@ -326,13 +327,13 @@ async fn udp_scrape_uses_router_and_releases_transaction() {
         socket.send_to(&response.encode(), client).await.unwrap();
     });
 
-    let mut router = UdpRouter::new();
+    let router = SharedUdpRouter::new();
     let stats = tokio::time::timeout(
         Duration::from_secs(10),
         scrape_udp_with_router(
             &format!("udp://127.0.0.1:{port}/announce"),
             info_hash,
-            &mut router,
+            &router,
         ),
     )
     .await
@@ -365,13 +366,13 @@ async fn udp_malformed_response_is_a_protocol_error() {
         socket.send_to(&[0u8; 4], client).await.unwrap();
     });
 
-    let mut router = UdpRouter::new();
+    let router = SharedUdpRouter::new();
     let result = tokio::time::timeout(
         Duration::from_secs(5),
         scrape_udp_with_router(
             &format!("udp://127.0.0.1:{port}/announce"),
             info_hash,
-            &mut router,
+            &router,
         ),
     )
     .await
@@ -423,7 +424,7 @@ async fn udp_announce_retries_after_lost_connect() {
             .unwrap();
     });
 
-    let mut router = UdpRouter::new();
+    let router = SharedUdpRouter::new();
     let params = AnnounceParams {
         info_hash,
         peer_id,
@@ -433,6 +434,7 @@ async fn udp_announce_retries_after_lost_connect() {
         left: 0,
         numwant: 0,
         event: Some("started".into()),
+        key: 0x1234_5678,
     };
 
     let result = tokio::time::timeout(
@@ -440,7 +442,7 @@ async fn udp_announce_retries_after_lost_connect() {
         announce_udp_detailed_with_router(
             &format!("udp://127.0.0.1:{port}/announce"),
             &params,
-            &mut router,
+            &router,
         ),
     )
     .await
