@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-20
+
 ### Added
 - **RSS Auto-Download Support** (`crates/rt-rss`, `crates/rstorrent/src/rss.rs`, `crates/rstorrent/src/webui/rss.rs`):
   - Feed management for RSS 2.0, Atom and RSS 1.0 (RDF) documents with per-feed refresh intervals, conditional GET (`ETag`/`Last-Modified`, `304 Not Modified`) and response size caps.
