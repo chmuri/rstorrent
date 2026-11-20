@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **RSS Auto-Download Support** (`crates/rt-rss`, `crates/rstorrent/src/rss.rs`, `crates/rstorrent/src/webui/rss.rs`):
+  - Feed management for RSS 2.0, Atom and RSS 1.0 (RDF) documents with per-feed refresh intervals, conditional GET (`ETag`/`Last-Modified`, `304 Not Modified`) and response size caps.
+  - Rule engine with case-insensitive regex match/exclude, size bounds, episode filters (`SxxExx`, `1x02`, `E03`, `Episode 04`), priority ordering (first match wins) and per-rule cooldowns.
+  - Background auto-download worker (30 s tick) with per-feed guid dedup and engine-level `Duplicate` detection for torrents already in the session.
+  - Download history (`added`/`duplicate`/`failed`, capped at 500 entries) persisted in an atomic `rss.json` store (0600, corrupt-file quarantine).
+  - 17 trusted-only REST operations under `/api/rss` for feeds, items, rules, history and settings.
+  - `[rss]` TOML section (`enabled`, `refresh_interval_secs`, `max_items_per_feed`, `request_timeout_secs`, `max_response_mb`) with save-to-file from the settings API.
+  - `/rss` Web UI page with Feeds/Items/Rules/History tabs, dry-run rule testing and 15 s polling.
+
 ## [0.23.0] - 2026-11-19
 
 ### Added

@@ -64,6 +64,8 @@ The project contains active implementations for core BitTorrent functionality, a
   - **Dynamic Configuration & WebUI Management**: Generate a complete, annotated `rstorrent.toml` configuration template using `--generate-config [PATH]` or RPC (`config.show`/`config.export`). Full interactive control over storage tiers, transition rules, network limits and live moves directly from the built-in WebUI.
 - **Native Web UI**:
   - Opt-in axum-based REST + WebSocket API with an embedded single-page app, bearer-token auth, optional TLS, interactive settings, tiering management, and live moves.
+- **RSS Auto-Downloads**:
+  - Track RSS/Atom feeds, match new items with regex/size/episode rules, and auto-download matching torrents in the background; manage feeds, rules and history from the `/rss` Web UI page or the trusted `/api/rss` REST API.
 - **Observability**:
   - Prometheus `/metrics` HTTP endpoint and an optional JSONL event recorder (`RSTORRENT_METRICS_FILE`).
 - **Lua Scripting**:
@@ -80,7 +82,7 @@ The project contains active implementations for core BitTorrent functionality, a
 
 ## Architecture & Modular Workspace
 
-`rstorrent` is organized as a clean, highly modular workspace consisting of 16 specialized crates:
+`rstorrent` is organized as a clean, highly modular workspace consisting of 17 specialized crates:
 
 ```
 rstorrent/
@@ -98,6 +100,7 @@ rstorrent/
 │   ├── rt-scgi       # Non-blocking SCGI server over TCP & UNIX sockets with keep-alive
 │   ├── rt-grpc       # gRPC rtorrent.v1 service endpoints & push streams (Tonic)
 │   ├── rt-core       # Session manager, download views, schedules, throttle groups
+│   ├── rt-rss        # RSS/Atom feed parsing, rules engine, auto-download manager (pure domain)
 │   ├── rt-tui        # In-process Terminal UI (Ratatui / Crossterm), views, canvas buffer, frame balancing
 │   ├── rt-tui-client # Standalone gRPC TUI client (`rstorrent-tui`), view model + widgets
 │   └── rstorrent     # CLI entry point, signal handlers, lifecycle supervisor
@@ -405,6 +408,18 @@ untrusted and restricted to read-only commands. TLS is TOML-only
 (`tls_cert`/`tls_key`). See [Web UI](https://github.com/chmuri/rstorrent/wiki/WebUI)
 for the REST/WebSocket API tables and authentication model.
 
+### RSS Auto-Downloads
+
+The `/rss` page tracks RSS feeds and auto-downloads matching torrents: add a
+feed, create a rule (regex title match/exclude, size bounds, episode filter,
+save path, label, cooldown), and a background worker refreshes feeds and hands
+matches to the engine. Every attempt is recorded in the download history.
+Feeds, rules, items and history are managed via the UI or the trusted
+`/api/rss` REST API and persist in `rss.json` next to the session files; global
+settings live in the `[rss]` TOML section. See
+[RSS Auto-Downloads](https://github.com/chmuri/rstorrent/wiki/RSS) for the full
+reference.
+
 ---
 
 ## Metrics & Observability
@@ -481,6 +496,15 @@ addr = "127.0.0.1:9090"      # Prometheus /metrics endpoint
 [webui]
 addr = "127.0.0.1:8080"      # native Web UI (opt-in)
 token = "change-me"
+
+# RSS auto-downloads: feeds, rules, items and history live in rss.json
+# (managed via the /rss UI page or /api/rss); only global settings go here.
+# [rss]
+# enabled = true               # background auto-download worker
+# refresh_interval_secs = 1800 # default feed refresh interval (seconds)
+# max_items_per_feed = 200     # stored items kept per feed
+# request_timeout_secs = 30    # HTTP request timeout (seconds)
+# max_response_mb = 5          # response cap in MiB (feeds and .torrent payloads)
 ```
 
 An optional `rtorrent.lua` next to the active config file is loaded at startup; `lua.execute` / `lua.execute.str` also run Lua from `.rc` files and RPC. See the [Configuration Guide](https://github.com/chmuri/rstorrent/wiki/Configuration-Guide) for Lua scripting, schedules, and environment variables.

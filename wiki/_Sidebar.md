@@ -11,3 +11,4 @@
 - [gRPC & Remote Control](gRPC-and-Remote-Control)
 - [XML-RPC & SCGI](XML-RPC-and-SCGI)
 - [Web UI](WebUI)
+- [RSS Auto-Downloads](RSS)
