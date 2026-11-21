@@ -6,6 +6,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
+use super::rules::EffectiveLimits;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TorrentItem {
     pub hash: String,
@@ -43,6 +45,24 @@ pub struct TorrentItem {
     pub chunks_total: u32,
     #[serde(default)]
     pub hash_progress_pct: f32,
+    // Additive seed-rules fields (plan.md §6.6 TorrentSummary extension).
+    // Old backends omit them; serde defaults keep the DTO backward compatible.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Accumulated active-seeding seconds (0 = never seeded).
+    #[serde(default)]
+    pub seeding_time_secs: u64,
+    /// Seconds without transfer while seeding (idle limit input).
+    #[serde(default)]
+    pub idle_secs: u64,
+    /// Resolved seed limits with per-field sources; `None` on old backends.
+    #[serde(default)]
+    pub seed_limits: Option<EffectiveLimits>,
+    /// RSS provenance (`d.custom` rss.feed_id / rss.rule_id), if added via RSS.
+    #[serde(default)]
+    pub rss_feed_id: Option<u64>,
+    #[serde(default)]
+    pub rss_rule_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -480,6 +500,42 @@ impl TorrentItem {
             format_timestamp(self.finished * 1000)
         }
     }
+
+    /// Humanized accumulated seeding time for the "Seeded" column
+    /// ("—" when the torrent never seeded).
+    pub fn format_seeded(&self) -> String {
+        if self.seeding_time_secs == 0 {
+            "—".to_string()
+        } else {
+            format_duration(self.seeding_time_secs)
+        }
+    }
+
+    /// Effective ratio limit, if the backend resolved one (`None` = unlimited
+    /// or an old backend without `seed_limits`).
+    pub fn ratio_limit(&self) -> Option<f64> {
+        self.seed_limits.as_ref().and_then(|limits| limits.ratio)
+    }
+}
+
+/// Sentinel facet value selecting torrents **without** a label (empty
+/// category). Part of the `label_filter` contract (plan.md §6.9, T11).
+pub const LABEL_FILTER_NONE: &str = "__none__";
+
+/// Distinct labels with torrent counts for the label facet, sorted by name,
+/// plus the no-label bucket count. Shared by the explorer and dashboard
+/// facets so both stay consistent.
+pub fn label_counts(items: &[TorrentItem]) -> (Vec<(String, usize)>, usize) {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut no_label = 0usize;
+    for item in items {
+        if item.category.is_empty() {
+            no_label += 1;
+        } else {
+            *counts.entry(item.category.clone()).or_default() += 1;
+        }
+    }
+    (counts.into_iter().collect(), no_label)
 }
 
 pub fn format_bytes(bytes: i64) -> String {
@@ -567,6 +623,12 @@ pub struct AppState {
     pub selected_item: RwSignal<Option<TorrentItem>>,
     pub search_query: RwSignal<String>,
     pub status_filter: RwSignal<String>,
+    /// Multi-select label facet (plan.md §6.9): empty = all labels;
+    /// [`LABEL_FILTER_NONE`] selects torrents without a label.
+    pub label_filter: RwSignal<Vec<String>>,
+    /// Hash of the torrent whose seed-limits dialog is open (`None` = closed).
+    /// Any page can open the shared dialog by setting this signal.
+    pub seed_limits_hash: RwSignal<Option<String>>,
     pub cmd_palette_open: RwSignal<bool>,
     pub sidebar_collapsed: RwSignal<bool>,
     pub live_stream_active: RwSignal<bool>,
@@ -628,6 +690,8 @@ impl AppState {
             selected_item: RwSignal::new(None),
             search_query: RwSignal::new(String::new()),
             status_filter: RwSignal::new("all".to_string()),
+            label_filter: RwSignal::new(Vec::new()),
+            seed_limits_hash: RwSignal::new(None),
             cmd_palette_open: RwSignal::new(false),
             sidebar_collapsed: RwSignal::new(sidebar_collapsed),
             live_stream_active: RwSignal::new(true),
@@ -712,6 +776,7 @@ impl AppState {
     pub fn filtered_items(self) -> Vec<TorrentItem> {
         let query = self.search_query.get().to_lowercase();
         let filter = self.status_filter.get();
+        let labels = self.label_filter.get();
         self.items.with(|raw_items| {
             let mut items: Vec<TorrentItem> = raw_items
                 .iter()
@@ -727,7 +792,17 @@ impl AppState {
                         "failed" => item.status() == ItemStatus::Failed,
                         _ => true,
                     };
-                    matches_query && matches_status
+                    // Multi-select label facet: empty selection = all labels;
+                    // LABEL_FILTER_NONE matches torrents without a label.
+                    let matches_label = labels.is_empty()
+                        || labels.iter().any(|selected| {
+                            if selected == LABEL_FILTER_NONE {
+                                item.category.is_empty()
+                            } else {
+                                &item.category == selected
+                            }
+                        });
+                    matches_query && matches_status && matches_label
                 })
                 .cloned()
                 .collect();
@@ -764,6 +839,18 @@ impl AppState {
             });
             items
         })
+    }
+
+    /// Toggle one label in the multi-select facet (add when absent, remove
+    /// when present). An empty selection means "all labels".
+    pub fn toggle_label_filter(self, label: &str) {
+        self.label_filter.update(|selected| {
+            if let Some(pos) = selected.iter().position(|value| value == label) {
+                selected.remove(pos);
+            } else {
+                selected.push(label.to_string());
+            }
+        });
     }
 
     pub fn persist_settings(self) {
@@ -805,5 +892,89 @@ fn status_rank(status: ItemStatus) -> u8 {
         ItemStatus::Downloading => 2,
         ItemStatus::Warning => 3,
         ItemStatus::Failed => 4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal pre-rules backend payload: none of the additive §6.6 fields.
+    const LEGACY_ITEM_JSON: &str = r#"{
+        "hash": "aabb", "name": "legacy.iso", "size_bytes": 10,
+        "completed_bytes": 10, "up_rate": 0, "down_rate": 0,
+        "up_total": 5, "down_total": 10, "state": "Seeding",
+        "is_active": true, "is_complete": true, "is_hash_checking": false,
+        "priority": 1, "directory": "/downloads", "category": "linux",
+        "message": "", "state_changed": 1, "started": 1, "finished": 1
+    }"#;
+
+    #[test]
+    fn torrent_item_legacy_payload_defaults() {
+        let item: TorrentItem = serde_json::from_str(LEGACY_ITEM_JSON).unwrap();
+        assert!(item.tags.is_empty());
+        assert_eq!(item.seeding_time_secs, 0);
+        assert_eq!(item.idle_secs, 0);
+        assert_eq!(item.seed_limits, None);
+        assert_eq!(item.rss_feed_id, None);
+        assert_eq!(item.rss_rule_id, None);
+        assert_eq!(item.ratio_limit(), None);
+        assert_eq!(item.format_seeded(), "—");
+    }
+
+    #[test]
+    fn torrent_item_additive_fields_round_trip() {
+        let mut item: TorrentItem = serde_json::from_str(LEGACY_ITEM_JSON).unwrap();
+        item.tags = vec!["keep".to_string()];
+        item.seeding_time_secs = 90_000;
+        item.idle_secs = 120;
+        item.rss_feed_id = Some(2);
+        item.rss_rule_id = Some(3);
+        item.seed_limits = Some(EffectiveLimits {
+            ratio: Some(3.0),
+            seeding_time_secs: None,
+            inactive_secs: Some(1800),
+            mode: crate::state::rules::LimitMode::Any,
+            action: crate::state::rules::SeedAction::Stop,
+            sources: crate::state::rules::LimitSources {
+                ratio: "label:linux".to_string(),
+                seeding_time_secs: "global".to_string(),
+                inactive_secs: "torrent".to_string(),
+                mode: "global".to_string(),
+                action: "global".to_string(),
+            },
+        });
+        let json = serde_json::to_string(&item).unwrap();
+        let back: TorrentItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, item);
+        assert_eq!(back.ratio_limit(), Some(3.0));
+        // 90000s = 1d 1h
+        assert_eq!(back.format_seeded(), "1d 1h");
+    }
+
+    fn item_with_category(category: &str) -> TorrentItem {
+        let mut item: TorrentItem = serde_json::from_str(LEGACY_ITEM_JSON).unwrap();
+        item.category = category.to_string();
+        item
+    }
+
+    #[test]
+    fn label_counts_sorted_with_no_label_bucket() {
+        let items = vec![
+            item_with_category("linux"),
+            item_with_category(""),
+            item_with_category("movies"),
+            item_with_category("linux"),
+            item_with_category(""),
+        ];
+        let (labels, no_label) = label_counts(&items);
+        assert_eq!(
+            labels,
+            vec![("linux".to_string(), 2), ("movies".to_string(), 1)]
+        );
+        assert_eq!(no_label, 2);
+        let (empty_labels, empty_none) = label_counts(&[]);
+        assert!(empty_labels.is_empty());
+        assert_eq!(empty_none, 0);
     }
 }

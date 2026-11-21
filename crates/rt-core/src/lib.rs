@@ -7,6 +7,7 @@ pub mod download_list;
 pub mod hash_scheduler;
 pub mod manager;
 pub mod network_runtime;
+pub mod seed_context;
 pub mod session;
 pub mod tiering;
 pub mod view;

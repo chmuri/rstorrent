@@ -47,6 +47,7 @@ pub fn ExplorerPage() -> impl IntoView {
     Effect::new(move |_| {
         state.search_query.track();
         state.status_filter.track();
+        state.label_filter.track();
         state.sort_key.track();
         state.sort_desc.track();
         current_page.set(1);
@@ -78,6 +79,7 @@ pub fn ExplorerPage() -> impl IntoView {
     view! {
         <div class="flex flex-col gap-4">
             {toolbar(state, counts)}
+            {label_facet(state)}
             {bulk_bar(state)}
             <Show
                 when=move || total_filtered.get() != 0
@@ -92,7 +94,98 @@ pub fn ExplorerPage() -> impl IntoView {
                 {pagination_controls(current_page, page_size, total_filtered, total_pages)}
             </Show>
         </div>
+        <seed_limits_dialog::SeedLimitsDialog/>
     }
+}
+
+/// Label facet (plan.md §6.9, T11): multi-select chips with live counters
+/// over the distinct `category` values, plus a "No label" bucket
+/// ([`LABEL_FILTER_NONE`]) and an "All" reset. Filtering itself lives in
+/// `AppState::filtered_items`, so it survives WS refreshes.
+fn label_facet(state: AppState) -> impl IntoView {
+    let counts = Memo::new(move |_| state.items.with(|items| label_counts(items)));
+    let total = Memo::new(move |_| state.items.with(|items| items.len()));
+    let none_active = Signal::derive(move || {
+        state
+            .label_filter
+            .get()
+            .iter()
+            .any(|s| s == LABEL_FILTER_NONE)
+    });
+    view! {
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                "Labels"
+            </span>
+            <button
+                class=move || facet_pill_classes(state.label_filter.get().is_empty())
+                on:click=move |_| state.label_filter.set(Vec::new())
+                title="Show all labels"
+            >
+                "All"
+                <span class="rounded-full bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none">
+                    {move || total.get()}
+                </span>
+            </button>
+            <For
+                each=move || counts.get().0
+                key=|(label, _)| label.clone()
+                let(item)
+            >
+                {
+                    let (label, _) = item;
+                    let active_label = label.clone();
+                    let toggle_label = label.clone();
+                    let count_label = label.clone();
+                    let title_label = label.clone();
+                    let count = Signal::derive(move || {
+                        counts
+                            .get()
+                            .0
+                            .iter()
+                            .find(|(name, _)| name == &count_label)
+                            .map(|(_, count)| *count)
+                            .unwrap_or(0)
+                    });
+                    let active = Signal::derive(move || {
+                        state.label_filter.get().contains(&active_label)
+                    });
+                    view! {
+                        <button
+                            class=move || facet_pill_classes(active.get())
+                            on:click=move |_| state.toggle_label_filter(&toggle_label)
+                            title=move || format!("Toggle label '{title_label}'")
+                        >
+                            {label}
+                            <span class="rounded-full bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none">
+                                {move || count.get()}
+                            </span>
+                        </button>
+                    }
+                }
+            </For>
+            <button
+                class=move || facet_pill_classes(none_active.get())
+                on:click=move |_| state.toggle_label_filter(LABEL_FILTER_NONE)
+                title="Show torrents without a label"
+            >
+                "No label"
+                <span class="rounded-full bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none">
+                    {move || counts.get().1}
+                </span>
+            </button>
+        </div>
+    }
+}
+
+fn facet_pill_classes(active: bool) -> String {
+    let base = "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-[0.98]";
+    let skin = if active {
+        "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-zinc-100"
+    } else {
+        "border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-200"
+    };
+    format!("{base} {skin}")
 }
 
 fn toolbar(state: AppState, counts: Memo<StatusCounts>) -> impl IntoView {
@@ -399,6 +492,9 @@ fn table_view(state: AppState, paged_items: Memo<Vec<TorrentItem>>) -> impl Into
                             {sortable_th(state, SortKey::DownRate, "Down")}
                             {sortable_th(state, SortKey::UpRate, "Up")}
                             {sortable_th(state, SortKey::Ratio, "Ratio")}
+                            // Seeded is intentionally not sortable: SortKey is
+                            // matched exhaustively outside T11 ownership.
+                            <th class="dense-row px-4 py-3 font-medium">"Seeded"</th>
                             {sortable_th(state, SortKey::Eta, "ETA")}
                             {sortable_th(state, SortKey::Finished, "Completed")}
                             {sortable_th(state, SortKey::Updated, "Updated")}
@@ -477,6 +573,7 @@ fn empty_state(state: AppState) -> impl IntoView {
                 on_click=Callback::new(move |_| {
                     state.search_query.set(String::new());
                     state.status_filter.set("all".to_string());
+                    state.label_filter.set(Vec::new());
                 })
             />
         </div>
@@ -646,18 +743,48 @@ fn ExplorerRow(state: AppState, hash: String) -> impl IntoView {
                 {move || {
                     item.get().map(|i| {
                         let r = i.ratio();
-                        let style = if r >= 2.0 {
-                            "font-semibold text-purple-400"
-                        } else if r >= 1.0 {
-                            "text-emerald-400"
-                        } else if r >= 0.5 {
-                            "text-amber-400"
-                        } else {
-                            "text-zinc-400"
-                        };
-                        view! { <span class=style>{format!("{r:.2}")}</span> }
+                        match i.ratio_limit() {
+                            // Progress toward the effective ratio limit
+                            // (plan §6.9): "1.20 / 3.00" + mini bar.
+                            Some(limit) => {
+                                let pct = if limit > 0.0 {
+                                    (r / limit * 100.0).clamp(0.0, 100.0)
+                                } else {
+                                    100.0
+                                };
+                                let bar_class = if r >= limit {
+                                    "h-full rounded-full bg-emerald-400 transition-all duration-300"
+                                } else {
+                                    "h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+                                };
+                                view! {
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-zinc-300">{format!("{r:.2} / {limit:.2}")}</span>
+                                        <div class="h-1 w-16 overflow-hidden rounded-full bg-white/[0.06]">
+                                            <div class=bar_class style=format!("width: {pct:.1}%")></div>
+                                        </div>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            None => {
+                                let style = if r >= 2.0 {
+                                    "font-semibold text-purple-400"
+                                } else if r >= 1.0 {
+                                    "text-emerald-400"
+                                } else if r >= 0.5 {
+                                    "text-amber-400"
+                                } else {
+                                    "text-zinc-400"
+                                };
+                                view! { <span class=style>{format!("{r:.2}")}</span> }.into_any()
+                            }
+                        }
                     })
                 }}
+            </td>
+            <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                {move || item.get().map(|i| i.format_seeded()).unwrap_or_default()}
             </td>
             <td class="dense-row whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                 {move || item.get().map(|i| i.format_eta()).unwrap_or_default()}
@@ -850,7 +977,8 @@ fn select_all_checkbox(state: AppState) -> impl IntoView {
 
 fn quick_actions(state: AppState, hash: String) -> impl IntoView {
     let start_hash = hash.clone();
-    let stop_hash = hash;
+    let stop_hash = hash.clone();
+    let limits_hash = hash;
     view! {
         <div class="flex items-center gap-1">
             <button
@@ -893,6 +1021,35 @@ fn quick_actions(state: AppState, hash: String) -> impl IntoView {
                     stroke-linejoin="round"
                 >
                     <rect x="5" y="5" width="14" height="14" rx="2"/>
+                </svg>
+            </button>
+            <button
+                class="cursor-pointer rounded-lg p-1.5 text-zinc-500 transition-all duration-150 hover:bg-indigo-500/10 hover:text-indigo-400 active:scale-[0.95]"
+                title="Seed limits…"
+                on:click=move |ev| {
+                    ev.stop_propagation();
+                    state.seed_limits_hash.set(Some(limits_hash.clone()));
+                }
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <line x1="4" x2="4" y1="21" y2="14"/>
+                    <line x1="4" x2="4" y1="10" y2="3"/>
+                    <line x1="12" x2="12" y1="21" y2="12"/>
+                    <line x1="12" x2="12" y1="8" y2="3"/>
+                    <line x1="20" x2="20" y1="21" y2="16"/>
+                    <line x1="20" x2="20" y1="12" y2="3"/>
+                    <line x1="2" x2="6" y1="14" y2="14"/>
+                    <line x1="10" x2="14" y1="8" y2="8"/>
+                    <line x1="18" x2="22" y1="16" y2="16"/>
                 </svg>
             </button>
         </div>

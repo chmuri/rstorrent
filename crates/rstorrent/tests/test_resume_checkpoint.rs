@@ -281,6 +281,8 @@ async fn paused_event_triggers_an_immediate_checkpoint() {
 
     let mut control = Control::new();
     let cli = Cli {
+        token: None,
+        endpoint: None,
         session: Some(session_dir.to_string_lossy().to_string()),
         directory: Some(data_dir.to_string_lossy().to_string()),
         no_rc: true,

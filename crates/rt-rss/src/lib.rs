@@ -15,5 +15,5 @@ pub use error::{FetchError, ParseError, RssError};
 pub use model::{
     DownloadAction, DownloadRecord, DownloadResult, DownloadStatus, EpisodeFilter, Feed, FeedId,
     FeedItem, FeedPatch, HistoryEntry, ItemFilter, MatchedItem, RefreshOutcome, RssConfig, RssRule,
-    RuleId,
+    RssSeedLimits, RuleId,
 };

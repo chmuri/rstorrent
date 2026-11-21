@@ -10,6 +10,7 @@ use leptos::task::spawn_local;
 use serde::de::DeserializeOwned;
 use wasm_bindgen::JsCast;
 
+use super::rules::{self, EffectiveLimits, LimitMode, LimitSources, SeedAction, TorrentSeedLimits};
 use super::store::*;
 
 const MIB: i64 = 1024 * 1024;
@@ -416,6 +417,74 @@ pub async fn update_torrent_label(
     }
 }
 
+/// Effective seed limits for one torrent — thin state-aware wrapper over the
+/// T8 REST client (`state::rules::torrent_seed_limits`, no duplication).
+/// Demo/offline modes have no backend resolver, so report a clear error
+/// instead of fabricating limits.
+pub async fn fetch_torrent_seed_limits(
+    state: AppState,
+    hash: &str,
+) -> Result<EffectiveLimits, String> {
+    if state.connection.get() != ConnectionMode::Live {
+        return Err("Seed limits require a live backend connection.".to_string());
+    }
+    rules::torrent_seed_limits(&state, hash)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+/// Replace the per-torrent seed-limit overrides (PUT via the T8 client
+/// `state::rules::update_torrent_seed_limits`), then refresh the cached
+/// `seed_limits` on the item list and the inspector snapshot so the Ratio
+/// column and the dialog stay in sync without waiting for the next WS tick.
+pub async fn save_torrent_seed_limits(
+    state: AppState,
+    hash: &str,
+    overrides: &TorrentSeedLimits,
+) -> Result<EffectiveLimits, String> {
+    if state.connection.get() != ConnectionMode::Live {
+        let message = "Saving seed limits requires a live backend connection.".to_string();
+        state.push_toast(ToastKind::Warning, "Seed limits", message.clone());
+        return Err(message);
+    }
+    match rules::update_torrent_seed_limits(&state, hash, overrides).await {
+        Ok(limits) => {
+            let h = hash.to_string();
+            let for_items = limits.clone();
+            state.items.update(|items| {
+                if let Some(item) = items.iter_mut().find(|i| i.hash == h) {
+                    item.seed_limits = Some(for_items);
+                }
+            });
+            let for_selected = limits.clone();
+            state.selected_item.update(|selected| {
+                if let Some(item) = selected {
+                    if item.hash == hash {
+                        item.seed_limits = Some(for_selected);
+                    }
+                }
+            });
+            let short: String = hash.chars().take(8).collect();
+            state.push_toast(
+                ToastKind::Success,
+                "Seed limits saved",
+                format!("Overrides updated for {short}"),
+            );
+            state.push_event(
+                ToastKind::Success,
+                format!("Seed limits updated: {short}"),
+                Some(hash.to_string()),
+            );
+            Ok(limits)
+        }
+        Err(err) => {
+            let message = err.to_string();
+            state.push_toast(ToastKind::Error, "Seed limits save failed", message.clone());
+            Err(message)
+        }
+    }
+}
+
 pub fn download_json(filename: &str, json: &str) {
     let Some(window) = web_sys::window() else {
         return;
@@ -534,6 +603,12 @@ pub fn create_demo_item(state: AppState) {
         seeds_total: 45,
         peers_connected: 5,
         peers_total: 28,
+        tags: Vec::new(),
+        seeding_time_secs: 0,
+        idle_secs: 0,
+        seed_limits: None,
+        rss_feed_id: None,
+        rss_rule_id: None,
     };
     let name = item.name.clone();
     let hash = item.hash.clone();
@@ -849,18 +924,22 @@ fn handle_envelope(state: AppState, text: &str) {
     };
     match value.get("type").and_then(|kind| kind.as_str()) {
         Some("torrent") => {
-            if let Some(summary) = value
-                .get("summary")
-                .and_then(|raw| serde_json::from_value::<TorrentItem>(raw.clone()).ok())
-            {
-                upsert_item(state, summary);
-                return;
-            }
             let event_name = value
                 .get("event_name")
                 .and_then(|raw| raw.as_str())
                 .unwrap_or("");
             let hash = value.get("hash").and_then(|raw| raw.as_str()).unwrap_or("");
+            let summary = value
+                .get("summary")
+                .and_then(|raw| serde_json::from_value::<TorrentItem>(raw.clone()).ok());
+            // Rules-engine events ride the regular torrent envelope
+            // (plan §6.6, E2/T4 refinement): toast + activity entry first,
+            // then apply the refreshed summary as usual.
+            notify_rules_event(state, event_name, hash, summary.as_ref());
+            if let Some(summary) = summary {
+                upsert_item(state, summary);
+                return;
+            }
             if (event_name.contains("erase") || event_name.contains("remove")) && !hash.is_empty() {
                 remove_item(state, hash);
             }
@@ -893,6 +972,41 @@ fn handle_envelope(state: AppState, text: &str) {
         }
         _ => {}
     }
+}
+
+/// Toast + activity entry for the rules-engine WS events (plan.md §6.6):
+/// `event.rule.fired` / `event.seed_limit.reached` arrive in the regular
+/// `{event_name, hash, summary, timestamp}` envelope with no extra payload —
+/// the decision details live in `/api/rules/history`, so the toast shows the
+/// torrent name from the summary (short hash as fallback).
+fn notify_rules_event(
+    state: AppState,
+    event_name: &str,
+    hash: &str,
+    summary: Option<&TorrentItem>,
+) {
+    let (kind, title) = match event_name {
+        "event.rule.fired" => (ToastKind::Info, "Rule fired"),
+        "event.seed_limit.reached" => (ToastKind::Warning, "Seed limit reached"),
+        _ => return,
+    };
+    let name = summary
+        .map(|item| item.name.clone())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            if hash.is_empty() {
+                "torrent".to_string()
+            } else {
+                hash.chars().take(8).collect()
+            }
+        });
+    let detail = if event_name == "event.rule.fired" {
+        format!("Automation rule applied to {name}")
+    } else {
+        format!("Seed limit reached on {name}")
+    };
+    state.push_toast(kind, title, detail.clone());
+    state.push_event(kind, detail, (!hash.is_empty()).then(|| hash.to_string()));
 }
 
 fn upsert_item(state: AppState, summary: TorrentItem) {
@@ -1188,6 +1302,39 @@ fn build_demo_items(rng: &mut Lcg) -> Vec<TorrentItem> {
                         rng.range_i64(2, 25) as u32
                     },
                     peers_total: rng.range_i64(10, 50) as u32,
+                    tags: Vec::new(),
+                    seeding_time_secs: if is_complete {
+                        rng.range_i64(600, 14 * 86_400) as u64
+                    } else {
+                        0
+                    },
+                    idle_secs: if state == "Seeding" {
+                        rng.range_i64(0, 7_200) as u64
+                    } else {
+                        0
+                    },
+                    // Simulated global policy so the demo Ratio column can
+                    // show progress toward a limit (live backends resolve it).
+                    seed_limits: if is_complete {
+                        Some(EffectiveLimits {
+                            ratio: Some(3.0),
+                            seeding_time_secs: Some(7 * 86_400),
+                            inactive_secs: None,
+                            mode: LimitMode::Any,
+                            action: SeedAction::Stop,
+                            sources: LimitSources {
+                                ratio: "global".to_string(),
+                                seeding_time_secs: "global".to_string(),
+                                inactive_secs: "global".to_string(),
+                                mode: "global".to_string(),
+                                action: "global".to_string(),
+                            },
+                        })
+                    } else {
+                        None
+                    },
+                    rss_feed_id: None,
+                    rss_rule_id: None,
                 }
             },
         )
@@ -1573,6 +1720,12 @@ pub async fn add_torrent(
             seeds_total: 35,
             peers_connected: if payload.start_immediately { 4 } else { 0 },
             peers_total: 22,
+            tags: Vec::new(),
+            seeding_time_secs: 0,
+            idle_secs: 0,
+            seed_limits: None,
+            rss_feed_id: None,
+            rss_rule_id: None,
         };
         state.items.update(|list| list.insert(0, item));
         state.push_toast(

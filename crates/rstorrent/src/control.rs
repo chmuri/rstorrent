@@ -82,6 +82,12 @@ pub struct Control {
     /// without RSS rather than failing to start.
     pub rss_service: Option<Arc<crate::rss::RssService>>,
     pub rss_service_slot: Arc<RwLock<Option<Arc<crate::rss::RssService>>>>,
+    /// Torrent rules engine (seed policies + automation rules). `None` until
+    /// [`Control::initialize`] has a session directory for `rules.json`; stays
+    /// `None` (with a warning) if the service cannot be created, so the daemon
+    /// runs without rules rather than failing to start.
+    pub rule_service: Option<Arc<crate::rules::RuleService>>,
+    pub rule_service_slot: Arc<RwLock<Option<Arc<crate::rules::RuleService>>>>,
     pub lifecycle: Arc<RwLock<crate::webui::DaemonLifecycle>>,
     shutdown_lock: tokio::sync::Mutex<()>,
 }
@@ -146,6 +152,8 @@ impl Control {
             config_path_slot: Arc::new(RwLock::new(None)),
             rss_service: None,
             rss_service_slot: Arc::new(RwLock::new(None)),
+            rule_service: None,
+            rule_service_slot: Arc::new(RwLock::new(None)),
             lifecycle: Arc::new(RwLock::new(crate::webui::DaemonLifecycle::Initializing {
                 phase: "Booting rtorrent engine".to_string(),
                 step: 0,
@@ -343,6 +351,7 @@ impl Control {
         self.set_phase("Loading configuration files", 4, 10, None);
         let phase = Instant::now();
         let mut watch_dir_from_toml: Option<String> = None;
+        let mut seed_rules_from_toml: Option<crate::toml_config::RtorrentTomlConfig> = None;
         let mut watch_consume_from_toml: Option<String> = None;
         let mut disk_threads_from_toml: Option<usize> = None;
         let mut max_open_files_from_toml: Option<usize> = None;
@@ -377,6 +386,9 @@ impl Control {
                                         &self.dht_config,
                                         &mut rss_config,
                                     );
+                                    // [seed]/[rules] apply later, once the rules
+                                    // commands are registered (service exists).
+                                    seed_rules_from_toml = Some(cfg.clone());
                                     if let Some(wd) = cfg.storage.watch_directory {
                                         watch_dir_from_toml = Some(wd);
                                     }
@@ -884,6 +896,62 @@ impl Control {
             }
             self.metrics
                 .phase("startup.phase", "rss_service", phase, None);
+        }
+
+        // Rules engine service (plan §6.3). Optional, same failure policy as
+        // RSS: a bad store or compile error disables rules, not the daemon.
+        // TOML [seed]/[rules] settings are applied by the config layer (T5)
+        // through `set_seed_settings`/`set_rules_settings` after registration.
+        {
+            let phase = Instant::now();
+            let store_path = {
+                let sm = self
+                    .session_manager
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                std::path::PathBuf::from(format!("{}rules.json", sm.path()))
+            };
+            match crate::rules::RuleService::new(
+                store_path,
+                crate::rules::SeedSettings::default(),
+                crate::rules::RulesSettings::default(),
+                Arc::clone(&self.download_list),
+                Arc::clone(&self.session_manager),
+                Arc::clone(&self.command_map),
+                Arc::clone(&self.tiering_manager),
+            ) {
+                Ok(service) => {
+                    if let Ok(mut slot) = self.rule_service_slot.write() {
+                        *slot = Some(Arc::clone(&service));
+                    }
+                    self.rule_service = Some(service);
+                }
+                Err(e) => {
+                    tracing::warn!("Rules service disabled: {}", e);
+                }
+            }
+            // Register seed.*/label.*/rules.* once the service exists, then
+            // apply the TOML sections captured during the main config pass,
+            // then fill unset globals from the legacy group ratio config.
+            if let Some(service) = &self.rule_service {
+                {
+                    let mut map = self.command_map.write().unwrap_or_else(|e| e.into_inner());
+                    if let Err(e) = crate::rules_commands::register_rules_commands(
+                        &mut map,
+                        Arc::clone(service),
+                    ) {
+                        tracing::warn!("Rules commands registration failed: {}", e);
+                    }
+                }
+                if let Some(cfg) = &seed_rules_from_toml {
+                    let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
+                    cfg.apply_seed_rules(&map);
+                }
+                let map = self.command_map.read().unwrap_or_else(|e| e.into_inner());
+                crate::rules_commands::apply_legacy_ratio_fallback(service, &map);
+            }
+            self.metrics
+                .phase("startup.phase", "rules_service", phase, None);
         }
 
         {
@@ -1669,10 +1737,11 @@ impl Control {
 
             let dl_list = self.download_list.read().unwrap_or_else(|e| e.into_inner());
             for dl in dl_list.all() {
-                dl.write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .download_mut()
-                    .tick(now);
+                let mut guard = dl.write().unwrap_or_else(|e| e.into_inner());
+                guard.download_mut().tick(now);
+                // Seed-time / transfer-activity accumulators (plan §5.4.5).
+                // This branch runs once per ~1 s (every 20 ticks of 50 ms).
+                guard.tick_seed_accumulators(now, 1);
             }
 
             // Periodic tiering evaluation

@@ -12,3 +12,4 @@
 - [XML-RPC & SCGI](XML-RPC-and-SCGI)
 - [Web UI](WebUI)
 - [RSS Auto-Downloads](RSS)
+- [Torrent Rules & Seed Policies](Torrent-Rules)

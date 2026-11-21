@@ -30,6 +30,10 @@ pub struct RtorrentTomlConfig {
     pub tiering: TieringTomlConfig,
     #[serde(default)]
     pub rss: RssTomlConfig,
+    #[serde(default)]
+    pub seed: SeedTomlConfig,
+    #[serde(default)]
+    pub rules: RulesTomlConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -213,6 +217,83 @@ impl RssTomlConfig {
     }
 }
 
+fn default_seed_mode() -> String {
+    "any".to_string()
+}
+
+fn default_seed_check_interval() -> u64 {
+    10
+}
+
+fn default_rules_enabled() -> bool {
+    true
+}
+
+/// Global seed-policy settings (TOML `[seed]`, plan.md §6.5).
+///
+/// `ratio` and `action` are optional on purpose: an absent key keeps the
+/// runtime `Inherit`/`None` so the legacy ratio fallback can fill it
+/// (`rules_commands::apply_legacy_ratio_fallback`); explicit values always
+/// win. The remaining keys carry the documented section defaults.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedTomlConfig {
+    /// Master switch; `false` leaves legacy `ratio.*` in charge.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Global default share ratio; 1.0 = 100%, 0 = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<f64>,
+    /// Accumulated seeding time limit in seconds; 0 = unlimited.
+    #[serde(default)]
+    pub seeding_time_secs: u64,
+    /// No-upload-while-seeding limit in seconds; 0 = unlimited.
+    #[serde(default)]
+    pub inactive_secs: u64,
+    /// How the limits combine: `any` | `all`.
+    #[serde(default = "default_seed_mode")]
+    pub mode: String,
+    /// `stop|close|remove|remove_with_data|throttle:<name>|super_seed|notify|command:<str>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// Rules worker tick cadence in seconds.
+    #[serde(default = "default_seed_check_interval")]
+    pub check_interval_secs: u64,
+}
+
+impl Default for SeedTomlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ratio: None,
+            seeding_time_secs: 0,
+            inactive_secs: 0,
+            mode: default_seed_mode(),
+            action: None,
+            check_interval_secs: default_seed_check_interval(),
+        }
+    }
+}
+
+/// Automation-rule settings (TOML `[rules]`, plan.md §6.5).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RulesTomlConfig {
+    /// Kill switch for automation rules (an empty rule set is a no-op).
+    #[serde(default = "default_rules_enabled")]
+    pub enabled: bool,
+    /// Global gate for remove/remove_with_data, ANDed with each rule's flag.
+    #[serde(default)]
+    pub allow_destructive: bool,
+}
+
+impl Default for RulesTomlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            allow_destructive: false,
+        }
+    }
+}
+
 impl RtorrentTomlConfig {
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(content)
@@ -319,6 +400,19 @@ impl RtorrentTomlConfig {
                 request_timeout_secs: Some(30),
                 max_response_mb: Some(5),
             },
+            seed: SeedTomlConfig {
+                enabled: false,
+                ratio: Some(2.0),
+                seeding_time_secs: 0,
+                inactive_secs: 0,
+                mode: "any".to_string(),
+                action: Some("stop".to_string()),
+                check_interval_secs: 10,
+            },
+            rules: RulesTomlConfig {
+                enabled: true,
+                allow_destructive: false,
+            },
         }
     }
 
@@ -358,6 +452,21 @@ impl RtorrentTomlConfig {
                     lt_common::object::ObjectVal::Value(v) => Some(v),
                     _ => None,
                 })
+        };
+
+        // seed.ratio is an f64 carried as a (double-flagged) string because
+        // Object has no float variant; accept plain values too.
+        let query_f64 = |name: &str| -> Option<f64> {
+            let obj = map
+                .call_command(name, &Object::create_empty(), &Target::None, true)
+                .ok()?;
+            match obj.val {
+                lt_common::object::ObjectVal::Value(v) => Some(v as f64),
+                lt_common::object::ObjectVal::String(bytes) => {
+                    String::from_utf8(bytes).ok()?.trim().parse::<f64>().ok()
+                }
+                _ => None,
+            }
         };
 
         let directory = query_str("directory.default");
@@ -437,6 +546,28 @@ impl RtorrentTomlConfig {
             })
             .collect();
 
+        // Seed policies / automation rules. Absent commands (rules service
+        // not up) snapshot the documented section defaults.
+        let seed = SeedTomlConfig {
+            enabled: query_i64("seed.enabled").map(|v| v != 0).unwrap_or(false),
+            ratio: query_f64("seed.ratio"),
+            seeding_time_secs: query_i64("seed.time").map(|v| v.max(0) as u64).unwrap_or(0),
+            inactive_secs: query_i64("seed.idle").map(|v| v.max(0) as u64).unwrap_or(0),
+            mode: query_str("seed.mode").unwrap_or_else(default_seed_mode),
+            action: query_str("seed.action"),
+            check_interval_secs: query_i64("seed.check_interval")
+                .map(|v| v.max(1) as u64)
+                .unwrap_or_else(default_seed_check_interval),
+        };
+        let rules_cfg = RulesTomlConfig {
+            enabled: query_i64("rules.enabled")
+                .map(|v| v != 0)
+                .unwrap_or_else(default_rules_enabled),
+            allow_destructive: query_i64("rules.allow_destructive")
+                .map(|v| v != 0)
+                .unwrap_or(false),
+        };
+
         Self {
             network: NetworkTomlConfig {
                 port_range,
@@ -490,6 +621,8 @@ impl RtorrentTomlConfig {
                 rules,
             },
             rss: rss.map(RssTomlConfig::from_rss_config).unwrap_or_default(),
+            seed,
+            rules: rules_cfg,
         }
     }
 
@@ -689,6 +822,57 @@ impl RtorrentTomlConfig {
         } else {
             out.push_str("# max_response_mb = 5\n");
         }
+        out.push('\n');
+
+        out.push_str("[seed]\n");
+        out.push_str("# Global seed policies; false = legacy ratio.* keeps owning seeding stops\n");
+        out.push_str(&format!("enabled = {}\n", self.seed.enabled));
+        if let Some(ratio) = self.seed.ratio {
+            out.push_str(&format!(
+                "# Global default share ratio (1.0 = 100%, 0 = unlimited)\nratio = {:?}\n",
+                ratio
+            ));
+        } else {
+            out.push_str(
+                "# ratio = 2.0  # unset: legacy ratio.min/100 fallback applies when enabled\n",
+            );
+        }
+        out.push_str(&format!(
+            "# Accumulated seeding time limit in seconds (0 = unlimited)\nseeding_time_secs = {}\n",
+            self.seed.seeding_time_secs
+        ));
+        out.push_str(&format!(
+            "# No-upload-while-seeding limit in seconds (0 = unlimited)\ninactive_secs = {}\n",
+            self.seed.inactive_secs
+        ));
+        out.push_str(&format!(
+            "# How limits combine: any (first reached fires) | all\nmode = {:?}\n",
+            self.seed.mode
+        ));
+        if let Some(action) = &self.seed.action {
+            out.push_str(&format!(
+                "# stop|close|remove|remove_with_data|throttle:<name>|super_seed|notify|command:<str>\naction = {:?}\n",
+                action
+            ));
+        } else {
+            out.push_str("# action = \"stop\"  # unset: legacy group.seeding.ratio.command fallback applies when enabled\n");
+        }
+        out.push_str(&format!(
+            "# Rules worker tick cadence in seconds\ncheck_interval_secs = {}\n",
+            self.seed.check_interval_secs
+        ));
+        out.push('\n');
+
+        out.push_str("[rules]\n");
+        out.push_str("# Automation rules (empty rule set = no-op)\n");
+        out.push_str(&format!(
+            "# Kill switch for automation rules\nenabled = {}\n",
+            self.rules.enabled
+        ));
+        out.push_str(&format!(
+            "# Global gate for remove/remove_with_data (ANDed with each rule's flag)\nallow_destructive = {}\n",
+            self.rules.allow_destructive
+        ));
         out.push('\n');
 
         out
@@ -960,6 +1144,75 @@ impl RtorrentTomlConfig {
     ) {
         self.apply(map, network_config, dht_config);
         self.rss.overlay(rss_config);
+    }
+
+    /// Applies the `[seed]`/`[rules]` sections (and the tiering check
+    /// interval) through the rules-engine commands. Called separately from
+    /// [`Self::apply`] because the rules commands are registered only after
+    /// the rules service exists — later in `Control::initialize` than the
+    /// main TOML apply pass.
+    pub fn apply_seed_rules(&self, map: &CommandMap) {
+        let call = |name: &str, obj: &Object, trusted: bool| {
+            if let Err(e) = map.call_command(name, obj, &Target::None, trusted) {
+                tracing::warn!("TOML config command '{}' failed: {}", name, e);
+            }
+        };
+        call(
+            "seed.enabled.set",
+            &Object::from(if self.seed.enabled { 1i64 } else { 0i64 }),
+            true,
+        );
+        if let Some(ratio) = self.seed.ratio {
+            call(
+                "seed.ratio.set",
+                &Object::from(ratio.to_string().as_str()),
+                true,
+            );
+        }
+        call(
+            "seed.time.set",
+            &Object::from(self.seed.seeding_time_secs as i64),
+            true,
+        );
+        call(
+            "seed.idle.set",
+            &Object::from(self.seed.inactive_secs as i64),
+            true,
+        );
+        call(
+            "seed.mode.set",
+            &Object::from(self.seed.mode.as_str()),
+            true,
+        );
+        if let Some(action) = &self.seed.action {
+            call("seed.action.set", &Object::from(action.as_str()), true);
+        }
+        call(
+            "seed.check_interval.set",
+            &Object::from(self.seed.check_interval_secs as i64),
+            true,
+        );
+        call(
+            "rules.enabled.set",
+            &Object::from(if self.rules.enabled { 1i64 } else { 0i64 }),
+            true,
+        );
+        call(
+            "rules.allow_destructive.set",
+            &Object::from(if self.rules.allow_destructive {
+                1i64
+            } else {
+                0i64
+            }),
+            true,
+        );
+        if let Some(interval) = self.tiering.check_interval {
+            call(
+                "tiering.check_interval.set",
+                &Object::from(interval as i64),
+                true,
+            );
+        }
     }
 }
 

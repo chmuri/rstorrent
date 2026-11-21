@@ -12,6 +12,7 @@ lt-engine.workspace = true
 lt-dht.workspace = true
 lt-protocol.workspace = true
 rt-rpc.workspace = true
+rt-rules.workspace = true
 lt-storage.workspace = true
 lt-net.workspace = true
 lt-tracker.workspace = true

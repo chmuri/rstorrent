@@ -1,4 +1,6 @@
-use crate::download::Download;
+use crate::download::{
+    format_limit_value, format_seed_action, parse_limit_value, parse_seed_action, Download,
+};
 use crate::download_list::DownloadList;
 use crate::manager::Manager;
 use crate::session::SessionManager;
@@ -10,6 +12,7 @@ use lt_common::{HashString, Object};
 use rt_rpc::command_flags::*;
 use rt_rpc::parse_commands::{parse_command, parse_command_execute, parse_command_spec};
 use rt_rpc::{convert_to_string, convert_to_value, CommandMap, RpcError, Target};
+use rt_rules::{EffectiveLimits, LimitMode, LimitValue, SeedPolicy};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -1203,6 +1206,9 @@ pub fn register_download_commands(
     // Register the extended surface before snapshotting the command map so
     // d.multicall/d.multicall2 can dispatch every download getter.
     register_download_extended_commands(map, &download_list, &view_manager, &overrides)?;
+    // Seed-policy surface (plan §6.2) — likewise before the view/multicall
+    // snapshots so filters and multicalls see every d.* command.
+    register_seed_commands(map, &download_list)?;
 
     // d.multicall2: view_name, commands...
     let vm_mc = Arc::clone(&view_manager);
@@ -3634,4 +3640,738 @@ fn register_download_extended_commands(
     )?;
 
     Ok(())
+}
+
+/// Current unix seconds; a clock before the epoch falls back to 0 (the same
+/// convention as `d.tier.set`).
+fn seed_unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// RPC string form of a seed-limit override: `inherit` when the torrent
+/// defers upward, otherwise the shared sidecar format (`unlimited|<value>`).
+fn limit_value_string<T: std::fmt::Display>(value: &LimitValue<T>) -> String {
+    format_limit_value(value).unwrap_or_else(|| "inherit".to_string())
+}
+
+/// Resolves the effective seed limits for one download (plan §6.2).
+///
+/// Globals and the label registry come from the published
+/// [`crate::seed_context`] slot; before the glue installs it the resolver
+/// sees only the torrent overrides over default globals (no labels). The
+/// label is `d.custom1` (trimmed) matched against the registry, mirroring
+/// `RuleService::resolve_for`. Lock order matches the glue: the download
+/// read lock is held first, then the context read lock.
+fn resolve_download_limits(dl: &Download) -> EffectiveLimits {
+    let context = crate::seed_context::seed_context();
+    let guard = context
+        .as_ref()
+        .map(|ctx| ctx.read().unwrap_or_else(|e| e.into_inner()));
+    let fallback = SeedPolicy::default();
+    let globals = guard.as_ref().map_or(&fallback, |ctx| &ctx.globals);
+    let label_name = dl.custom_field(1).trim();
+    let label = guard.as_ref().and_then(|ctx| {
+        ctx.labels
+            .iter()
+            .find(|label| label.name == label_name)
+            .map(|label| (label.name.as_str(), &label.policy))
+    });
+    rt_rules::resolve_limits(globals, label, dl.seed_overrides())
+}
+
+/// `d.seed_limits` dict: effective values plus per-field sources. Unlimited
+/// limits render as `"unlimited"` (ratio) or `-1` (seconds).
+fn seed_limits_object(limits: &EffectiveLimits) -> Object {
+    let mut entries: std::collections::BTreeMap<Vec<u8>, Object> =
+        std::collections::BTreeMap::new();
+    entries.insert(
+        b"ratio".to_vec(),
+        Object::from(match limits.ratio {
+            Some(ratio) => ratio.to_string(),
+            None => "unlimited".to_string(),
+        }),
+    );
+    entries.insert(
+        b"seeding_time".to_vec(),
+        Object::from(limits.seeding_time_secs.map_or(-1i64, |secs| secs as i64)),
+    );
+    entries.insert(
+        b"inactive".to_vec(),
+        Object::from(limits.inactive_secs.map_or(-1i64, |secs| secs as i64)),
+    );
+    entries.insert(
+        b"mode".to_vec(),
+        Object::from(match limits.mode {
+            LimitMode::Any => "any",
+            LimitMode::All => "all",
+        }),
+    );
+    entries.insert(
+        b"action".to_vec(),
+        Object::from(format_seed_action(&limits.action)),
+    );
+    entries.insert(
+        b"source_ratio".to_vec(),
+        Object::from(limits.sources.ratio.as_str()),
+    );
+    entries.insert(
+        b"source_seeding_time".to_vec(),
+        Object::from(limits.sources.seeding_time_secs.as_str()),
+    );
+    entries.insert(
+        b"source_inactive".to_vec(),
+        Object::from(limits.sources.inactive_secs.as_str()),
+    );
+    entries.insert(
+        b"source_mode".to_vec(),
+        Object::from(limits.sources.mode.as_str()),
+    );
+    entries.insert(
+        b"source_action".to_vec(),
+        Object::from(limits.sources.action.as_str()),
+    );
+    Object::create_map_with(entries)
+}
+
+/// Seed-policy surface (plan.md §6.2, task T3b): seed accumulators, tags,
+/// per-torrent seed overrides, resolved limits and RSS provenance.
+///
+/// Called from `register_download_commands` before the view/multicall
+/// snapshots so filters and `d.multicall` dispatch every command. Getters
+/// are untrusted-safe reads; setters validate their input and leave the
+/// download untouched on error.
+fn register_seed_commands(
+    map: &mut CommandMap,
+    download_list: &Arc<RwLock<DownloadList>>,
+) -> Result<(), RpcError> {
+    // Accumulators and the last-transfer timestamp.
+    add_getter(map, download_list, "d.seeding_time", |dl| {
+        Object::from(dl.seeding_time() as i64)
+    })?;
+    add_getter(map, download_list, "d.idle_time", |dl| {
+        Object::from(dl.idle_secs(seed_unix_now()) as i64)
+    })?;
+    add_getter(map, download_list, "d.last_transfer_at", |dl| {
+        Object::from(dl.last_transfer_at() as i64)
+    })?;
+    add_setter(map, download_list, "d.last_transfer_at.set", |dl, obj| {
+        dl.set_last_transfer_at(to_u64(obj)?);
+        Ok(())
+    })?;
+
+    // Tags: comma-separated list; `Download` trims, drops empties and dedups.
+    add_getter(map, download_list, "d.tags", |dl| {
+        Object::from(dl.tags().join(","))
+    })?;
+    add_setter(map, download_list, "d.tags.set", |dl, obj| {
+        dl.set_tags(to_str(obj)?.split(','));
+        Ok(())
+    })?;
+    add_setter(map, download_list, "d.tags.add", |dl, obj| {
+        dl.add_tag(&to_str(obj)?);
+        Ok(())
+    })?;
+    add_setter(map, download_list, "d.tags.remove", |dl, obj| {
+        dl.remove_tag(&to_str(obj)?);
+        Ok(())
+    })?;
+    let list_has = Arc::clone(download_list);
+    map.insert_func(
+        "d.tags.has",
+        move |target, obj| {
+            let dl = get_download(target, &list_has)?;
+            let tag = to_str(obj)?;
+            let present = dl.read().unwrap_or_else(|e| e.into_inner()).has_tag(&tag);
+            Ok(Object::from(i64::from(present)))
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "<tag>",
+        "Check whether the download carries a tag.",
+    )?;
+
+    // Per-torrent seed limits: `inherit|unlimited|<value>` strings, parsed
+    // with the shared sidecar helpers so RPC and persistence never diverge.
+    add_getter(map, download_list, "d.seed_ratio", |dl| {
+        Object::from(limit_value_string(&dl.seed_overrides().ratio))
+    })?;
+    add_setter(map, download_list, "d.seed_ratio.set", |dl, obj| {
+        let text = to_str(obj)?;
+        let value = parse_limit_value::<f64>(&text).ok_or_else(|| {
+            RpcError::InputError(format!(
+                "d.seed_ratio.set: invalid value '{text}' (expected inherit|unlimited|<ratio>)"
+            ))
+        })?;
+        dl.seed_overrides_mut().ratio = value;
+        Ok(())
+    })?;
+    add_getter(map, download_list, "d.seed_time", |dl| {
+        Object::from(limit_value_string(&dl.seed_overrides().seeding_time_secs))
+    })?;
+    add_setter(map, download_list, "d.seed_time.set", |dl, obj| {
+        let text = to_str(obj)?;
+        let value = parse_limit_value::<u64>(&text).ok_or_else(|| {
+            RpcError::InputError(format!(
+                "d.seed_time.set: invalid value '{text}' (expected inherit|unlimited|<seconds>)"
+            ))
+        })?;
+        dl.seed_overrides_mut().seeding_time_secs = value;
+        Ok(())
+    })?;
+    add_getter(map, download_list, "d.seed_idle", |dl| {
+        Object::from(limit_value_string(&dl.seed_overrides().inactive_secs))
+    })?;
+    add_setter(map, download_list, "d.seed_idle.set", |dl, obj| {
+        let text = to_str(obj)?;
+        let value = parse_limit_value::<u64>(&text).ok_or_else(|| {
+            RpcError::InputError(format!(
+                "d.seed_idle.set: invalid value '{text}' (expected inherit|unlimited|<seconds>)"
+            ))
+        })?;
+        dl.seed_overrides_mut().inactive_secs = value;
+        Ok(())
+    })?;
+
+    // Seed action: `inherit` clears the override (falls back to label/global).
+    add_getter(map, download_list, "d.seed_action", |dl| {
+        Object::from(
+            dl.seed_overrides()
+                .action
+                .as_ref()
+                .map(format_seed_action)
+                .unwrap_or_else(|| "inherit".to_string()),
+        )
+    })?;
+    add_setter(map, download_list, "d.seed_action.set", |dl, obj| {
+        let text = to_str(obj)?;
+        let action = if text.trim() == "inherit" {
+            None
+        } else {
+            Some(parse_seed_action(&text).ok_or_else(|| {
+                RpcError::InputError(format!(
+                    "d.seed_action.set: invalid action '{text}' (expected inherit|stop|close|remove|remove_with_data|throttle:<name>|super_seed|notify|command:<str>)"
+                ))
+            })?)
+        };
+        dl.seed_overrides_mut().action = action;
+        Ok(())
+    })?;
+
+    // Resolved limits + sources (global → label → torrent).
+    add_getter(map, download_list, "d.seed_limits", |dl| {
+        seed_limits_object(&resolve_download_limits(dl))
+    })?;
+
+    // RSS provenance from `d.custom` (0 = absent or not a number).
+    for (name, key) in [
+        ("d.rss_feed", "rss.feed_id"),
+        ("d.rss_rule", "rss.rule_id"),
+        ("d.rss_item", "rss.item_id"),
+    ] {
+        add_getter(map, download_list, name, move |dl| {
+            let id = dl
+                .custom_get(key)
+                .and_then(|text| text.trim().parse::<u64>().ok())
+                .unwrap_or(0);
+            Object::from(id as i64)
+        })?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod test_seed_commands {
+    use super::*;
+    use crate::seed_context::{
+        install_seed_context, seed_context, seed_policies_active, set_seed_policies_active,
+        SeedContext,
+    };
+    use lt_engine::constructor::TorrentMetadata;
+    use rt_rules::{LabelDef, SeedAction};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn seed_metadata() -> TorrentMetadata {
+        TorrentMetadata {
+            info_hash: HashString::from_hex("4242424242424242424242424242424242424242").unwrap(),
+            name: "seed-commands".into(),
+            piece_length: 16384,
+            pieces: vec![0u8; 20],
+            num_pieces: 1,
+            total_size: 16384,
+            is_multi_file: false,
+            files: Vec::new(),
+            announce: None,
+            announce_list: Vec::new(),
+            is_private: false,
+            is_meta_download: false,
+            v2: None,
+        }
+    }
+
+    fn seed_setup() -> (CommandMap, Target, Arc<RwLock<Download>>) {
+        let download = Arc::new(RwLock::new(Download::from_metadata(seed_metadata())));
+        let hash = *download.read().unwrap().info_hash();
+        let mut list = DownloadList::new();
+        list.insert(Arc::clone(&download));
+        let list = Arc::new(RwLock::new(list));
+        let vm = Arc::new(RwLock::new(ViewManager::new()));
+        let mut map = CommandMap::new();
+        register_download_commands(&mut map, list, vm).unwrap();
+        (map, Target::Download(hash), download)
+    }
+
+    fn call(
+        map: &CommandMap,
+        name: &str,
+        target: &Target,
+        args: Vec<Object>,
+    ) -> Result<Object, RpcError> {
+        map.call_command(name, &Object::create_list_with(args), target, true)
+    }
+
+    fn get_str(map: &CommandMap, name: &str, target: &Target) -> String {
+        call(map, name, target, vec![])
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn get_i64(map: &CommandMap, name: &str, target: &Target) -> i64 {
+        call(map, name, target, vec![]).unwrap().as_value().unwrap()
+    }
+
+    #[test]
+    fn seed_limit_setters_validate_and_keep_state_on_error() {
+        let (map, target, download) = seed_setup();
+
+        // Defaults: everything inherits.
+        assert_eq!(get_str(&map, "d.seed_ratio", &target), "inherit");
+        assert_eq!(get_str(&map, "d.seed_time", &target), "inherit");
+        assert_eq!(get_str(&map, "d.seed_idle", &target), "inherit");
+
+        // Valid values roundtrip into the overrides.
+        call(&map, "d.seed_ratio.set", &target, vec![Object::from("2.5")]).unwrap();
+        call(&map, "d.seed_time.set", &target, vec![Object::from("3600")]).unwrap();
+        call(&map, "d.seed_idle.set", &target, vec![Object::from("1800")]).unwrap();
+        assert_eq!(get_str(&map, "d.seed_ratio", &target), "2.5");
+        assert_eq!(get_str(&map, "d.seed_time", &target), "3600");
+        assert_eq!(get_str(&map, "d.seed_idle", &target), "1800");
+        {
+            let guard = download.read().unwrap();
+            assert_eq!(guard.seed_overrides().ratio, LimitValue::Set(2.5));
+            assert_eq!(
+                guard.seed_overrides().seeding_time_secs,
+                LimitValue::Set(3600)
+            );
+            assert_eq!(guard.seed_overrides().inactive_secs, LimitValue::Set(1800));
+        }
+
+        // Numeric RPC arguments are accepted (stringified like other setters).
+        call(&map, "d.seed_time.set", &target, vec![Object::from(60i64)]).unwrap();
+        assert_eq!(get_str(&map, "d.seed_time", &target), "60");
+        call(&map, "d.seed_time.set", &target, vec![Object::from("3600")]).unwrap();
+
+        // Unlimited and inherit are explicit choices.
+        call(
+            &map,
+            "d.seed_ratio.set",
+            &target,
+            vec![Object::from("unlimited")],
+        )
+        .unwrap();
+        assert_eq!(get_str(&map, "d.seed_ratio", &target), "unlimited");
+        call(&map, "d.seed_ratio.set", &target, vec![Object::from("7.5")]).unwrap();
+
+        // Invalid input: InputError and no state change.
+        for bad in ["abc", "", "1.2.3"] {
+            let err = call(&map, "d.seed_ratio.set", &target, vec![Object::from(bad)]).unwrap_err();
+            assert!(matches!(err, RpcError::InputError(_)), "ratio '{bad}'");
+        }
+        assert_eq!(get_str(&map, "d.seed_ratio", &target), "7.5");
+        for bad in ["1.5", "-1", "abc", ""] {
+            let err = call(&map, "d.seed_time.set", &target, vec![Object::from(bad)]).unwrap_err();
+            assert!(matches!(err, RpcError::InputError(_)), "time '{bad}'");
+        }
+        assert_eq!(get_str(&map, "d.seed_time", &target), "3600");
+        for bad in ["-5", "x"] {
+            let err = call(&map, "d.seed_idle.set", &target, vec![Object::from(bad)]).unwrap_err();
+            assert!(matches!(err, RpcError::InputError(_)), "idle '{bad}'");
+        }
+        assert_eq!(get_str(&map, "d.seed_idle", &target), "1800");
+        {
+            let guard = download.read().unwrap();
+            assert_eq!(guard.seed_overrides().ratio, LimitValue::Set(7.5));
+            assert_eq!(
+                guard.seed_overrides().seeding_time_secs,
+                LimitValue::Set(3600)
+            );
+            assert_eq!(guard.seed_overrides().inactive_secs, LimitValue::Set(1800));
+        }
+
+        // inherit restores the default.
+        call(
+            &map,
+            "d.seed_ratio.set",
+            &target,
+            vec![Object::from("inherit")],
+        )
+        .unwrap();
+        assert_eq!(get_str(&map, "d.seed_ratio", &target), "inherit");
+        assert_eq!(
+            download.read().unwrap().seed_overrides().ratio,
+            LimitValue::Inherit
+        );
+    }
+
+    #[test]
+    fn seed_action_roundtrips_string_enum_string() {
+        let (map, target, download) = seed_setup();
+        assert_eq!(get_str(&map, "d.seed_action", &target), "inherit");
+
+        let cases = [
+            ("stop", SeedAction::Stop),
+            ("close", SeedAction::Close),
+            ("remove", SeedAction::Remove),
+            ("remove_with_data", SeedAction::RemoveWithData),
+            ("throttle:slow", SeedAction::Throttle("slow".into())),
+            ("super_seed", SeedAction::SuperSeed),
+            ("notify", SeedAction::Notify),
+            (
+                "command:d.stop= ;d.ignore_commands.set=1",
+                SeedAction::Command("d.stop= ;d.ignore_commands.set=1".into()),
+            ),
+        ];
+        for (text, expected) in cases {
+            call(&map, "d.seed_action.set", &target, vec![Object::from(text)]).unwrap();
+            assert_eq!(get_str(&map, "d.seed_action", &target), text);
+            assert_eq!(
+                download.read().unwrap().seed_overrides().action,
+                Some(expected)
+            );
+        }
+
+        // inherit clears the override.
+        call(
+            &map,
+            "d.seed_action.set",
+            &target,
+            vec![Object::from("inherit")],
+        )
+        .unwrap();
+        assert_eq!(get_str(&map, "d.seed_action", &target), "inherit");
+        assert_eq!(download.read().unwrap().seed_overrides().action, None);
+
+        // Invalid input: InputError and no state change.
+        call(
+            &map,
+            "d.seed_action.set",
+            &target,
+            vec![Object::from("notify")],
+        )
+        .unwrap();
+        for bad in ["explode", "throttle:", ""] {
+            let err =
+                call(&map, "d.seed_action.set", &target, vec![Object::from(bad)]).unwrap_err();
+            assert!(matches!(err, RpcError::InputError(_)), "action '{bad}'");
+        }
+        assert_eq!(get_str(&map, "d.seed_action", &target), "notify");
+        assert_eq!(
+            download.read().unwrap().seed_overrides().action,
+            Some(SeedAction::Notify)
+        );
+    }
+
+    #[test]
+    fn tags_commands_trim_dedup_and_query() {
+        let (map, target, download) = seed_setup();
+        assert_eq!(get_str(&map, "d.tags", &target), "");
+
+        // set: comma list, trimmed and deduplicated by Download::set_tags.
+        call(
+            &map,
+            "d.tags.set",
+            &target,
+            vec![Object::from(" foo , bar ,foo,, baz ")],
+        )
+        .unwrap();
+        assert_eq!(get_str(&map, "d.tags", &target), "foo,bar,baz");
+
+        // add: trims, duplicates are a no-op.
+        call(&map, "d.tags.add", &target, vec![Object::from(" qux ")]).unwrap();
+        call(&map, "d.tags.add", &target, vec![Object::from("foo")]).unwrap();
+        assert_eq!(get_str(&map, "d.tags", &target), "foo,bar,baz,qux");
+
+        // has: case-sensitive 0/1.
+        assert_eq!(
+            call(&map, "d.tags.has", &target, vec![Object::from("foo")])
+                .unwrap()
+                .as_value()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            call(&map, "d.tags.has", &target, vec![Object::from("FOO")])
+                .unwrap()
+                .as_value()
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            call(&map, "d.tags.has", &target, vec![Object::from("missing")])
+                .unwrap()
+                .as_value()
+                .unwrap(),
+            0
+        );
+
+        // remove: idempotent.
+        call(&map, "d.tags.remove", &target, vec![Object::from("bar")]).unwrap();
+        call(&map, "d.tags.remove", &target, vec![Object::from("bar")]).unwrap();
+        assert_eq!(get_str(&map, "d.tags", &target), "foo,baz,qux");
+        assert_eq!(
+            call(&map, "d.tags.has", &target, vec![Object::from("bar")])
+                .unwrap()
+                .as_value()
+                .unwrap(),
+            0
+        );
+
+        // Empty list clears all tags.
+        call(&map, "d.tags.set", &target, vec![Object::from("")]).unwrap();
+        assert_eq!(get_str(&map, "d.tags", &target), "");
+        assert!(download.read().unwrap().tags().is_empty());
+    }
+
+    #[test]
+    fn seeding_time_idle_time_and_last_transfer_at_surface() {
+        let (map, target, download) = seed_setup();
+
+        assert_eq!(get_i64(&map, "d.seeding_time", &target), 0);
+        download.write().unwrap().set_seeding_time(3600);
+        assert_eq!(get_i64(&map, "d.seeding_time", &target), 3600);
+
+        assert_eq!(get_i64(&map, "d.last_transfer_at", &target), 0);
+        call(
+            &map,
+            "d.last_transfer_at.set",
+            &target,
+            vec![Object::from(1_700_000_000i64)],
+        )
+        .unwrap();
+        assert_eq!(get_i64(&map, "d.last_transfer_at", &target), 1_700_000_000);
+        let err = call(
+            &map,
+            "d.last_transfer_at.set",
+            &target,
+            vec![Object::from(-5i64)],
+        )
+        .unwrap_err();
+        assert!(matches!(err, RpcError::InputError(_)));
+        assert_eq!(get_i64(&map, "d.last_transfer_at", &target), 1_700_000_000);
+
+        // idle_time wires idle_secs(now): a stopped download counts from
+        // last_active, so pinning it 100s in the past yields ~100.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        download.write().unwrap().set_last_active(now - 100);
+        let idle = get_i64(&map, "d.idle_time", &target);
+        assert!((idle - 100).abs() <= 2, "idle {idle} should be ~100");
+    }
+
+    #[test]
+    fn rss_provenance_getters_read_custom_keys() {
+        let (map, target, _download) = seed_setup();
+
+        // Absent provenance reads as 0.
+        assert_eq!(get_i64(&map, "d.rss_feed", &target), 0);
+        assert_eq!(get_i64(&map, "d.rss_rule", &target), 0);
+        assert_eq!(get_i64(&map, "d.rss_item", &target), 0);
+
+        for (key, value) in [
+            ("rss.feed_id", "7"),
+            ("rss.rule_id", "8"),
+            ("rss.item_id", "9"),
+        ] {
+            call(
+                &map,
+                "d.custom.set",
+                &target,
+                vec![Object::from(key), Object::from(value)],
+            )
+            .unwrap();
+        }
+        assert_eq!(get_i64(&map, "d.rss_feed", &target), 7);
+        assert_eq!(get_i64(&map, "d.rss_rule", &target), 8);
+        assert_eq!(get_i64(&map, "d.rss_item", &target), 9);
+
+        // Non-numeric values read as absent.
+        call(
+            &map,
+            "d.custom.set",
+            &target,
+            vec![Object::from("rss.feed_id"), Object::from("abc")],
+        )
+        .unwrap();
+        assert_eq!(get_i64(&map, "d.rss_feed", &target), 0);
+    }
+
+    #[test]
+    fn seed_limits_dict_before_and_after_context_install() {
+        // The only test in this binary that publishes the global slot: the
+        // before/after phases must run sequentially inside one test so the
+        // pre-install assertions cannot race another installer.
+        let (map, target, _download) = seed_setup();
+
+        // Before publication: default globals, no labels, action fallback Stop.
+        assert!(seed_context().is_none());
+        let dict = call(&map, "d.seed_limits", &target, vec![]).unwrap();
+        assert_eq!(
+            dict.get_key_string("ratio").unwrap(),
+            "unlimited".as_bytes()
+        );
+        assert_eq!(dict.get_key_value("seeding_time").unwrap(), -1);
+        assert_eq!(dict.get_key_value("inactive").unwrap(), -1);
+        assert_eq!(dict.get_key_string("mode").unwrap(), "any".as_bytes());
+        assert_eq!(dict.get_key_string("action").unwrap(), "stop".as_bytes());
+        for key in [
+            "source_ratio",
+            "source_seeding_time",
+            "source_inactive",
+            "source_mode",
+            "source_action",
+        ] {
+            assert_eq!(dict.get_key_string(key).unwrap(), "global".as_bytes());
+        }
+
+        // Torrent overrides win over (default) globals.
+        call(&map, "d.seed_ratio.set", &target, vec![Object::from("2.5")]).unwrap();
+        call(&map, "d.custom1.set", &target, vec![Object::from("movies")]).unwrap();
+        let dict = call(&map, "d.seed_limits", &target, vec![]).unwrap();
+        assert_eq!(dict.get_key_string("ratio").unwrap(), "2.5".as_bytes());
+        assert_eq!(
+            dict.get_key_string("source_ratio").unwrap(),
+            "torrent".as_bytes()
+        );
+
+        // Publish globals + label registry (the glue's startup step).
+        let globals = SeedPolicy {
+            ratio: LimitValue::Set(3.0),
+            seeding_time_secs: LimitValue::Set(7200),
+            inactive_secs: LimitValue::Unlimited,
+            mode: LimitMode::All,
+            action: Some(SeedAction::Notify),
+        };
+        let labels = vec![LabelDef {
+            name: "movies".into(),
+            color: None,
+            policy: SeedPolicy {
+                ratio: LimitValue::Set(4.0),
+                seeding_time_secs: LimitValue::Inherit,
+                inactive_secs: LimitValue::Set(600),
+                mode: LimitMode::Any,
+                action: Some(SeedAction::Throttle("slow".into())),
+            },
+            save_path: None,
+        }];
+        install_seed_context(Arc::new(RwLock::new(SeedContext { globals, labels })));
+
+        // torrent > label > global, per field; a matched label supplies mode.
+        let dict = call(&map, "d.seed_limits", &target, vec![]).unwrap();
+        assert_eq!(dict.get_key_string("ratio").unwrap(), "2.5".as_bytes());
+        assert_eq!(
+            dict.get_key_string("source_ratio").unwrap(),
+            "torrent".as_bytes()
+        );
+        assert_eq!(dict.get_key_value("seeding_time").unwrap(), 7200);
+        assert_eq!(
+            dict.get_key_string("source_seeding_time").unwrap(),
+            "global".as_bytes()
+        );
+        assert_eq!(dict.get_key_value("inactive").unwrap(), 600);
+        assert_eq!(
+            dict.get_key_string("source_inactive").unwrap(),
+            "label:movies".as_bytes()
+        );
+        assert_eq!(dict.get_key_string("mode").unwrap(), "any".as_bytes());
+        assert_eq!(
+            dict.get_key_string("source_mode").unwrap(),
+            "label:movies".as_bytes()
+        );
+        assert_eq!(
+            dict.get_key_string("action").unwrap(),
+            "throttle:slow".as_bytes()
+        );
+        assert_eq!(
+            dict.get_key_string("source_action").unwrap(),
+            "label:movies".as_bytes()
+        );
+
+        // Clearing the torrent override falls back to the label.
+        call(
+            &map,
+            "d.seed_ratio.set",
+            &target,
+            vec![Object::from("inherit")],
+        )
+        .unwrap();
+        let dict = call(&map, "d.seed_limits", &target, vec![]).unwrap();
+        // f64 Display renders whole numbers without a fractional part.
+        assert_eq!(dict.get_key_string("ratio").unwrap(), "4".as_bytes());
+        assert_eq!(
+            dict.get_key_string("source_ratio").unwrap(),
+            "label:movies".as_bytes()
+        );
+
+        // An unmatched label resolves from globals only.
+        call(
+            &map,
+            "d.custom1.set",
+            &target,
+            vec![Object::from("unknown")],
+        )
+        .unwrap();
+        let dict = call(&map, "d.seed_limits", &target, vec![]).unwrap();
+        assert_eq!(dict.get_key_string("ratio").unwrap(), "3".as_bytes());
+        assert_eq!(
+            dict.get_key_string("source_ratio").unwrap(),
+            "global".as_bytes()
+        );
+        assert_eq!(dict.get_key_value("seeding_time").unwrap(), 7200);
+        assert_eq!(dict.get_key_value("inactive").unwrap(), -1);
+        assert_eq!(dict.get_key_string("mode").unwrap(), "all".as_bytes());
+        assert_eq!(dict.get_key_string("action").unwrap(), "notify".as_bytes());
+        for key in [
+            "source_ratio",
+            "source_seeding_time",
+            "source_inactive",
+            "source_mode",
+            "source_action",
+        ] {
+            assert_eq!(dict.get_key_string(key).unwrap(), "global".as_bytes());
+        }
+
+        // Subsequent installations are ignored (OnceLock semantics).
+        let other = Arc::new(RwLock::new(SeedContext {
+            globals: SeedPolicy {
+                ratio: LimitValue::Set(99.0),
+                ..SeedPolicy::default()
+            },
+            labels: Vec::new(),
+        }));
+        install_seed_context(other);
+        let ctx = seed_context().expect("context installed");
+        assert_eq!(ctx.read().unwrap().globals.ratio, LimitValue::Set(3.0));
+
+        // Master switch consulted by the legacy ratio enforcement.
+        set_seed_policies_active(true);
+        assert!(seed_policies_active());
+        set_seed_policies_active(false);
+        assert!(!seed_policies_active());
+    }
 }

@@ -35,6 +35,8 @@ async fn test_grpc_daemon_integration() {
     });
     let download_directory = "/tmp/rstorrent-grpc-integration-downloads".to_string();
     let cli = Cli {
+        token: None,
+        endpoint: None,
         daemon: true,
         no_rc: true,
         grpc_port: Some(port),

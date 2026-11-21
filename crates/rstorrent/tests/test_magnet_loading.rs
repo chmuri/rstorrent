@@ -71,6 +71,8 @@ async fn test_cli_positional_magnet_loading() {
     std::fs::create_dir_all(&root).unwrap();
 
     let cli = Cli {
+        token: None,
+        endpoint: None,
         files: vec![SAMPLE_MAGNET.to_string()],
         session: Some(root.join("session").to_string_lossy().to_string()),
         directory: Some(root.join("data").to_string_lossy().to_string()),

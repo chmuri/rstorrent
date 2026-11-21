@@ -108,6 +108,19 @@ pub struct TorrentSummary {
     pub chunks_total: u32,
     #[serde(default)]
     pub hash_progress_pct: f32,
+    /// Rules engine additions (plan §6.6, additive).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub seeding_time_secs: u64,
+    #[serde(default)]
+    pub idle_secs: u64,
+    #[serde(default)]
+    pub seed_limits: Option<rt_rules::EffectiveLimits>,
+    #[serde(default)]
+    pub rss_feed_id: Option<u64>,
+    #[serde(default)]
+    pub rss_rule_id: Option<u64>,
 }
 
 pub fn summary_from(download: &Download) -> TorrentSummary {
@@ -157,6 +170,30 @@ pub fn summary_from(download: &Download) -> TorrentSummary {
         chunks_hashed,
         chunks_total,
         hash_progress_pct,
+        tags: download.tags().to_vec(),
+        seeding_time_secs: download.seeding_time(),
+        idle_secs: download.idle_secs(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        ),
+        seed_limits: rt_core::seed_context::seed_context().map(|ctx| {
+            let ctx = ctx.read().unwrap_or_else(|e| e.into_inner());
+            let label_name = download.custom_field(1).trim().to_string();
+            let label = ctx
+                .labels
+                .iter()
+                .find(|l| l.name == label_name)
+                .map(|l| (l.name.as_str(), &l.policy));
+            rt_rules::resolve_limits(&ctx.globals, label, download.seed_overrides())
+        }),
+        rss_feed_id: download
+            .custom_get("rss.feed_id")
+            .and_then(|v| v.parse().ok()),
+        rss_rule_id: download
+            .custom_get("rss.rule_id")
+            .and_then(|v| v.parse().ok()),
     }
 }
 

@@ -42,7 +42,7 @@ pub struct MapValue {
     pub fields: ::std::collections::HashMap<::prost::alloc::string::String, ObjectValue>,
 }
 #[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TorrentSummary {
     #[prost(string, tag = "1")]
     pub hash: ::prost::alloc::string::String,
@@ -93,6 +93,45 @@ pub struct TorrentSummary {
     pub peers_connected: u32,
     #[prost(uint32, tag = "24")]
     pub peers_total: u32,
+    /// Rules engine additions (plan §6.8, additive; 0 = unset for rss ids).
+    #[prost(string, repeated, tag = "25")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "26")]
+    pub seeding_time_secs: u64,
+    #[prost(uint64, tag = "27")]
+    pub idle_secs: u64,
+    #[prost(message, optional, tag = "28")]
+    pub seed_limits: ::core::option::Option<EffectiveSeedLimits>,
+    #[prost(uint64, tag = "29")]
+    pub rss_feed_id: u64,
+    #[prost(uint64, tag = "30")]
+    pub rss_rule_id: u64,
+}
+/// Resolved seed limits with inheritance sources ("global", "label:<name>",
+/// "torrent"). Unset optional fields mean unlimited.
+#[allow(clippy::all)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EffectiveSeedLimits {
+    #[prost(double, optional, tag = "1")]
+    pub ratio: ::core::option::Option<f64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub seeding_time_secs: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "3")]
+    pub inactive_secs: ::core::option::Option<u64>,
+    #[prost(string, tag = "4")]
+    pub mode: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub action: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub source_ratio: ::prost::alloc::string::String,
+    #[prost(string, tag = "7")]
+    pub source_seeding_time: ::prost::alloc::string::String,
+    #[prost(string, tag = "8")]
+    pub source_inactive: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub source_mode: ::prost::alloc::string::String,
+    #[prost(string, tag = "10")]
+    pub source_action: ::prost::alloc::string::String,
 }
 #[allow(clippy::all)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -335,7 +374,7 @@ pub struct StreamEventsRequest {
     pub event_filter: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TorrentEvent {
     #[prost(string, tag = "1")]
     pub event_name: ::prost::alloc::string::String,

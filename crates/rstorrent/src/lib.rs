@@ -1,12 +1,16 @@
 //! Crate `rstorrent`: Main entry point, CLI, Control, Setup, Signals
 
 pub mod cli;
+pub mod cli_remote;
 pub mod control;
 pub mod grpc;
 pub mod logging;
 pub mod metrics;
 pub mod prometheus;
 pub mod rss;
+pub mod rules;
+pub mod rules_commands;
+pub mod rules_store;
 pub mod scgi;
 pub mod setup;
 pub mod signals;
@@ -33,7 +37,19 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            // Remote subcommands carry their own flags (--json/--file/--ratio…)
+            // that the main Cli does not know; route keyword families from raw
+            // argv before surfacing the clap error.
+            let raw: Vec<String> = std::env::args().skip(1).collect();
+            if let Some(result) = cli_remote::try_route_raw(&raw) {
+                return result;
+            }
+            err.exit();
+        }
+    };
 
     if let Some(ref path_opt) = cli.generate_config {
         let path_str = path_opt.as_deref().unwrap_or("rstorrent.toml");
@@ -73,7 +89,8 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             control.config_path_slot.clone(),
             control.rss_service_slot.clone(),
             control.lifecycle.clone(),
-        );
+        )
+        .with_rules(control.rule_service_slot.clone());
         let tls = webui::resolve_webui_tls(&cli);
         let shutdown = control.shutdown_tx.subscribe();
         tracing::info!(%addr, tls = tls.is_some(), "WebUI server listening");
@@ -109,6 +126,13 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .map(|service| rss::spawn_worker(service.clone(), control.shutdown_tx.subscribe()));
 
+    // Rules engine worker: periodic seed-policy/rule passes plus immediate
+    // event-driven passes. Independent of the WebUI, like RSS.
+    let rules_task = control
+        .rule_service
+        .as_ref()
+        .map(|service| rules::spawn_worker(service.clone(), control.shutdown_tx.subscribe()));
+
     if !is_interactive {
         tracing::info!("rstorrent running in non-interactive (daemon) mode...");
         while !control.signals.is_shutdown() {
@@ -124,6 +148,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
             task.abort();
         }
         if let Some(task) = &rss_task {
+            task.abort();
+        }
+        if let Some(task) = &rules_task {
             task.abort();
         }
         control.metrics.summary(
@@ -509,6 +536,9 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(task) = &rss_task {
         task.abort();
     }
+    if let Some(task) = &rules_task {
+        task.abort();
+    }
     control.metrics.summary(
         "exit.summary",
         &[
@@ -530,6 +560,18 @@ fn resolve_config_path(cli: &Cli) -> Option<std::path::PathBuf> {
 }
 
 fn handle_cli_config(cli: &Cli) -> Result<bool, Box<dyn std::error::Error>> {
+    // Rules-engine remote subcommands (plan §6.7): the keyword router extends
+    // the `config` precedent; positional FILES/magnet behavior is unchanged.
+    if let Some(keyword) = cli.files.first().map(|s| s.as_str()) {
+        if matches!(keyword, "rules" | "labels" | "seed" | "torrent" | "cmd") {
+            return crate::cli_remote::handle_remote_subcommand(
+                keyword,
+                &cli.files[1..],
+                cli.endpoint.as_deref(),
+                cli.token.as_deref(),
+            );
+        }
+    }
     let is_config_cmd = cli.files.first().map(|s| s.as_str()) == Some("config");
     let sub = if is_config_cmd {
         cli.files.get(1).map(|s| s.as_str())

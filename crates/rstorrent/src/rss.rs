@@ -88,7 +88,9 @@ impl RssService {
     pub async fn apply_unprocessed(&self) {
         let matches = self.rss.evaluate_unprocessed();
         for matched in &matches {
-            let result = self.add_torrent(&matched.item, &matched.action).await;
+            let result = self
+                .add_torrent(&matched.item, &matched.action, Some(matched.rule_id))
+                .await;
             self.rss
                 .record_download(matched.item.id, Some(matched.rule_id), result);
         }
@@ -99,7 +101,9 @@ impl RssService {
     pub async fn apply_unprocessed_feed(&self, feed_id: FeedId) {
         let matches = self.rss.evaluate_unprocessed_for_feed(feed_id);
         for matched in &matches {
-            let result = self.add_torrent(&matched.item, &matched.action).await;
+            let result = self
+                .add_torrent(&matched.item, &matched.action, Some(matched.rule_id))
+                .await;
             self.rss
                 .record_download(matched.item.id, Some(matched.rule_id), result);
         }
@@ -124,14 +128,16 @@ impl RssService {
     /// the default action. Already-processed items are rejected.
     pub async fn download_item(&self, item_id: u64) -> Result<DownloadResult, RssError> {
         let (item, action, rule_id) = self.rss.take_manual(item_id)?;
-        let result = self.add_torrent(&item, &action).await;
+        let result = self.add_torrent(&item, &action, rule_id).await;
         self.rss.record_download(item_id, rule_id, result.clone());
         Ok(result)
     }
 
     async fn apply_matches(&self, outcome: &RefreshOutcome) {
         for matched in &outcome.matches {
-            let result = self.add_torrent(&matched.item, &matched.action).await;
+            let result = self
+                .add_torrent(&matched.item, &matched.action, Some(matched.rule_id))
+                .await;
             self.rss
                 .record_download(matched.item.id, Some(matched.rule_id), result);
         }
@@ -140,7 +146,12 @@ impl RssService {
     /// Loads the item's torrent (magnet or fetched `.torrent` bytes), applies
     /// the rule action and inserts it into the download list. Runs after the
     /// manager lock is released; every lock section here is short and synchronous.
-    async fn add_torrent(&self, item: &FeedItem, action: &DownloadAction) -> DownloadResult {
+    async fn add_torrent(
+        &self,
+        item: &FeedItem,
+        action: &DownloadAction,
+        rule_id: Option<u64>,
+    ) -> DownloadResult {
         let mut factory = DownloadFactory::new();
         if let Some(magnet) = &item.magnet {
             if let Err(err) = factory.load_magnet(magnet) {
@@ -180,6 +191,22 @@ impl RssService {
             // d.custom1 is custom field index 1 (the API is 1-based).
             download.set_custom_field(1, label.as_str());
         }
+        // Rules-engine bridge (plan §6.10): provenance in the persisted custom
+        // map plus tags / throttle / per-torrent seed-limit overrides.
+        download.custom_set("rss.feed_id", item.feed_id.to_string());
+        if let Some(rule_id) = rule_id {
+            download.custom_set("rss.rule_id", rule_id.to_string());
+        }
+        download.custom_set("rss.item_id", item.id.to_string());
+        for tag in &action.tags {
+            download.add_tag(tag);
+        }
+        if let Some(throttle) = &action.throttle_name {
+            download.set_throttle_name(throttle.as_str());
+        }
+        if let Some(limits) = &action.seed_limits {
+            *download.seed_overrides_mut() = rss_seed_limits_to_overrides(limits);
+        }
         let hash = download.info_hash_hex();
         let download = Arc::new(RwLock::new(download));
         let inserted = {
@@ -207,6 +234,61 @@ impl RssService {
             tracing::warn!(error = %err, "Could not save session after RSS download");
         }
         DownloadResult::Added(hash)
+    }
+}
+
+/// Maps the RSS-local seed-limit shape onto `rt_rules::TorrentOverrides`
+/// (plan §6.10): `None` = inherit, `Some(0)` = unlimited, `Some(v)` = set.
+fn rss_seed_limits_to_overrides(limits: &rt_rss::RssSeedLimits) -> rt_rules::TorrentOverrides {
+    use rt_rules::{LimitValue, TorrentOverrides};
+    fn f64_limit(v: Option<f64>) -> LimitValue<f64> {
+        match v {
+            None => LimitValue::Inherit,
+            Some(x) if x <= 0.0 => LimitValue::Unlimited,
+            Some(x) => LimitValue::Set(x),
+        }
+    }
+    fn u64_limit(v: Option<u64>) -> LimitValue<u64> {
+        match v {
+            None => LimitValue::Inherit,
+            Some(0) => LimitValue::Unlimited,
+            Some(x) => LimitValue::Set(x),
+        }
+    }
+    let action = limits.action.as_deref().and_then(parse_seed_action);
+    if limits.action.is_some() && action.is_none() {
+        tracing::warn!(
+            action = ?limits.action,
+            "RSS rule seed_limits.action is invalid; ignoring"
+        );
+    }
+    TorrentOverrides {
+        ratio: f64_limit(limits.ratio),
+        seeding_time_secs: u64_limit(limits.seeding_time_secs),
+        inactive_secs: u64_limit(limits.inactive_secs),
+        action,
+    }
+}
+
+/// Parses the wire/TOML seed-action string form (plan §6.2).
+fn parse_seed_action(value: &str) -> Option<rt_rules::SeedAction> {
+    use rt_rules::SeedAction;
+    match value {
+        "stop" => Some(SeedAction::Stop),
+        "close" => Some(SeedAction::Close),
+        "remove" => Some(SeedAction::Remove),
+        "remove_with_data" => Some(SeedAction::RemoveWithData),
+        "super_seed" => Some(SeedAction::SuperSeed),
+        "notify" => Some(SeedAction::Notify),
+        _ => {
+            if let Some(name) = value.strip_prefix("throttle:") {
+                Some(SeedAction::Throttle(name.to_string()))
+            } else {
+                value
+                    .strip_prefix("command:")
+                    .map(|cmd| SeedAction::Command(cmd.to_string()))
+            }
+        }
     }
 }
 
@@ -312,6 +394,9 @@ mod tests {
             save_path: None,
             label: None,
             paused: false,
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
         }
     }
 
@@ -321,7 +406,7 @@ mod tests {
         let svc = service(&dir);
         let mut item = magnet_item(HASH);
         item.magnet = None;
-        let result = svc.add_torrent(&item, &default_action()).await;
+        let result = svc.add_torrent(&item, &default_action(), None).await;
         assert!(matches!(result, DownloadResult::Failed(ref msg) if msg == "no torrent source"));
         assert_eq!(svc.download_list.read().unwrap().len(), 0);
     }
@@ -335,10 +420,13 @@ mod tests {
             save_path: Some(save_path.to_string_lossy().into_owned()),
             label: Some("rss".to_string()),
             paused: true,
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
         };
         let item = magnet_item(HASH);
 
-        let result = svc.add_torrent(&item, &action).await;
+        let result = svc.add_torrent(&item, &action, Some(7)).await;
         assert!(matches!(result, DownloadResult::Added(ref hash) if hash == HASH));
         assert!(save_path.exists());
         {
@@ -352,7 +440,7 @@ mod tests {
         }
 
         // The same info hash a second time is a duplicate, not a second entry.
-        let again = svc.add_torrent(&item, &action).await;
+        let again = svc.add_torrent(&item, &action, Some(7)).await;
         assert!(matches!(again, DownloadResult::Duplicate(ref hash) if hash == HASH));
         assert_eq!(svc.download_list.read().unwrap().len(), 1);
     }
@@ -361,7 +449,9 @@ mod tests {
     async fn magnet_add_starts_when_not_paused() {
         let dir = TempDir::new("magnet_start");
         let svc = service(&dir);
-        let result = svc.add_torrent(&magnet_item(HASH), &default_action()).await;
+        let result = svc
+            .add_torrent(&magnet_item(HASH), &default_action(), None)
+            .await;
         assert!(matches!(result, DownloadResult::Added(_)));
         let download = svc.download_list.read().unwrap().find_hex(HASH).unwrap();
         assert!(download.read().unwrap().is_active());
@@ -375,5 +465,90 @@ mod tests {
             svc.download_item(42).await,
             Err(RssError::NotFound("item", 42))
         ));
+    }
+
+    #[tokio::test]
+    async fn bridge_applies_provenance_tags_throttle_and_seed_limits() {
+        let dir = TempDir::new("bridge");
+        let svc = service(&dir);
+        let action = DownloadAction {
+            save_path: None,
+            label: Some("tv".into()),
+            paused: true,
+            tags: vec!["rss".into(), "keep".into()],
+            throttle_name: Some("seed".into()),
+            seed_limits: Some(rt_rss::RssSeedLimits {
+                ratio: Some(3.0),
+                seeding_time_secs: Some(0), // unlimited
+                inactive_secs: None,        // inherit
+                action: Some("throttle:slow".into()),
+            }),
+        };
+        let result = svc.add_torrent(&magnet_item(HASH), &action, Some(7)).await;
+        assert!(matches!(result, DownloadResult::Added(_)));
+        let download = svc.download_list.read().unwrap().find_hex(HASH).unwrap();
+        let guard = download.read().unwrap();
+        assert_eq!(guard.custom_get("rss.feed_id"), Some("1"));
+        assert_eq!(guard.custom_get("rss.rule_id"), Some("7"));
+        assert_eq!(guard.custom_get("rss.item_id"), Some("1"));
+        assert!(guard.has_tag("rss"));
+        assert!(guard.has_tag("keep"));
+        assert_eq!(guard.throttle_name(), "seed");
+        let overrides = guard.seed_overrides();
+        assert_eq!(overrides.ratio, rt_rules::LimitValue::Set(3.0));
+        assert_eq!(overrides.seeding_time_secs, rt_rules::LimitValue::Unlimited);
+        assert_eq!(overrides.inactive_secs, rt_rules::LimitValue::Inherit);
+        assert_eq!(
+            overrides.action,
+            Some(rt_rules::SeedAction::Throttle("slow".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_download_records_provenance_without_rule() {
+        let dir = TempDir::new("manual_prov");
+        let svc = service(&dir);
+        let result = svc
+            .add_torrent(&magnet_item(HASH), &default_action(), None)
+            .await;
+        assert!(matches!(result, DownloadResult::Added(_)));
+        let download = svc.download_list.read().unwrap().find_hex(HASH).unwrap();
+        let guard = download.read().unwrap();
+        assert_eq!(guard.custom_get("rss.feed_id"), Some("1"));
+        assert_eq!(guard.custom_get("rss.rule_id"), None);
+        assert_eq!(guard.custom_get("rss.item_id"), Some("1"));
+    }
+
+    #[test]
+    fn seed_action_parsing() {
+        assert_eq!(parse_seed_action("stop"), Some(rt_rules::SeedAction::Stop));
+        assert_eq!(
+            parse_seed_action("remove_with_data"),
+            Some(rt_rules::SeedAction::RemoveWithData)
+        );
+        assert_eq!(
+            parse_seed_action("throttle:seed"),
+            Some(rt_rules::SeedAction::Throttle("seed".into()))
+        );
+        assert_eq!(
+            parse_seed_action("command:d.stop="),
+            Some(rt_rules::SeedAction::Command("d.stop=".into()))
+        );
+        assert_eq!(parse_seed_action("bogus"), None);
+        assert_eq!(parse_seed_action("inherit"), None);
+    }
+
+    #[test]
+    fn rss_seed_limits_mapping() {
+        let overrides = rss_seed_limits_to_overrides(&rt_rss::RssSeedLimits {
+            ratio: Some(0.0),
+            seeding_time_secs: Some(60),
+            inactive_secs: None,
+            action: Some("bogus".into()),
+        });
+        assert_eq!(overrides.ratio, rt_rules::LimitValue::Unlimited);
+        assert_eq!(overrides.seeding_time_secs, rt_rules::LimitValue::Set(60));
+        assert_eq!(overrides.inactive_secs, rt_rules::LimitValue::Inherit);
+        assert_eq!(overrides.action, None);
     }
 }

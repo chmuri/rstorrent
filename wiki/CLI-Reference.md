@@ -12,6 +12,7 @@ Two binaries ship with the project:
 ```
 rstorrent [OPTIONS] [FILES]...
 rstorrent [OPTIONS] config <show|get|set|validate> [ARGS]...
+rstorrent [OPTIONS] <rules|labels|seed|torrent|cmd> <subcommand> [ARGS]...
 ```
 
 Torrent files, magnet links and URLs given as positional arguments are loaded **started** at startup. `data:` URIs with base64-bencoded metainfo are also accepted.
@@ -40,6 +41,55 @@ rstorrent config validate
 rstorrent -c /custom/path.toml config validate
 ```
 
+### Remote Management Commands (rules engine)
+
+The first positional word `rules`, `labels`, `seed`, `torrent` or `cmd` selects a remote subcommand family executed against a **running daemon** over gRPC `CommandService.Execute` — the same command map as XML-RPC/REST, so every surface keeps parity. Any other first word keeps the legacy FILES/magnet behavior. See [Torrent Rules & Seed Policies](Torrent-Rules) for the model behind these commands.
+
+```bash
+# Global seed policies ([seed] settings)
+rstorrent seed show [--json]
+rstorrent seed set [--ratio 2.0] [--time 7d] [--idle 30m] [--mode any|all] \
+                   [--action stop|close|remove|remove_with_data|throttle:<name>|super_seed|notify|command:<str>] \
+                   [--enabled true|false] [--check-interval 10]
+
+# Label registry
+rstorrent labels list [--json]
+rstorrent labels add <name> [--color '#7c3aed']
+rstorrent labels remove <name>
+rstorrent labels policy <name> [--ratio 3.0|inherit|unlimited] [--time 7d] [--idle 30m] \
+                               [--action remove|inherit] [--save-path /disk/movies]
+
+# Automation rules
+rstorrent rules list [--json]
+rstorrent rules add --file rule.json
+rstorrent rules add --json '{"id":0,"name":"cleanup","scope":"global","conditions":[{"ratio_at_least":2.0}],"actions":["stop"]}' [--allow-destructive]
+rstorrent rules remove <id> | enable <id> | disable <id> | get <id> [--json]
+rstorrent rules test --file rule.json [--limit 50] [--json]   # dry-run: zero mutations
+rstorrent rules check [--json]                                # force one pass now
+rstorrent rules history [--limit 20] [--json]
+rstorrent rules export > backup.json
+rstorrent rules import backup.json
+
+# Per-torrent seed limits (effective values + inheritance sources)
+rstorrent torrent limits <hash>
+rstorrent torrent limits <hash> --ratio 3.0 --time unlimited --idle inherit --action stop
+
+# Any RPC command (rtxmlrpc-like); a leading 40-hex hash (optionally :d) targets a torrent
+rstorrent cmd d.seed_limits <hash>
+rstorrent cmd seed.show
+```
+
+| Flag / convention | Description |
+|---|---|
+| `--endpoint ENDPOINT` | Daemon endpoint: `host:port`, `tcp://host:port`, `unix:///path/to.sock` or `grpc://host:port`. Unset: discovered from the active TOML config — `[rpc] grpc_socket` preferred (local Unix sockets are trusted), then `[rpc] grpc_port` on loopback. No gRPC configured → a readable error with a REST/curl hint. |
+| `--json` | Raw JSON output instead of the default table (a switch; `rules add --json '<json>'` instead supplies the rule document). |
+| `--allow-destructive` | `rules add` only: sets the rule's `allow_destructive` flag (the global `[rules] allow_destructive` gate must also be open). |
+| `--limit N` | `rules test` caps returned matches (default 50); `rules history` caps entries (default 100, max 500). |
+| Durations | `120` (bare seconds), `30s`, `30m`, `2h`, `7d`. Fractions, negatives and compound forms (`1h30m`) are rejected. |
+| Limit values | `seed set` is global: a number or `unlimited` (`inherit` rejected). `labels policy` / `torrent limits` accept `inherit\|unlimited\|<value>`; omitted flags keep the current value. |
+
+Errors go to stderr with a non-zero exit code. The same operations work at startup via `-O 'rules.add=…'`, in `.rc` files and in Lua (`rtorrent.call`).
+
 ### Options
 
 | Flag | Value | Description |
@@ -56,6 +106,8 @@ rstorrent -c /custom/path.toml config validate
 | `--daemon` | — | Run headless without the TUI. |
 | `--grpc-port` | `PORT` | Open a gRPC TCP server. A bare port binds `127.0.0.1`. |
 | `--grpc-socket` | `PATH` | Open a gRPC Unix socket (`~/` expanded). |
+| `--endpoint` | `ENDPOINT` | Daemon endpoint for the remote subcommands (`rules`/`labels`/`seed`/`torrent`/`cmd`): `host:port`, `tcp://host:port`, `unix:///path/to.sock` or `grpc://host:port`. Unset: discovered from the active config (`[rpc] grpc_socket`/`grpc_port`). |
+| `--token` | `TOKEN` | Bearer token for remote subcommands over **TCP** gRPC (trusted commands like `rules.*` require it). Unset: discovered from `[rpc] grpc_token`. Unix sockets are trusted by permission and need no token. |
 | `--metrics-addr` | `ADDR` | Bind address for the Prometheus `/metrics` HTTP server (e.g. `127.0.0.1:9090`). Overrides TOML `[metrics] addr`. |
 | `--webui-addr` | `ADDR` | Bind address for the native Web UI (e.g. `127.0.0.1:8080`). Overrides TOML `[webui] addr`. |
 | `--webui-token` | `TOKEN` | Web UI bearer token. Overrides TOML `[webui] token`. An empty token disables authentication (callers stay untrusted/read-only). |

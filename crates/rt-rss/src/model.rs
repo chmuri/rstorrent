@@ -64,6 +64,26 @@ pub enum DownloadStatus {
     Failed,
 }
 
+/// Seed-limit overrides applied to a torrent when an RSS rule adds it
+/// (plan §6.10). Kept local to `rt-rss` so the crate stays independent of
+/// `rt-rules`; the daemon glue maps this onto `rt_rules::TorrentOverrides`.
+///
+/// Per field: `None` = leave the torrent default (inherit), `Some(0)` /
+/// `Some(0.0)` = unlimited, `Some(v > 0)` = explicit limit. `action` uses the
+/// wire string form (`stop`, `throttle:<name>`, `command:<str>`, …); `None`
+/// inherits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct RssSeedLimits {
+    #[serde(default)]
+    pub ratio: Option<f64>,
+    #[serde(default)]
+    pub seeding_time_secs: Option<u64>,
+    #[serde(default)]
+    pub inactive_secs: Option<u64>,
+    #[serde(default)]
+    pub action: Option<String>,
+}
+
 /// A user-defined rule selecting items for automatic download.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RssRule {
@@ -87,6 +107,15 @@ pub struct RssRule {
     pub add_paused: bool,
     /// Minimum spacing between downloads triggered by this rule.
     pub cooldown_secs: Option<u64>,
+    /// Tags applied to the torrent on add (plan §6.10, additive).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Named throttle applied on add.
+    #[serde(default)]
+    pub throttle_name: Option<String>,
+    /// Per-torrent seed-limit overrides applied on add.
+    #[serde(default)]
+    pub seed_limits: Option<RssSeedLimits>,
 }
 
 /// Inclusive episode range, optionally scoped to a season.
@@ -103,6 +132,12 @@ pub struct DownloadAction {
     pub save_path: Option<String>,
     pub label: Option<String>,
     pub paused: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub throttle_name: Option<String>,
+    #[serde(default)]
+    pub seed_limits: Option<RssSeedLimits>,
 }
 
 /// An item that matched a rule, paired with the action to perform.
@@ -208,6 +243,9 @@ mod tests {
 
     fn sample_rule() -> RssRule {
         RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 7,
             name: "weekly show".to_string(),
             enabled: true,
@@ -264,6 +302,9 @@ mod tests {
     #[test]
     fn rss_rule_minimal_serde_round_trip() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             feed_ids: Vec::new(),
             match_title: None,
             exclude_title: None,
@@ -342,5 +383,53 @@ mod tests {
             }),
         };
         assert_round_trip(&item);
+    }
+
+    #[test]
+    fn old_rule_json_without_bridge_fields_loads_defaults() {
+        // rss.json store version 1 predates the rules-engine bridge fields;
+        // they must default, not fail (plan §6.10, AC-009).
+        let json = r#"{
+            "id": 3, "name": "weekly", "enabled": true, "feed_ids": [],
+            "priority": 0, "match_title": "show", "exclude_title": null,
+            "min_size_bytes": null, "max_size_bytes": null, "episode": null,
+            "save_path": "/downloads", "label": "tv", "add_paused": false,
+            "cooldown_secs": 3600
+        }"#;
+        let rule: RssRule = serde_json::from_str(json).unwrap();
+        assert!(rule.tags.is_empty());
+        assert_eq!(rule.throttle_name, None);
+        assert_eq!(rule.seed_limits, None);
+    }
+
+    #[test]
+    fn old_download_action_json_loads_defaults() {
+        let json = r#"{"save_path":null,"label":"tv","paused":true}"#;
+        let action: DownloadAction = serde_json::from_str(json).unwrap();
+        assert!(action.tags.is_empty());
+        assert_eq!(action.throttle_name, None);
+        assert_eq!(action.seed_limits, None);
+    }
+
+    #[test]
+    fn bridge_fields_round_trip() {
+        let limits = RssSeedLimits {
+            ratio: Some(3.0),
+            seeding_time_secs: Some(0),
+            inactive_secs: None,
+            action: Some("throttle:slow".to_string()),
+        };
+        let json = serde_json::to_string(&limits).unwrap();
+        let back: RssSeedLimits = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, limits);
+        let action = DownloadAction {
+            save_path: None,
+            label: Some("tv".to_string()),
+            paused: false,
+            tags: vec!["rss".to_string()],
+            throttle_name: Some("seed".to_string()),
+            seed_limits: Some(limits),
+        };
+        assert_round_trip(&action);
     }
 }

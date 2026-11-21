@@ -10,6 +10,7 @@ pub fn Header() -> impl IntoView {
     let pathname = use_location().pathname;
 
     let section = move || match pathname.get().as_str() {
+        "/rules" => "Automation Rules",
         "/explorer" => "Explorer",
         "/analytics" => "Analytics",
         "/settings" => "Settings",

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-21
+
+### Added
+- **Torrent management rules engine** (`crates/rt-rules/` — new pure-domain crate, `crates/rt-core/`, `crates/rstorrent/`, `ui/`): two-layer lifecycle management, fully operable from the Web UI, CLI, `.rc`, Lua, XML-RPC/SCGI, gRPC and REST.
+  - **Seed policies (share limits)** à la qBittorrent: ratio / accumulated seeding time / inactive-while-seeding limits with **inheritance global → label → torrent** (`inherit` / `unlimited` / explicit values), `any`/`all` combination mode, and an action on reach: `stop`, `close`, `remove`, `remove_with_data`, `throttle:<name>`, `super_seed`, `notify`, `command:<str>`. Effective limits expose their per-field source (`global` / `label:<name>` / `torrent`) for the UI/CLI insight. Config: TOML `[seed]`, RPC `seed.*`, REST `/api/seed`.
+  - **Automation rules** à la qui/rtorrent: `scope (global/label/tag/tracker/RSS) + trigger (periodic or lifecycle event) + conditions → actions`, priority-ordered first-match-wins, `Noop` exception rules, `once`/cooldown per-torrent ledger, swarm-health conditions from tracker scrape with an explicit "no data" fallback, free-space conditions, webhook and external-program actions. Config: `rules.json` store, RPC `rules.*`, REST `/api/rules`.
+  - **Dry-run & audit**: `rules.test` / `POST /api/rules/test` / `rstorrent rules test` evaluate against live torrents with zero mutations; every executed/skipped/failed decision lands in a capped audit history and emits `event.rule.fired` / `event.seed_limit.reached` over the existing WS/gRPC event streams.
+  - **First-class labels**: label registry (color, seed policy, default save path) with `label.*` commands and `/api/labels`; new `d.tags` (multiple tags per torrent); label facet filtering and a "Seeded" column with ratio-limit progress in the Web UI explorer/dashboard; per-torrent **Seed limits** dialog with inheritance badges and progress bars; **Automation Rules** page (`/rules`) with rule editor, condition/action builders, dry-run panel and history; **Seeding limits** settings card.
+  - **CLI remote subcommands**: `rstorrent rules|labels|seed|torrent limits|cmd …` over gRPC (`--endpoint`, `--token`; endpoint/token auto-discovery from `[rpc]`, Unix socket preferred). Durations accept `30m`/`2h`/`7d`.
+  - **RSS lifecycle bridge**: RSS rules can apply `tags`, `throttle_name` and per-torrent `seed_limits` on add; provenance (`rss.feed_id`/`rss.rule_id`/`rss.item_id`) is persisted in `d.custom` so automation rules can target torrents added via RSS (`scope: rss`). Additive fields — existing `rss.json` stores load unchanged.
+  - **Per-torrent state & persistence fixes**: accumulated `seeding_time`, transfer-activity `last_transfer_at` (true idle detection), seed-limit overrides and rule ledger persisted in the `.rtorrent` sidecar; previously-lost `timestamp_started/finished`, `load_date`, `group` and `throttle_name` are now persisted too. New `d.seeding_time`, `d.idle_time`, `d.tags*`, `d.seed_*`, `d.seed_limits`, `d.rss_*` commands.
+  - **gRPC**: `TorrentSummary` gains `tags`, `seeding_time_secs`, `idle_secs`, `seed_limits` (with sources) and RSS provenance fields (additive); `GrpcBridge` supports bearer-token auth for trusted TCP command calls.
+
+### Safety
+- Destructive actions (`remove`, `remove_with_data`) are **double-gated**: global `[rules] allow_destructive` (default `false`) AND a per-rule flag; blocked decisions are audited as `skipped`. The Web UI requires an explicit confirmation checkbox and a dry-run before saving destructive rules.
+- Zero behavior change until opted in: `[seed] enabled = false` (default) leaves the legacy `ratio.*` enforcement in charge; when enabled, the policy engine takes over seeding torrents (legacy group ratio becomes the fallback global default). `d.ignore_commands` is honored by both layers.
+
+### Fixed
+- `tiering.check_interval` from TOML is now applied (previously parsed but never reached the runtime).
+
 ## [0.25.9] - 2026-11-21
 
 ### Added

@@ -35,6 +35,8 @@ async fn metadata_event_persists_torrent_immediately() {
 
     let port = 45000 + (std::process::id() % 1000) as u16;
     let cli = Cli {
+        token: None,
+        endpoint: None,
         bind_address: None,
         directory: Some(data_dir.to_string_lossy().to_string()),
         watch_dir: None,

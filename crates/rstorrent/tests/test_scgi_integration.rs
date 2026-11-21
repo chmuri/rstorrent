@@ -66,6 +66,8 @@ async fn test_scgi_socket_flood_xmlrpc() {
 
     let mut control = Control::new();
     let cli = Cli {
+        token: None,
+        endpoint: None,
         bind_address: None,
         directory: None,
         watch_dir: None,
@@ -151,6 +153,8 @@ async fn test_scgi_socket_load_raw_start() {
 
     let mut control = Control::new();
     let cli = Cli {
+        token: None,
+        endpoint: None,
         bind_address: None,
         directory: None,
         watch_dir: None,

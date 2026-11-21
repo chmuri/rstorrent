@@ -21,6 +21,84 @@ fn normalise_connection_type(value: &str) -> Result<String, String> {
     Ok(value)
 }
 
+/// Normalises a tag list: trims whitespace, drops empty entries and removes
+/// duplicates (case-sensitive, first occurrence wins).
+fn normalise_tags(tags: impl IntoIterator<Item = impl Into<String>>) -> Vec<String> {
+    let mut normalised: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag = tag.into().trim().to_string();
+        if tag.is_empty() || normalised.contains(&tag) {
+            continue;
+        }
+        normalised.push(tag);
+    }
+    normalised
+}
+
+/// Sidecar/RPC string form of a seed-limit value (plan §6.2): `"unlimited"`
+/// or the number itself. `Inherit` yields `None` so writers omit the key and
+/// readers keep the inherited default.
+pub fn format_limit_value<T: std::fmt::Display>(value: &rt_rules::LimitValue<T>) -> Option<String> {
+    match value {
+        rt_rules::LimitValue::Inherit => None,
+        rt_rules::LimitValue::Unlimited => Some("unlimited".to_string()),
+        rt_rules::LimitValue::Set(value) => Some(value.to_string()),
+    }
+}
+
+/// Parses the sidecar/RPC string form of a seed limit
+/// (`inherit|unlimited|<number>`). Surrounding whitespace is tolerated;
+/// anything else yields `None` so callers keep the default and warn.
+pub fn parse_limit_value<T: std::str::FromStr>(text: &str) -> Option<rt_rules::LimitValue<T>> {
+    match text.trim() {
+        "inherit" => Some(rt_rules::LimitValue::Inherit),
+        "unlimited" => Some(rt_rules::LimitValue::Unlimited),
+        trimmed => trimmed.parse::<T>().ok().map(rt_rules::LimitValue::Set),
+    }
+}
+
+/// Sidecar/RPC string form of a seed action (plan §6.2):
+/// `stop|close|remove|remove_with_data|throttle:<name>|super_seed|notify|command:<str>`.
+pub fn format_seed_action(action: &rt_rules::SeedAction) -> String {
+    match action {
+        rt_rules::SeedAction::Stop => "stop".to_string(),
+        rt_rules::SeedAction::Close => "close".to_string(),
+        rt_rules::SeedAction::Remove => "remove".to_string(),
+        rt_rules::SeedAction::RemoveWithData => "remove_with_data".to_string(),
+        rt_rules::SeedAction::Throttle(name) => format!("throttle:{name}"),
+        rt_rules::SeedAction::SuperSeed => "super_seed".to_string(),
+        rt_rules::SeedAction::Notify => "notify".to_string(),
+        rt_rules::SeedAction::Command(command) => format!("command:{command}"),
+    }
+}
+
+/// Parses the sidecar/RPC string form of a seed action. Unknown strings
+/// yield `None` (callers keep the default and warn). A throttle action
+/// requires a non-empty name; `command:` accepts any suffix.
+pub fn parse_seed_action(text: &str) -> Option<rt_rules::SeedAction> {
+    let text = text.trim();
+    match text {
+        "stop" => Some(rt_rules::SeedAction::Stop),
+        "close" => Some(rt_rules::SeedAction::Close),
+        "remove" => Some(rt_rules::SeedAction::Remove),
+        "remove_with_data" => Some(rt_rules::SeedAction::RemoveWithData),
+        "super_seed" => Some(rt_rules::SeedAction::SuperSeed),
+        "notify" => Some(rt_rules::SeedAction::Notify),
+        _ => {
+            if let Some(name) = text.strip_prefix("throttle:") {
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(rt_rules::SeedAction::Throttle(name.to_string()))
+                }
+            } else {
+                text.strip_prefix("command:")
+                    .map(|command| rt_rules::SeedAction::Command(command.to_string()))
+            }
+        }
+    }
+}
+
 pub struct Download {
     download: Arc<Mutex<EngineDownload>>,
     metadata: TorrentMetadata,
@@ -60,6 +138,19 @@ pub struct Download {
     metadata_recheck_pending: bool,
     tier_state: TorrentTierState,
     move_status: MoveStatus,
+    /// Accumulated seconds of active seeding, advanced by
+    /// [`Self::tick_seed_accumulators`] and persisted as `seeding_time`.
+    seeding_time: u64,
+    /// Unix seconds of the last observed transfer (`rate_up > 0` or
+    /// `rate_down > 0`); `0` means no transfer was ever observed.
+    last_transfer_at: u64,
+    /// Free-form tags (`d.tags`): trimmed, deduplicated, case-sensitive.
+    tags: Vec<String>,
+    /// Per-torrent seed-limit overrides (sidecar `seed_*` keys, plan §6.2).
+    seed_overrides: rt_rules::TorrentOverrides,
+    /// Per-torrent rule firing ledger (`rule_id → last_fired_at`), persisted
+    /// in the sidecar and erased together with the torrent.
+    rule_ledger: rt_rules::RuleLedger,
 }
 
 impl Download {
@@ -92,6 +183,11 @@ impl Download {
             metadata_recheck_pending: false,
             tier_state: TorrentTierState::default(),
             move_status: MoveStatus::default(),
+            seeding_time: 0,
+            last_transfer_at: 0,
+            tags: Vec::new(),
+            seed_overrides: rt_rules::TorrentOverrides::default(),
+            rule_ledger: rt_rules::RuleLedger::default(),
         }
     }
 
@@ -852,6 +948,111 @@ impl Download {
 
     pub fn set_move_status(&mut self, status: MoveStatus) {
         self.move_status = status;
+    }
+
+    /// Accumulated seconds of active seeding (sidecar `seeding_time`).
+    pub fn seeding_time(&self) -> u64 {
+        self.seeding_time
+    }
+
+    pub fn set_seeding_time(&mut self, value: u64) {
+        self.seeding_time = value;
+    }
+
+    /// Unix seconds of the last observed transfer; `0` = never.
+    pub fn last_transfer_at(&self) -> u64 {
+        self.last_transfer_at
+    }
+
+    pub fn set_last_transfer_at(&mut self, value: u64) {
+        self.last_transfer_at = value;
+    }
+
+    /// Free-form tags, always trimmed and deduplicated (case-sensitive).
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
+    /// Replaces the tag list, normalising every entry (trim, drop empties,
+    /// dedup). Order of first occurrences is preserved.
+    pub fn set_tags(&mut self, tags: impl IntoIterator<Item = impl Into<String>>) {
+        self.tags = normalise_tags(tags);
+    }
+
+    /// Adds one tag (trimmed). Returns whether the tag was newly inserted;
+    /// empty tags and duplicates are ignored.
+    pub fn add_tag(&mut self, tag: &str) -> bool {
+        let tag = tag.trim();
+        if tag.is_empty() || self.tags.iter().any(|existing| existing == tag) {
+            return false;
+        }
+        self.tags.push(tag.to_string());
+        true
+    }
+
+    /// Removes one tag (case-sensitive). Returns whether it was present.
+    pub fn remove_tag(&mut self, tag: &str) -> bool {
+        let tag = tag.trim();
+        let before = self.tags.len();
+        self.tags.retain(|existing| existing != tag);
+        self.tags.len() != before
+    }
+
+    /// Whether the tag list contains `tag` (case-sensitive).
+    pub fn has_tag(&self, tag: &str) -> bool {
+        let tag = tag.trim();
+        self.tags.iter().any(|existing| existing == tag)
+    }
+
+    /// Per-torrent seed-limit overrides (`d.seed_*`, sidecar `seed_*` keys).
+    pub fn seed_overrides(&self) -> &rt_rules::TorrentOverrides {
+        &self.seed_overrides
+    }
+
+    pub fn seed_overrides_mut(&mut self) -> &mut rt_rules::TorrentOverrides {
+        &mut self.seed_overrides
+    }
+
+    /// Per-torrent rule firing ledger (`rule_id → last_fired_at`).
+    pub fn rule_ledger(&self) -> &rt_rules::RuleLedger {
+        &self.rule_ledger
+    }
+
+    pub fn rule_ledger_mut(&mut self) -> &mut rt_rules::RuleLedger {
+        &mut self.rule_ledger
+    }
+
+    /// Advances the seed-state accumulators for one supervisor tick.
+    ///
+    /// Wiring lives in `Control::inc_tick` (plan T4): seeding time only
+    /// grows while the download is actively seeding, and the transfer
+    /// timestamp only moves when an upload or download rate is observed.
+    pub fn tick_seed_accumulators(&mut self, now: u64, elapsed: u64) {
+        if self.is_seeding() {
+            self.seeding_time = self.seeding_time.saturating_add(elapsed);
+        }
+        if self.rate_up() > 0 || self.rate_down() > 0 {
+            self.last_transfer_at = now;
+        }
+    }
+
+    /// Seconds since the last meaningful activity — the basis for idle seed
+    /// limits (plan §6.2).
+    ///
+    /// While seeding: time since the last transfer, falling back to the
+    /// finish timestamp when no transfer was ever observed. Otherwise
+    /// (stopped/inactive): time since `last_active`, matching tiering's
+    /// `InactiveSince`. All subtractions saturate at zero.
+    pub fn idle_secs(&self, now: u64) -> u64 {
+        if self.is_seeding() {
+            if self.last_transfer_at > 0 {
+                now.saturating_sub(self.last_transfer_at)
+            } else {
+                now.saturating_sub(self.timestamp_finished())
+            }
+        } else {
+            now.saturating_sub(self.last_active)
+        }
     }
 
     pub fn rate_up(&self) -> u64 {

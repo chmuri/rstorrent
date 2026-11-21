@@ -1532,6 +1532,12 @@ async fn throttle_driver_loop(mut shutdown_rx: watch::Receiver<bool>) {
 /// are split into two phases: no download lock is held while the command runs,
 /// because the command re-enters the download list (`d.try_close`).
 fn enforce_stop_on_ratio(downloads: &Arc<RwLock<DownloadList>>) {
+    // When the seed-policy engine is enabled it owns seeding torrents
+    // (plan §5.4.6: one action owner). The legacy group ratio enforcement
+    // stands down; it remains the fallback while `[seed] enabled = false`.
+    if crate::seed_context::seed_policies_active() {
+        return;
+    }
     let Some(ctx) = RATIO_CONTEXT.get() else {
         return;
     };

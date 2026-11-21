@@ -69,6 +69,28 @@ message TorrentSummary {
   uint32 seeds_total = 22;
   uint32 peers_connected = 23;
   uint32 peers_total = 24;
+  // Rules engine additions (plan §6.8, additive; 0 = unset for rss ids).
+  repeated string tags = 25;
+  uint64 seeding_time_secs = 26;
+  uint64 idle_secs = 27;
+  EffectiveSeedLimits seed_limits = 28;
+  uint64 rss_feed_id = 29;
+  uint64 rss_rule_id = 30;
+}
+
+// Resolved seed limits with inheritance sources ("global", "label:<name>",
+// "torrent"). Unset optional fields mean unlimited.
+message EffectiveSeedLimits {
+  optional double ratio = 1;
+  optional uint64 seeding_time_secs = 2;
+  optional uint64 inactive_secs = 3;
+  string mode = 4;
+  string action = 5;
+  string source_ratio = 6;
+  string source_seeding_time = 7;
+  string source_inactive = 8;
+  string source_mode = 9;
+  string source_action = 10;
 }
 
 message FileInfo {

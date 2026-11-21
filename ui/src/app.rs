@@ -19,6 +19,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/") view=DashboardPage/>
                     <Route path=path!("/explorer") view=ExplorerPage/>
                     <Route path=path!("/rss") view=RssPage/>
+                    <Route path=path!("/rules") view=RulesPage/>
                     <Route path=path!("/analytics") view=AnalyticsPage/>
                     <Route path=path!("/settings") view=SettingsPage/>
                 </Routes>

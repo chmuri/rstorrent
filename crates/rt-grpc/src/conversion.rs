@@ -121,6 +121,62 @@ pub fn download_to_summary(download: &Download) -> TorrentSummary {
             let connected = eng.peer_count() as u32;
             eng.swarm_totals().map(|(_, p)| p).unwrap_or(connected)
         },
+        tags: download.tags().to_vec(),
+        seeding_time_secs: download.seeding_time(),
+        idle_secs: download.idle_secs(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        ),
+        seed_limits: rt_core::seed_context::seed_context().map(|ctx| {
+            let ctx = ctx.read().unwrap_or_else(|e| e.into_inner());
+            let label_name = download.custom_field(1).trim().to_string();
+            let label = ctx
+                .labels
+                .iter()
+                .find(|l| l.name == label_name)
+                .map(|l| (l.name.as_str(), &l.policy));
+            let limits = rt_rules::resolve_limits(&ctx.globals, label, download.seed_overrides());
+            crate::proto::EffectiveSeedLimits {
+                ratio: limits.ratio,
+                seeding_time_secs: limits.seeding_time_secs,
+                inactive_secs: limits.inactive_secs,
+                mode: match limits.mode {
+                    rt_rules::LimitMode::Any => "any".into(),
+                    rt_rules::LimitMode::All => "all".into(),
+                },
+                action: seed_action_string(&limits.action),
+                source_ratio: limits.sources.ratio,
+                source_seeding_time: limits.sources.seeding_time_secs,
+                source_inactive: limits.sources.inactive_secs,
+                source_mode: limits.sources.mode,
+                source_action: limits.sources.action,
+            }
+        }),
+        rss_feed_id: download
+            .custom_get("rss.feed_id")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
+        rss_rule_id: download
+            .custom_get("rss.rule_id")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
+    }
+}
+
+/// `SeedAction` → the wire/TOML string form (plan §6.2).
+fn seed_action_string(action: &rt_rules::SeedAction) -> String {
+    use rt_rules::SeedAction;
+    match action {
+        SeedAction::Stop => "stop".into(),
+        SeedAction::Close => "close".into(),
+        SeedAction::Remove => "remove".into(),
+        SeedAction::RemoveWithData => "remove_with_data".into(),
+        SeedAction::Throttle(name) => format!("throttle:{name}"),
+        SeedAction::SuperSeed => "super_seed".into(),
+        SeedAction::Notify => "notify".into(),
+        SeedAction::Command(cmd) => format!("command:{cmd}"),
     }
 }
 

@@ -113,6 +113,8 @@ fn prepare_session(root: &TestDir, with_resume: bool) -> (PathBuf, PathBuf) {
 fn cli_for(session: &Path, data: &Path) -> Cli {
     let port = free_port();
     Cli {
+        token: None,
+        endpoint: None,
         session: Some(session.to_string_lossy().into_owned()),
         directory: Some(data.to_string_lossy().into_owned()),
         no_rc: true,

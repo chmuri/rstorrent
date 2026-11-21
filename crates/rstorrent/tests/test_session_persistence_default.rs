@@ -56,6 +56,8 @@ async fn test_default_session_persists_and_restores_torrents() {
     create_sample_torrent_file(&torrent_file);
 
     let cli = Cli {
+        token: None,
+        endpoint: None,
         bind_address: None,
         directory: None,
         watch_dir: None,

@@ -107,6 +107,10 @@ Commands run on a blocking worker so filesystem/fsync work never stalls the serv
 | `priority` | int | 0 off, 1 low, 2 normal, 3 high |
 | `directory` | string | Save path |
 | `category` | string | Value of `d.custom1` (label slot) |
+| `tags` | string[] | Free-form tags (`d.tags`) |
+| `seeding_time_secs` / `idle_secs` | int | Accumulated active-seeding time / current idle time (seconds) |
+| `seed_limits` | object or null | Effective seed limits + inheritance sources (`ratio`, `seeding_time_secs`, `inactive_secs`, `mode`, `action`, `sources`) |
+| `rss_feed_id` / `rss_rule_id` | int or null | RSS provenance when the torrent was added by an RSS rule |
 | `message` | string | Status/error message |
 | `state_changed` / `started` / `finished` | int | Unix timestamps (seconds) |
 
@@ -132,7 +136,7 @@ Connect to `GET /api/events` (with `?token=<token>` when a token is configured).
 { "type": "stats", "stats": { … }, "timestamp": 1763078400 }
 ```
 
-- **`torrent`** — one message per download-list event (start/stop/metadata/finished/…), carrying the same summary object as REST.
+- **`torrent`** — one message per download-list event (start/stop/metadata/finished/…), carrying the same summary object as REST. Includes the rules-engine events `event.rule.fired` and `event.seed_limit.reached` (decision details live in `/api/rules/history`).
 - **`stats`** — a session-stats snapshot sent **immediately on connect**, then **every second**, so a browser can refresh totals without polling.
 - Events come from a 256-slot broadcast channel; a slow client that falls behind **skips missed events** rather than stalling the stream — the next stats tick resyncs totals.
 - `timestamp` values are Unix seconds.
@@ -185,6 +189,19 @@ The top navigation header features a prominent **+ New Torrent** button that tri
 
 ---
 
+## Torrent Rules & Seeding
+
+The [rules engine](Torrent-Rules) adds four UI surfaces (all require a live, trusted connection):
+
+- **Rules page (`/rules`)** — **Rules** and **History** tabs with a header carrying the **Rules enabled** kill switch, **Check now** (forces one pass), and **Export**/**Import** of the `{labels, rules}` backup blob. The rule editor exposes scope (Global/Label/Tag/Tracker/RSS), trigger, priority, `once`/cooldown, condition and action builders, and a **Test rule** dry-run panel (matches + "no data" badges, zero mutations). Destructive actions show a red warning and require the "I understand this deletes data" checkbox plus a successful dry-run of the current values before saving. The page polls every 15 s in live mode; history entries carry `ok`/`failed`/`skipped` badges.
+- **Settings → Seeding limits card** — the global `[seed]` defaults (enabled switch, ratio / seeding time / inactive limits with unlimited toggles, mode, action, check interval) with **Apply to Runtime** / **Save to rstorrent.toml**, alongside the **label manager** (name, color, seed policy, save path).
+- **Dashboard / explorer** — a **label facet** (multi-select chips with live counters, "No label" bucket, "All" reset), a humanized **Seeded** column, progress toward the ratio limit, and context-menu entries **Seed limits…** / **Set label**.
+- **Seed limits dialog** — per-torrent effective limits with source badges (`global` / `label:<name>` / `torrent`), progress bars for ratio/seeding time/idle, and override controls (`inherit` / `unlimited` / `set`, plus the action). Saving PUTs `/api/torrents/{hash}/seed-limits` and refreshes the resolved values.
+
+Toasts appear on `event.rule.fired` / `event.seed_limit.reached` WebSocket events.
+
+---
+
 ## Settings Interface
 
 The **Settings** page provides a unified 3-tab configuration center:
@@ -206,6 +223,7 @@ The **Settings** page provides a unified 3-tab configuration center:
      - **Logging & Metrics**: Log levels, destinations, and Prometheus scrape endpoint.
      - **Tiering**: Fast scratch tier, cold archive tier, and ratio/age criteria.
      - **RSS**: Background worker enable, refresh interval, and auto-download switch.
+     - **Seeding limits**: Global `[seed]` policy defaults and the label registry (see [Torrent Rules & Seed Policies](Torrent-Rules)).
    - Save options: **Apply to Runtime (In-Memory)** or **Save to rstorrent.toml**.
 
 3. **Raw TOML Editor**:
@@ -228,3 +246,5 @@ The **Settings** page provides a unified 3-tab configuration center:
 - [XML-RPC & SCGI](XML-RPC-and-SCGI)
 - [Configuration Guide](Configuration-Guide) — `[webui]` section reference
 - [CLI Reference](CLI-Reference) — `--webui-addr`, `--webui-token`
+- [Torrent Rules & Seed Policies](Torrent-Rules) — the `/rules` page, seed policies, labels and the limits dialog
+- [RSS Auto-Downloads](RSS) — the `/rss` page

@@ -125,6 +125,14 @@ impl DownloadList {
         self.batch_listeners.push(listener);
     }
 
+    /// Emits a custom event to every registered listener without changing any
+    /// download state. Used by the rules engine for `event.rule.fired` and
+    /// `event.seed_limit.reached` so the existing WebUI/gRPC fan-out picks them
+    /// up unchanged. Callers must not hold a download lock when invoking it.
+    pub fn emit_event(&self, event: &str, download: &Arc<RwLock<Download>>) {
+        self.emit(event, download);
+    }
+
     /// Dispatches an internal batch lifecycle event to every registered batch listener.
     fn emit_batch(&self, event: &str, downloads: &[Arc<RwLock<Download>>]) {
         for listener in &self.batch_listeners {

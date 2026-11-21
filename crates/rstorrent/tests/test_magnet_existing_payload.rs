@@ -41,6 +41,8 @@ fn info_bytes() -> (Vec<u8>, HashString) {
 
 fn cli(data_dir: &Path, session_dir: &Path, port: u16) -> Cli {
     Cli {
+        token: None,
+        endpoint: None,
         bind_address: None,
         directory: Some(data_dir.to_string_lossy().to_string()),
         watch_dir: None,

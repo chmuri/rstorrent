@@ -68,6 +68,9 @@ pub fn select_action(rule: &RssRule) -> DownloadAction {
         save_path: rule.save_path.clone(),
         label: rule.label.clone(),
         paused: rule.add_paused,
+        tags: rule.tags.clone(),
+        throttle_name: rule.throttle_name.clone(),
+        seed_limits: rule.seed_limits.clone(),
     }
 }
 
@@ -224,6 +227,9 @@ mod tests {
 
     fn base_rule() -> RssRule {
         RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 1,
             name: "test rule".to_string(),
             enabled: true,
@@ -265,6 +271,9 @@ mod tests {
     #[test]
     fn match_title_hit() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("show.*1080p".to_string()),
             ..base_rule()
         };
@@ -277,6 +286,9 @@ mod tests {
     #[test]
     fn match_title_miss() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("show.*1080p".to_string()),
             ..base_rule()
         };
@@ -286,11 +298,17 @@ mod tests {
     #[test]
     fn match_title_case_insensitive() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("SHOW".to_string()),
             ..base_rule()
         };
         assert!(matches_rule(&rule, &item_with_title("my show 1080p")));
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("show".to_string()),
             ..base_rule()
         };
@@ -300,6 +318,9 @@ mod tests {
     #[test]
     fn exclude_overrides_match() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("show".to_string()),
             exclude_title: Some("cam|telesync".to_string()),
             ..base_rule()
@@ -311,6 +332,9 @@ mod tests {
     #[test]
     fn exclude_case_insensitive() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             exclude_title: Some("CAM".to_string()),
             ..base_rule()
         };
@@ -328,6 +352,9 @@ mod tests {
     #[test]
     fn size_within_bounds() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             min_size_bytes: Some(500_000_000),
             max_size_bytes: Some(2_000_000_000),
             ..base_rule()
@@ -338,6 +365,9 @@ mod tests {
     #[test]
     fn size_boundaries_inclusive() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             min_size_bytes: Some(1_000),
             max_size_bytes: Some(2_000),
             ..base_rule()
@@ -352,6 +382,9 @@ mod tests {
     #[test]
     fn size_below_min_rejected() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             min_size_bytes: Some(2_000_000_000),
             ..base_rule()
         };
@@ -361,6 +394,9 @@ mod tests {
     #[test]
     fn size_above_max_rejected() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             max_size_bytes: Some(500_000_000),
             ..base_rule()
         };
@@ -372,11 +408,17 @@ mod tests {
         let mut item = item_with_title("Show");
         item.size_bytes = None;
         let min_only = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             min_size_bytes: Some(1),
             ..base_rule()
         };
         assert!(!matches_rule(&min_only, &item));
         let max_only = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             max_size_bytes: Some(u64::MAX),
             ..base_rule()
         };
@@ -441,6 +483,9 @@ mod tests {
     #[test]
     fn episode_filter_range_inclusive() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             episode: Some(EpisodeFilter {
                 season: Some(1),
                 from_episode: 2,
@@ -457,6 +502,9 @@ mod tests {
     #[test]
     fn episode_filter_season_mismatch() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             episode: Some(EpisodeFilter {
                 season: Some(2),
                 from_episode: 1,
@@ -471,6 +519,9 @@ mod tests {
     #[test]
     fn episode_filter_any_season_when_none() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             episode: Some(EpisodeFilter {
                 season: None,
                 from_episode: 1,
@@ -484,6 +535,9 @@ mod tests {
     #[test]
     fn episode_filter_rejects_titles_without_episode() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             episode: Some(EpisodeFilter {
                 season: None,
                 from_episode: 1,
@@ -498,6 +552,9 @@ mod tests {
     #[test]
     fn cooldown_blocks_recent_download() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             cooldown_secs: Some(3600),
             ..base_rule()
         };
@@ -509,6 +566,9 @@ mod tests {
     #[test]
     fn cooldown_allows_after_interval() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             cooldown_secs: Some(3600),
             ..base_rule()
         };
@@ -522,6 +582,9 @@ mod tests {
     #[test]
     fn cooldown_without_last_download() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             cooldown_secs: Some(3600),
             ..base_rule()
         };
@@ -535,6 +598,9 @@ mod tests {
         let no_cooldown = compile(&base_rule()).unwrap();
         assert!(matches(&no_cooldown, &item, NOW, Some(NOW)));
         let zero_cooldown = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             cooldown_secs: Some(0),
             ..base_rule()
         };
@@ -545,6 +611,9 @@ mod tests {
     #[test]
     fn cooldown_future_timestamp_does_not_panic() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             cooldown_secs: Some(3600),
             ..base_rule()
         };
@@ -563,6 +632,9 @@ mod tests {
     #[test]
     fn feed_scope_restricts_to_listed_feeds() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             feed_ids: vec![1, 2],
             ..base_rule()
         };
@@ -576,6 +648,9 @@ mod tests {
     #[test]
     fn disabled_rule_never_matches() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             enabled: false,
             ..base_rule()
         };
@@ -587,6 +662,9 @@ mod tests {
     #[test]
     fn invalid_match_regex_returns_invalid_rule() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("(unclosed".to_string()),
             ..base_rule()
         };
@@ -598,6 +676,9 @@ mod tests {
     #[test]
     fn invalid_exclude_regex_returns_invalid_rule() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             exclude_title: Some("[bad".to_string()),
             ..base_rule()
         };
@@ -609,6 +690,9 @@ mod tests {
     #[test]
     fn select_action_maps_rule_fields() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             save_path: Some("/downloads/show".to_string()),
             label: Some("show".to_string()),
             add_paused: true,
@@ -631,12 +715,18 @@ mod tests {
     #[test]
     fn best_match_lower_priority_wins() {
         let high = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 1,
             priority: 5,
             match_title: Some("show".to_string()),
             ..base_rule()
         };
         let low = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 2,
             priority: 1,
             match_title: Some("show".to_string()),
@@ -654,12 +744,18 @@ mod tests {
     #[test]
     fn best_match_tie_breaks_by_id() {
         let later = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 3,
             priority: 0,
             match_title: Some("show".to_string()),
             ..base_rule()
         };
         let earlier = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 1,
             priority: 0,
             match_title: Some("show".to_string()),
@@ -673,12 +769,18 @@ mod tests {
     #[test]
     fn best_match_skips_invalid_rule() {
         let broken = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 1,
             priority: 0,
             match_title: Some("(unclosed".to_string()),
             ..base_rule()
         };
         let valid = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id: 2,
             priority: 1,
             match_title: Some("show".to_string()),
@@ -692,6 +794,9 @@ mod tests {
     #[test]
     fn best_match_respects_cooldowns() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             cooldown_secs: Some(3600),
             ..base_rule()
         };
@@ -706,6 +811,9 @@ mod tests {
     #[test]
     fn best_match_returns_item_and_action() {
         let rule = RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             match_title: Some("show".to_string()),
             save_path: Some("/downloads/show".to_string()),
             label: Some("show".to_string()),

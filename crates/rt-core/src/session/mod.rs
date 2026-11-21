@@ -108,6 +108,41 @@ fn read_rtorrent_object(base_path: &str) -> Option<Object> {
     }
 }
 
+/// Lookup a sidecar key. Missing keys return `None` silently: old files
+/// simply lack the newer keys and restore with defaults.
+fn sidecar_entry<'a>(object: &'a Object, key: &str) -> Option<&'a Object> {
+    object.as_map().ok()?.get(key.as_bytes())
+}
+
+/// Tolerant u64 sidecar read: a present-but-malformed value warns and
+/// restores the default instead of aborting the session load.
+fn sidecar_u64(object: &Object, key: &str) -> Option<u64> {
+    let entry = sidecar_entry(object, key)?;
+    match entry.as_value() {
+        Ok(value) if value >= 0 => Some(value as u64),
+        Ok(value) => {
+            tracing::warn!(key, value, "Ignoring negative value in .rtorrent sidecar.");
+            None
+        }
+        Err(error) => {
+            tracing::warn!(key, error = %error, "Ignoring non-integer value in .rtorrent sidecar.");
+            None
+        }
+    }
+}
+
+/// Tolerant string sidecar read with the same missing-vs-malformed discipline.
+fn sidecar_string(object: &Object, key: &str) -> Option<String> {
+    let entry = sidecar_entry(object, key)?;
+    match entry.as_str() {
+        Ok(text) => Some(text.to_string()),
+        Err(error) => {
+            tracing::warn!(key, error = %error, "Ignoring non-string value in .rtorrent sidecar.");
+            None
+        }
+    }
+}
+
 /// Restore the `.rtorrent` sidecar (directory, priority, transfer totals).
 ///
 /// Missing sidecars are not an error: the download is simply restored with its
@@ -182,6 +217,128 @@ pub fn restore_rtorrent_state(base_path: &str, download: &mut Download) -> Rtorr
             tier_entered_at,
             transition_history: Vec::new(),
         });
+    }
+
+    // Timestamps and placement state (plan §6.2 persistence gap fix).
+    // Missing keys keep the defaults; malformed values warn and are skipped.
+    if let Some(value) = sidecar_u64(&object, "timestamp_started") {
+        download.set_timestamp_started(value);
+    }
+    if let Some(value) = sidecar_u64(&object, "timestamp_finished") {
+        download.set_timestamp_finished(value);
+    }
+    if let Some(value) = sidecar_u64(&object, "load_date") {
+        download.set_load_date(value);
+    }
+    if let Some(value) = sidecar_u64(&object, "group") {
+        match u32::try_from(value) {
+            Ok(group) => download.set_group(group),
+            Err(_) => {
+                tracing::warn!(
+                    key = "group",
+                    value = %value,
+                    "Ignoring out-of-range group in .rtorrent sidecar."
+                );
+            }
+        }
+    }
+    if let Some(name) = sidecar_string(&object, "throttle_name") {
+        if !name.is_empty() {
+            download.set_throttle_name(name);
+        }
+    }
+
+    // Seed state (plan §6.2). Old sidecars lack these keys entirely and
+    // restore with defaults; invalid values never abort the restore.
+    if let Some(value) = sidecar_u64(&object, "seeding_time") {
+        download.set_seeding_time(value);
+    }
+    if let Some(value) = sidecar_u64(&object, "last_transfer_at") {
+        download.set_last_transfer_at(value);
+    }
+    if let Some(text) = sidecar_string(&object, "seed_ratio") {
+        match crate::download::parse_limit_value::<f64>(&text) {
+            Some(value) => download.seed_overrides_mut().ratio = value,
+            None => {
+                tracing::warn!(key = "seed_ratio", value = %text, "Ignoring invalid seed limit in .rtorrent sidecar.");
+            }
+        }
+    }
+    if let Some(text) = sidecar_string(&object, "seed_time") {
+        match crate::download::parse_limit_value::<u64>(&text) {
+            Some(value) => download.seed_overrides_mut().seeding_time_secs = value,
+            None => {
+                tracing::warn!(key = "seed_time", value = %text, "Ignoring invalid seed limit in .rtorrent sidecar.");
+            }
+        }
+    }
+    if let Some(text) = sidecar_string(&object, "seed_idle") {
+        match crate::download::parse_limit_value::<u64>(&text) {
+            Some(value) => download.seed_overrides_mut().inactive_secs = value,
+            None => {
+                tracing::warn!(key = "seed_idle", value = %text, "Ignoring invalid seed limit in .rtorrent sidecar.");
+            }
+        }
+    }
+    if let Some(text) = sidecar_string(&object, "seed_action") {
+        match crate::download::parse_seed_action(&text) {
+            Some(action) => download.seed_overrides_mut().action = Some(action),
+            None => {
+                tracing::warn!(key = "seed_action", value = %text, "Ignoring invalid seed action in .rtorrent sidecar.");
+            }
+        }
+    }
+    if let Some(entry) = sidecar_entry(&object, "tags") {
+        match entry.as_list() {
+            Ok(list) => {
+                let mut tags = Vec::with_capacity(list.len());
+                for item in list {
+                    match item.as_str() {
+                        Ok(tag) => tags.push(tag.to_string()),
+                        Err(error) => {
+                            tracing::warn!(key = "tags", error = %error, "Ignoring non-string tag in .rtorrent sidecar.");
+                        }
+                    }
+                }
+                download.set_tags(tags);
+            }
+            Err(error) => {
+                tracing::warn!(key = "tags", error = %error, "Ignoring malformed tags in .rtorrent sidecar.");
+            }
+        }
+    }
+    if let Some(entry) = sidecar_entry(&object, "rule_ledger") {
+        match entry.as_map() {
+            Ok(map) => {
+                let mut ledger = rt_rules::RuleLedger::default();
+                for (key, value) in map {
+                    let rule_id = std::str::from_utf8(key)
+                        .ok()
+                        .and_then(|key| key.parse::<u64>().ok());
+                    let fired_at = value
+                        .as_value()
+                        .ok()
+                        .filter(|value| *value >= 0)
+                        .map(|value| value as u64);
+                    match (rule_id, fired_at) {
+                        (Some(rule_id), Some(fired_at)) => {
+                            ledger.0.insert(rule_id, fired_at);
+                        }
+                        _ => {
+                            tracing::warn!(
+                                key = "rule_ledger",
+                                entry = ?key,
+                                "Ignoring invalid rule ledger entry in .rtorrent sidecar."
+                            );
+                        }
+                    }
+                }
+                *download.rule_ledger_mut() = ledger;
+            }
+            Err(error) => {
+                tracing::warn!(key = "rule_ledger", error = %error, "Ignoring malformed rule ledger in .rtorrent sidecar.");
+            }
+        }
     }
 
     RtorrentSessionState {

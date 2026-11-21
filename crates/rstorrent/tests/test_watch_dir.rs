@@ -100,6 +100,8 @@ fn main_view_len(control: &Control) -> usize {
 fn initialize_cli(directory: Option<&str>, watch_dir: Option<&str>, session: &str) -> Cli {
     let port = free_port();
     Cli {
+        token: None,
+        endpoint: None,
         directory: directory.map(str::to_string),
         watch_dir: watch_dir.map(str::to_string),
         session: Some(session.to_string()),

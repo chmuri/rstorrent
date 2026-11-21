@@ -7,6 +7,7 @@ pub mod drawer;
 pub mod log_drawer;
 pub mod modal;
 pub mod remove_confirm;
+pub mod seed_limits_dialog;
 pub mod skeleton;
 pub mod sparkline;
 pub mod toast;

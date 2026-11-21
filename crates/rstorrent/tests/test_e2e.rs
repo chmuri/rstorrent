@@ -39,6 +39,8 @@ async fn test_full_lifecycle_and_rpc() {
     }
 
     let cli = Cli {
+        token: None,
+        endpoint: None,
         bind_address: Some("127.0.0.1".to_string()),
         directory: Some(download_dir.path.clone()),
         watch_dir: None,

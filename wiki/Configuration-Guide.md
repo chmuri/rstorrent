@@ -75,7 +75,7 @@ rstorrent config validate
 
 ### Web UI Configuration
 In the Web UI, navigate to the **Settings** view:
-- **Daemon Config (`rstorrent.toml`)**: Visual forms and sliders for all network, storage, protocol, DHT, RPC, logging, metrics, tiering, and RSS settings. Apply in-memory or save directly to `rstorrent.toml`.
+- **Daemon Config (`rstorrent.toml`)**: Visual forms and sliders for all network, storage, protocol, DHT, RPC, logging, metrics, tiering, and RSS settings, plus a **Seeding limits** card (`[seed]`) and the label manager. Apply in-memory or save directly to `rstorrent.toml`.
 - **Raw TOML Editor**: Direct in-browser editor with syntax validation, reload, and export options.
 
 ---
@@ -163,6 +163,29 @@ All keys are optional; an unset key keeps its runtime default.
 | `tls_cert` | string | none | PEM certificate for Web UI HTTPS. Requires `tls_key`. TOML-only (no CLI flag). |
 | `tls_key` | string | none | PEM private key for Web UI HTTPS. Requires `tls_cert`. TOML-only. |
 
+### `[seed]`
+
+Global seed-policy defaults (layer A of the [rules engine](Torrent-Rules)). Limits inherit global → label → torrent; `0` means unlimited.
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `enabled` | bool | `false` | Master switch for seed policies. `false` leaves legacy `ratio.*` enforcement in charge — zero behavior change. |
+| `ratio` | float | unset | Global share-ratio limit, `1.0` = 100%, `0` = unlimited. Unset: the legacy `ratio.min` fallback applies when enabled (÷ 100). |
+| `seeding_time_secs` | integer | `0` | Accumulated active-seeding time limit in seconds; `0` = unlimited. |
+| `inactive_secs` | integer | `0` | No-upload-while-seeding limit in seconds; `0` = unlimited. |
+| `mode` | string | `"any"` | How limits combine: `any` (first reached fires) or `all` (every active limit must be reached). |
+| `action` | string | unset | Action when a limit is reached: `stop`, `close`, `remove`, `remove_with_data`, `throttle:<name>`, `super_seed`, `notify`, `command:<str>`. Unset: the legacy `group.seeding.ratio.command` fallback applies when enabled; otherwise `stop`. |
+| `check_interval_secs` | integer | `10` | Rules worker tick cadence in seconds (≥ 1). |
+
+### `[rules]`
+
+Automation-rule engine settings (layer B of the [rules engine](Torrent-Rules)). Rules, labels and the audit history live in `rules.json`, not here.
+
+| Key | Type | Default | Effect |
+|---|---|---|---|
+| `enabled` | bool | `true` | Kill switch for automation rules; an empty rule set is a no-op. |
+| `allow_destructive` | bool | `false` | Global gate for `remove`/`remove_with_data` actions, ANDed with each rule's own `allow_destructive` flag. Gated decisions are skipped with an audit entry. |
+
 ### Complete example
 
 ```toml
@@ -208,6 +231,20 @@ addr = "127.0.0.1:9090"
 [webui]
 addr = "127.0.0.1:8080"
 token = "change-me"
+
+[seed]
+# Seed policies: ratio / seeding-time / inactivity limits with inheritance
+enabled = false              # false = legacy ratio.* keeps owning seeding stops
+# ratio = 2.0                # 1.0 = 100%; 0 = unlimited; unset = legacy ratio.min fallback
+seeding_time_secs = 0        # 0 = unlimited
+inactive_secs = 0            # 0 = unlimited
+mode = "any"                 # any | all
+# action = "stop"            # stop|close|remove|remove_with_data|throttle:<name>|super_seed|notify|command:<str>
+check_interval_secs = 10
+
+[rules]
+enabled = true               # automation rules (empty rule set = no-op)
+allow_destructive = false    # global gate for remove/remove_with_data
 
 [tiering]
 # Enable automated multi-tier storage management
@@ -293,12 +330,15 @@ Configuration keys are registered commands. The most useful namespaces:
 | `pieces.*` | `memory.max` (byte suffixes `k/m/g/t` accepted, `0` = unlimited), `preload.min_size`, `preload.min_rate`, `preload.type`, `sync.timeout`, `sync.always_safe`, `hash.on_completion`, read-only memory/sync counters. |
 | `dht.*` | `mode` (`disable`/`off`/`auto`/`on`), `port`, `override_port`, `add_node`, `bootstrap`, `refresh`, `bootstrap_nodes`, `statistics`, `reset_statistics`, `refresh_interval` (default 900 s), `bootstrap_retry_interval` (default 60 s). |
 | `schedule` / `scheduler.*` | `schedule = name,absolute,interval,command`, `schedule.if_absent`, `schedule.remove`, `scheduler.max_active` (default −1 = unlimited active torrents). |
-| `ratio.*` | `ratio.enable` / `ratio.disable`, `ratio.min` (default 200 = 2.00), `ratio.max` (default 300 = 3.00), `ratio.upload` (default 20 MiB), `ratio.command` (action when the ratio is reached). Group-aware forms: `group.seeding.ratio.*`. Fixed-point convention: 200 = 2.00. |
+| `ratio.*` | `ratio.enable` / `ratio.disable`, `ratio.min` (default 200 = 2.00), `ratio.max` (default 300 = 3.00), `ratio.upload` (default 20 MiB), `ratio.command` (action when the ratio is reached). Group-aware forms: `group.seeding.ratio.*`. Fixed-point convention: 200 = 2.00. When `[seed] enabled = true`, the seed policies take over (legacy `ratio.min`/`ratio.command` migrate as fallback defaults). |
+| `seed.*` | Global seed-policy settings: `enabled`, `ratio` (f64, 0 = unlimited), `time`, `idle` (seconds, 0 = unlimited), `mode` (`any`/`all`), `action`, `check_interval` — each with `.set`; `seed.show` (dict). See [Torrent Rules & Seed Policies](Torrent-Rules). |
+| `label.*` | Label registry: `label.add = name[,#rrggbb]`, `label.remove`, `label.list` (JSON), `label.policy.get` / `label.policy.set = name,<json SeedPolicy>`, `label.save_path.set = name,<path>`. |
+| `rules.*` | Automation rules: `rules.add = <json Rule>`, `rules.update = <id>,<json>`, `rules.remove/get/enable/disable`, `rules.list`, `rules.test` (dry-run), `rules.check`, `rules.history [limit]`, `rules.clear_history`, `rules.export` / `rules.import`, `rules.enabled` / `rules.allow_destructive` (+ `.set`). |
 | `choke_group.*` | `up.max` / `down.max` (default 50 slots, −1 = unlimited), `up.min` / `down.min`, `up.heuristics` / `down.heuristics`, `tracker.mode` (`normal`/`aggressive`), group management (`insert`, `remove`, `list`). |
 | `log.*` | `log.open_file`, `log.append_file`, gz variants, `log.add_output`, `log.execute`, `log.rpc` (alias `log.xmlrpc`). |
 | `system.*` | `system.file.allocate`, `system.file.max_size`, `system.umask.set`, `system.shutdown.normal` / `.quick`, `system.env`, `system.cwd`, socket budgets (`system.sockets.*`). |
 | `ui.*` / `keys.*` | `ui.keymap.style` (`default`/`vi`/`emacs`), `keys.layout` (`qwerty`/`azerty`/`qwertz`/`dvorak`), `ui.throttle.global.step.small/medium/large`, `ui.input.history.size`, `ui.color.*`. |
-| `load.*`, `d.*`, `f.*`, `p.*`, `t.*`, `view.*` | Torrent/file/peer/tracker/view-scoped commands, also usable from scripts and RPC. |
+| `load.*`, `d.*`, `f.*`, `p.*`, `t.*`, `view.*` | Torrent/file/peer/tracker/view-scoped commands, also usable from scripts and RPC. Seed-state builtins: `d.seeding_time`, `d.idle_time`, `d.last_transfer_at[.set]`, `d.tags[.set/.add/.remove/.has]`, `d.seed_ratio/seed_time/seed_idle/seed_action[.set]` (`inherit\|unlimited\|<value>`), `d.seed_limits` (effective limits + sources), `d.rss_feed/rss_rule/rss_item`. |
 
 The full registered command list is available at runtime via `system.listMethods` (also over XML-RPC).
 

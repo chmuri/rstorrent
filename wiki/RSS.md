@@ -162,6 +162,9 @@ A rule object (used by `POST/PUT /api/rss/rules` and the test endpoint):
 | `label` | string or null | Written to rTorrent's `d.custom1` label slot |
 | `add_paused` | bool | Add the torrent without starting it |
 | `cooldown_secs` | int or null | Minimum spacing between downloads triggered by this rule |
+| `tags` | string[] | Tags applied to the torrent on add (`d.tags`); default `[]` — see [Lifecycle bridge](#lifecycle-bridge) |
+| `throttle_name` | string or null | Named throttle applied on add; default null |
+| `seed_limits` | object or null | Per-torrent seed-limit overrides applied on add; default null |
 
 ### Evaluation
 
@@ -210,7 +213,7 @@ The background worker ticks every **30 s** (missed ticks are skipped), refreshes
 For each match the daemon:
 
 1. Picks a torrent source: the **magnet URI is preferred**; otherwise the `.torrent` URL is fetched (same size cap and bencode check as feed fetches). An item with neither fails with `no torrent source`.
-2. Applies the rule action: `save_path` is created if missing and set as the download directory; `label` is written to `d.custom1`; `add_paused` adds the torrent without starting it, otherwise it is started.
+2. Applies the rule action: `save_path` is created if missing and set as the download directory; `label` is written to `d.custom1`; `add_paused` adds the torrent without starting it, otherwise it is started. The rule's `tags`, `throttle_name` and `seed_limits` are applied and the RSS provenance is recorded — see [Lifecycle bridge](#lifecycle-bridge).
 3. Inserts the torrent into the download list and immediately saves the session state.
 4. Records the outcome on the item and in the history.
 
@@ -222,6 +225,48 @@ Two different mechanisms protect against double downloads:
 - **`Duplicate` (engine level)** — when the torrent's info-hash is already in the session (e.g. the same release arrived via another feed, or was added manually), the engine reports `duplicate` instead of adding it again. The item is still marked processed and the history records the existing hash.
 
 Outcomes are `added`, `duplicate` or `failed`. All three mark the item as processed so it is never retried automatically.
+
+---
+
+## Lifecycle bridge
+
+RSS rules can hand torrents straight into the [rules engine](Torrent-Rules): every rule carries three optional, additive fields — `tags`, `throttle_name` and `seed_limits` — applied when the torrent is added. Old `rss.json` stores (version 1) load unchanged; the fields default to empty/null.
+
+```json
+{
+  "tags": ["rss", "keep"],
+  "throttle_name": "seed",
+  "seed_limits": {
+    "ratio": 3.0,
+    "seeding_time_secs": 604800,
+    "inactive_secs": null,
+    "action": "throttle:seed"
+  }
+}
+```
+
+`seed_limits` fields: `ratio` (f64), `seeding_time_secs` / `inactive_secs` (seconds), `action` (wire string: `stop`, `close`, `remove`, `remove_with_data`, `throttle:<name>`, `super_seed`, `notify`, `command:<str>`). Per field, **null = inherit** the label/global policy, **0 = unlimited**, a positive value = an explicit per-torrent limit. An invalid `action` string is ignored with a warning. The values become the torrent's seed overrides (the `d.seed_*` commands), so the seed-policy engine enforces them with full inheritance.
+
+### Provenance
+
+Every torrent added through RSS — automatically **or** via a manual item download — records its origin in the persisted `d.custom` map:
+
+| Custom key | RPC getter | Meaning |
+| --- | --- | --- |
+| `rss.feed_id` | `d.rss_feed` | Source feed id |
+| `rss.rule_id` | `d.rss_rule` | Matching rule id (absent for manual downloads with no matching rule) |
+| `rss.item_id` | `d.rss_item` | Source item id |
+
+The getters return `0` when absent; REST/gRPC torrent summaries expose `rss_feed_id` / `rss_rule_id`. Provenance survives restarts and lets automation rules target RSS torrents later: scope `{"rss": {"feed_id": 1, "rule_id": null}}` (null fields match any value) or the `added_by_rss` condition — the full path **RSS → download → seed according to a profile → clean up**.
+
+```bash
+# Give an existing RSS rule (id 3) tags, a throttle and seed limits:
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"id":3,"name":"weekly show","enabled":true,"feed_ids":[],"priority":0,"match_title":"show.*1080p","exclude_title":null,"min_size_bytes":null,"max_size_bytes":null,"episode":null,"save_path":null,"label":"show","add_paused":false,"cooldown_secs":null,"tags":["rss"],"throttle_name":"seed","seed_limits":{"ratio":3.0,"seeding_time_secs":604800,"inactive_secs":null,"action":"stop"}}' \
+  "$BASE/api/rss/rules/3"
+```
+
+Note: the `/rss` rule editor currently exposes the classic fields; the bridge fields are managed through the REST API (a UI edit of a rule resets them to their defaults).
 
 ---
 
@@ -401,3 +446,4 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" \
 - [Web UI](WebUI) — enabling the server, authentication and trust model
 - [Configuration Guide](Configuration-Guide) — `[rss]` section reference
 - [CLI Reference](CLI-Reference) — `--webui-addr`, `--webui-token`
+- [Torrent Rules & Seed Policies](Torrent-Rules) — seed policies, automation rules and the RSS lifecycle bridge

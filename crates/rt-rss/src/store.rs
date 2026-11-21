@@ -357,6 +357,9 @@ mod tests {
 
     fn sample_rule(id: RuleId) -> RssRule {
         RssRule {
+            tags: Vec::new(),
+            throttle_name: None,
+            seed_limits: None,
             id,
             name: format!("rule {id}"),
             enabled: true,

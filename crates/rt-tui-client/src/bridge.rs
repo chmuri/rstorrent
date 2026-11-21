@@ -32,6 +32,9 @@ pub struct GrpcBridge {
     system: SystemServiceClient<Channel>,
     commands: CommandServiceClient<Channel>,
     timeout: Duration,
+    /// Optional bearer token attached as `authorization` metadata so TCP
+    /// callers reach the daemon's trusted command surface (plan §6.7).
+    token: Option<String>,
 }
 
 impl GrpcBridge {
@@ -41,6 +44,16 @@ impl GrpcBridge {
     /// `unix:///path/to.sock`. Both the connection attempt and every subsequent
     /// call are bounded by `timeout`.
     pub async fn connect(endpoint: &str, timeout: Duration) -> Result<Self, BridgeError> {
+        Self::connect_with_token(endpoint, timeout, None).await
+    }
+
+    /// Like [`Self::connect`], but attaches a bearer token to command calls so
+    /// authenticated TCP peers are treated as trusted by the daemon.
+    pub async fn connect_with_token(
+        endpoint: &str,
+        timeout: Duration,
+        token: Option<String>,
+    ) -> Result<Self, BridgeError> {
         let channel = connect_channel(endpoint, timeout).await?;
 
         Ok(Self {
@@ -48,7 +61,19 @@ impl GrpcBridge {
             system: SystemServiceClient::new(channel.clone()),
             commands: CommandServiceClient::new(channel),
             timeout,
+            token,
         })
+    }
+
+    /// Wraps a request with the bearer token when one is configured.
+    fn authed<T>(&self, message: T) -> tonic::Request<T> {
+        let mut request = tonic::Request::new(message);
+        if let Some(token) = &self.token {
+            if let Ok(value) = format!("Bearer {token}").parse() {
+                request.metadata_mut().insert("authorization", value);
+            }
+        }
+        request
     }
 
     /// Lists torrents in `view` (`main`, `started`, `stopped`, …).
@@ -269,7 +294,7 @@ impl GrpcBridge {
             trusted: false,
         };
 
-        await_response(self.timeout, self.commands.execute(request)).await
+        await_response(self.timeout, self.commands.execute(self.authed(request))).await
     }
 }
 

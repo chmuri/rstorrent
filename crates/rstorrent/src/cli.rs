@@ -67,6 +67,17 @@ pub struct Cli {
     #[arg(long = "grpc-socket", value_name = "SOCKET_PATH")]
     pub grpc_socket: Option<String>,
 
+    /// Daemon endpoint for remote subcommands (rules/labels/seed/torrent/cmd):
+    /// host:port, tcp://host:port, unix:///path/to.sock or grpc://host:port.
+    /// Unset: discovered from the active config ([rpc] grpc_socket/grpc_port).
+    #[arg(long = "endpoint", value_name = "ENDPOINT")]
+    pub endpoint: Option<String>,
+
+    /// Bearer token for remote subcommands over TCP gRPC. Defaults to the
+    /// active config's `[rpc] grpc_token`; Unix sockets need no token.
+    #[arg(long = "token", value_name = "TOKEN")]
+    pub token: Option<String>,
+
     /// Bind address for the Prometheus /metrics HTTP server (e.g. 127.0.0.1:9090).
     /// Overrides the TOML `[metrics] addr` key. Unset disables the server.
     #[arg(long = "metrics-addr", value_name = "ADDR")]

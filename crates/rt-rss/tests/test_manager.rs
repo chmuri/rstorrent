@@ -158,6 +158,9 @@ fn xml_zeta() -> String {
 
 fn show_rule() -> RssRule {
     RssRule {
+        tags: Vec::new(),
+        throttle_name: None,
+        seed_limits: None,
         id: 0,
         name: "show".to_string(),
         enabled: true,

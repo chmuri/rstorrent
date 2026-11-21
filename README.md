@@ -68,6 +68,13 @@ The project contains active implementations for core BitTorrent functionality, a
   - **Live Observability & Logs**: Global slide-over log drawer with real-time WebSocket log streaming, severity filtering (`ALL`, `INFO`, `WARN`, `ERROR`), and live search.
 - **RSS Auto-Downloads**:
   - Track RSS/Atom feeds, match new items with regex/size/episode rules, and auto-download matching torrents in the background; manage feeds, rules and history from the `/rss` Web UI page or the trusted `/api/rss` REST API.
+- **Seed Policies & Automation Rules**:
+  - **Seed policies**: qBittorrent-style share limits — ratio, accumulated seeding time and inactivity — with **global → label → torrent inheritance** (`inherit`/`unlimited`/`set` per field), `any`/`all` combination, and a configurable action on reach (stop/close/remove/remove-with-data/throttle/super-seed/notify/custom command). An "effective limits" insight shows the inheritance source and progress per field in the UI, CLI and RPC.
+  - **Automation rules**: `scope + trigger + conditions → actions` over torrents already in the session — global/label/tag/tracker/RSS scopes, periodic or lifecycle-event triggers, 19 conditions (including swarm-health scrape with an explicit "no data" fallback and free-space checks) and 19 actions (tags, live move/tiering, throttles, webhooks, execute, raw commands). First-match-wins with `Noop` exceptions, `once`/cooldown, priorities.
+  - **Dry-run & audit**: test any rule against live torrents with zero mutations (`rules.test` / `POST /api/rules/test` / `rstorrent rules test`); every decision lands in a 500-entry audit history (`ok`/`failed`/`skipped`) with live WebSocket events.
+  - **First-class labels & tags**: a label registry (color, seed policy, save path) compatible with `d.custom1`, multi-tag `d.tags`, and a label facet filter in the dashboard.
+  - **RSS lifecycle bridge**: RSS rules can apply tags, a throttle and seed limits on add, and record feed/rule/item provenance so automation rules can target "torrents from feed X" later.
+  - **Safe by default**: disabled until `[seed] enabled` is set; destructive actions double-gated (global + per-rule, default off) with skipped-action auditing; legacy `ratio.*` behavior unchanged otherwise. One command map across Web UI (`/rules`), CLI (`rstorrent rules|labels|seed|torrent|cmd`), REST, gRPC, `.rc` and Lua.
 - **Observability**:
   - Prometheus `/metrics` HTTP endpoint and an optional JSONL event recorder (`RSTORRENT_METRICS_FILE`).
 - **Lua Scripting**:
@@ -389,6 +396,14 @@ rstorrent config show                     # display full configuration
 rstorrent config get network.port         # query a specific setting
 rstorrent config set network.port 6882    # update a setting in rstorrent.toml
 rstorrent config validate                 # validate syntax and schema integrity
+
+# Remote rules-engine subcommands (against a running daemon over gRPC):
+rstorrent seed set --enabled true --ratio 2.0 --time 7d --action stop
+rstorrent labels add movies --color '#7c3aed'
+rstorrent rules test --file rule.json     # dry-run, zero mutations
+rstorrent rules add --file rule.json
+rstorrent torrent limits <hash>           # effective limits + inheritance sources
+rstorrent cmd d.seed_limits <hash>        # any RPC command
 ```
 
 Torrent arguments accept file paths, `data:` URIs, magnet links, and HTTP(S)
@@ -403,14 +418,17 @@ The daemon ships an opt-in native Web UI: an axum REST + WebSocket backend servi
 an embedded [Leptos](https://leptos.dev/) WebAssembly single-page app (Tailwind v4,
 compiled with Trunk and embedded into the binary at compile time — no external
 assets or CDN). It provides a torrent explorer, inspector, analytics dashboard,
-RSS feed manager, full daemon settings, command palette, live WebSocket updates,
+RSS feed manager, an automation-rules page (`/rules`) with dry-run testing and
+an audit history, seeding-limit management (global defaults, label registry,
+per-torrent limits dialog with inheritance sources), full daemon settings,
+command palette, live WebSocket updates,
 a global slide-over log console, a Cyberpunk Neon-SciFi boot splash during startup
 and file hash-checking, and an interactive **+ New Torrent** modal supporting magnet links, HTTP URLs, and
 drag-and-drop `.torrent` file uploads.
 
 The **Settings** page features three specialized views:
 - **Client UI**: Appearance, themes, accent colors, density, animations, connection settings, and state export.
-- **Daemon Config (`rstorrent.toml`)**: Structured visual Bento cards for all engine settings (network limits, storage directories, protocol/encryption, DHT, RPC/WebUI, logging, metrics, tiering, and RSS).
+- **Daemon Config (`rstorrent.toml`)**: Structured visual Bento cards for all engine settings (network limits, storage directories, protocol/encryption, DHT, RPC/WebUI, logging, metrics, tiering, RSS, and seeding limits), plus the label manager.
 - **Raw TOML Editor**: Direct syntax-highlighted editor with validation and live reload.
 Enable it with `--webui-addr` / `--webui-token` or the `[webui]` TOML table:
 
@@ -435,6 +453,17 @@ Feeds, rules, items and history are managed via the UI or the trusted
 settings live in the `[rss]` TOML section. See
 [RSS Auto-Downloads](https://github.com/chmuri/rstorrent/wiki/RSS) for the full
 reference.
+
+### Seed Policies & Automation Rules
+
+The `/rules` page manages automation rules (scope, trigger, conditions, actions)
+with a **Test rule** dry-run and an audited action history; **Settings → Seeding
+limits** holds the global `[seed]` defaults and the label registry, and the
+torrent context menu opens a per-torrent limits dialog showing effective values,
+inheritance sources and progress bars. Rules, labels and history persist in
+`rules.json`; global settings live in the `[seed]`/`[rules]` TOML sections. See
+[Torrent Rules & Seed Policies](https://github.com/chmuri/rstorrent/wiki/Torrent-Rules)
+for the full reference.
 
 ---
 

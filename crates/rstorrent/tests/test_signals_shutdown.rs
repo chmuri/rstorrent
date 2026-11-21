@@ -36,6 +36,8 @@ fn free_port() -> u16 {
 
 fn daemon_cli(session: &str, directory: &str, port: u16) -> Cli {
     Cli {
+        token: None,
+        endpoint: None,
         bind_address: Some("127.0.0.1".to_string()),
         directory: Some(directory.to_string()),
         watch_dir: None,

@@ -1,4 +1,4 @@
-use leptos::prelude::*;
+use leptos::{ev, prelude::*};
 
 use crate::components::ui::*;
 use crate::state::api;
@@ -7,6 +7,10 @@ use crate::state::*;
 const COUNT_HISTORY_CAP: usize = 60;
 const SPARK_SAMPLES: usize = 60;
 const MIB: f64 = 1024.0 * 1024.0;
+/// The dashboard torrent list is a shortened view; the full paginated list
+/// lives in the Explorer. Cap the rows to keep the overview page light.
+const DASHBOARD_LIST_CAP: usize = 100;
+const MENU_ITEM_CLASS: &str = "flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs font-medium text-zinc-300 transition-colors duration-100 hover:bg-white/[0.06] hover:text-zinc-100";
 
 const TIME_RANGES: [(TimeRange, &str); 4] = [
     (TimeRange::OneMin, "1m"),
@@ -20,6 +24,31 @@ const TILE_CLASS: &str = "group flex cursor-pointer flex-col items-start gap-2.5
 #[component]
 pub fn DashboardPage() -> impl IntoView {
     let state = use_context::<AppState>().unwrap_or_default();
+
+    // Row context menu (right-click or the "⋯" button): one shared popover
+    // anchored at the pointer, closed by any outside click or Escape.
+    let row_menu = RwSignal::new(None::<RowMenu>);
+    let click_handle = window_event_listener(ev::click, move |_| {
+        if row_menu.get_untracked().is_some() {
+            row_menu.set(None);
+        }
+    });
+    let key_handle = window_event_listener(ev::keydown, move |ev: web_sys::KeyboardEvent| {
+        if ev.key() == "Escape" && row_menu.get_untracked().is_some() {
+            ev.prevent_default();
+            ev.stop_immediate_propagation();
+            row_menu.set(None);
+        }
+    });
+    on_cleanup(move || {
+        click_handle.remove();
+        key_handle.remove();
+    });
+    let listed = Memo::new(move |_| {
+        let mut items = state.filtered_items();
+        items.truncate(DASHBOARD_LIST_CAP);
+        items
+    });
 
     // Count KPIs have no backend history series, so accumulate local samples.
     let active_history = RwSignal::new(Vec::<f64>::new());
@@ -374,7 +403,371 @@ pub fn DashboardPage() -> impl IntoView {
                     </button>
                 </div>
             </BentoCard>
+
+            <BentoCard
+                title="Torrents"
+                subtitle="Label facet, seeding time and ratio progress — right-click a row for seed limits".to_string()
+                col_span="col-span-12"
+            >
+                <div class="flex flex-col gap-3">
+                    {label_facet(state)}
+                    {torrent_table(state, listed, row_menu)}
+                    {move || {
+                        (state.filtered_items().len() > DASHBOARD_LIST_CAP)
+                            .then(|| {
+                                view! {
+                                    <p class="text-center text-[11px] text-zinc-600">
+                                        "Showing the first " {DASHBOARD_LIST_CAP} " matches — open the Explorer for the full list."
+                                    </p>
+                                }
+                            })
+                    }}
+                </div>
+            </BentoCard>
         </div>
+        {move || {
+            row_menu
+                .get()
+                .map(|menu| {
+                    let inspect_hash = menu.hash.clone();
+                    let label_hash = menu.hash.clone();
+                    let limits_hash = menu.hash.clone();
+                    view! {
+                        <div
+                            class="fixed z-[70] w-48 overflow-hidden rounded-xl border border-white/[0.12] bg-zinc-900/95 py-1 shadow-2xl backdrop-blur-xl"
+                            style=format!("left: {}px; top: {}px", menu.x, menu.y)
+                            role="menu"
+                            aria-label="Torrent actions"
+                        >
+                            <button
+                                type="button"
+                                class=MENU_ITEM_CLASS
+                                role="menuitem"
+                                on:click=move |ev| {
+                                    ev.stop_propagation();
+                                    row_menu.set(None);
+                                    if let Some(item) = state.items.get().into_iter().find(|t| t.hash == inspect_hash) {
+                                        state.selected_item.set(Some(item));
+                                    }
+                                }
+                            >
+                                "Inspect"
+                            </button>
+                            <button
+                                type="button"
+                                class=MENU_ITEM_CLASS
+                                role="menuitem"
+                                title="Opens the inspector with the label editor"
+                                on:click=move |ev| {
+                                    ev.stop_propagation();
+                                    row_menu.set(None);
+                                    if let Some(item) = state.items.get().into_iter().find(|t| t.hash == label_hash) {
+                                        state.selected_item.set(Some(item));
+                                    }
+                                }
+                            >
+                                "Set label"
+                            </button>
+                            <button
+                                type="button"
+                                class=MENU_ITEM_CLASS
+                                role="menuitem"
+                                on:click=move |ev| {
+                                    ev.stop_propagation();
+                                    row_menu.set(None);
+                                    state.seed_limits_hash.set(Some(limits_hash.clone()));
+                                }
+                            >
+                                "Seed limits…"
+                            </button>
+                        </div>
+                    }
+                })
+        }}
+        <seed_limits_dialog::SeedLimitsDialog/>
+    }
+}
+
+/// Position of the shared row context menu (viewport coordinates, clamped).
+#[derive(Clone, PartialEq)]
+struct RowMenu {
+    hash: String,
+    x: f64,
+    y: f64,
+}
+
+fn open_row_menu(row_menu: RwSignal<Option<RowMenu>>, hash: &str, x: i32, y: i32) {
+    let (vw, vh) = web_sys::window()
+        .map(|window| {
+            (
+                window
+                    .inner_width()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1280.0),
+                window
+                    .inner_height()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(800.0),
+            )
+        })
+        .unwrap_or((1280.0, 800.0));
+    // Keep the 192px-wide, ~130px-tall menu inside the viewport.
+    let x = (f64::from(x)).min(vw - 208.0).max(8.0);
+    let y = (f64::from(y)).min(vh - 148.0).max(8.0);
+    row_menu.set(Some(RowMenu {
+        hash: hash.to_string(),
+        x,
+        y,
+    }));
+}
+
+/// Label facet — keep in sync with `pages/explorer.rs::label_facet` (T11):
+/// multi-select chips with live counters, "No label" bucket and "All" reset.
+fn label_facet(state: AppState) -> impl IntoView {
+    let counts = Memo::new(move |_| state.items.with(|items| label_counts(items)));
+    let total = Memo::new(move |_| state.items.with(|items| items.len()));
+    let none_active = Signal::derive(move || {
+        state
+            .label_filter
+            .get()
+            .iter()
+            .any(|s| s == LABEL_FILTER_NONE)
+    });
+    view! {
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                "Labels"
+            </span>
+            <button
+                class=move || facet_pill_classes(state.label_filter.get().is_empty())
+                on:click=move |_| state.label_filter.set(Vec::new())
+                title="Show all labels"
+            >
+                "All"
+                <span class="rounded-full bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none">
+                    {move || total.get()}
+                </span>
+            </button>
+            <For
+                each=move || counts.get().0
+                key=|(label, _)| label.clone()
+                let(item)
+            >
+                {
+                    let (label, _) = item;
+                    let active_label = label.clone();
+                    let toggle_label = label.clone();
+                    let count_label = label.clone();
+                    let title_label = label.clone();
+                    let count = Signal::derive(move || {
+                        counts
+                            .get()
+                            .0
+                            .iter()
+                            .find(|(name, _)| name == &count_label)
+                            .map(|(_, count)| *count)
+                            .unwrap_or(0)
+                    });
+                    let active = Signal::derive(move || {
+                        state.label_filter.get().contains(&active_label)
+                    });
+                    view! {
+                        <button
+                            class=move || facet_pill_classes(active.get())
+                            on:click=move |_| state.toggle_label_filter(&toggle_label)
+                            title=move || format!("Toggle label '{title_label}'")
+                        >
+                            {label}
+                            <span class="rounded-full bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none">
+                                {move || count.get()}
+                            </span>
+                        </button>
+                    }
+                }
+            </For>
+            <button
+                class=move || facet_pill_classes(none_active.get())
+                on:click=move |_| state.toggle_label_filter(LABEL_FILTER_NONE)
+                title="Show torrents without a label"
+            >
+                "No label"
+                <span class="rounded-full bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px] tabular-nums leading-none">
+                    {move || counts.get().1}
+                </span>
+            </button>
+        </div>
+    }
+}
+
+fn facet_pill_classes(active: bool) -> String {
+    let base = "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-[0.98]";
+    let skin = if active {
+        "border-[var(--accent)]/40 bg-[var(--accent)]/15 text-zinc-100"
+    } else {
+        "border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-200"
+    };
+    format!("{base} {skin}")
+}
+
+fn torrent_table(
+    state: AppState,
+    listed: Memo<Vec<TorrentItem>>,
+    row_menu: RwSignal<Option<RowMenu>>,
+) -> impl IntoView {
+    view! {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead>
+                    <tr class="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-zinc-500">
+                        <th class="px-3 py-2 font-medium">"Torrent"</th>
+                        <th class="px-3 py-2 font-medium">"Label"</th>
+                        <th class="px-3 py-2 font-medium">"Seeded"</th>
+                        <th class="px-3 py-2 font-medium">"Ratio"</th>
+                        <th class="px-3 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <For
+                        each=move || listed.get()
+                        key=|item| item.hash.clone()
+                        let(item)
+                    >
+                        <DashboardTorrentRow state hash=item.hash.clone() row_menu/>
+                    </For>
+                </tbody>
+            </table>
+            {move || {
+                listed
+                    .get()
+                    .is_empty()
+                    .then(|| {
+                        view! {
+                            <p class="py-6 text-center text-xs text-zinc-500">
+                                "No torrents match the current filters."
+                            </p>
+                        }
+                    })
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn DashboardTorrentRow(
+    state: AppState,
+    hash: String,
+    row_menu: RwSignal<Option<RowMenu>>,
+) -> impl IntoView {
+    let memo_hash = hash.clone();
+    let item = Memo::new(move |_| {
+        state
+            .items
+            .with(|items| items.iter().find(|i| i.hash == memo_hash).cloned())
+    });
+    let open_item = item;
+    let menu_hash = hash.clone();
+    let context_hash = hash.clone();
+    view! {
+        <tr
+            class="dense-row cursor-pointer border-b border-white/[0.04] transition-colors duration-150 last:border-0 hover:bg-white/[0.03]"
+            on:click=move |_| {
+                if let Some(i) = open_item.get() {
+                    state.selected_item.set(Some(i));
+                }
+            }
+            on:contextmenu=move |ev: web_sys::MouseEvent| {
+                ev.prevent_default();
+                ev.stop_propagation();
+                open_row_menu(row_menu, &context_hash, ev.client_x(), ev.client_y());
+            }
+        >
+            <td class="dense-row max-w-[260px] px-3 py-2.5">
+                <div class="truncate text-sm font-medium text-zinc-200">
+                    {move || item.get().map(|i| i.name).unwrap_or_default()}
+                </div>
+                <div class="font-mono text-[10px] text-zinc-500">
+                    {move || item.get().map(|i| i.short_hash()).unwrap_or_default()}
+                </div>
+            </td>
+            <td class="dense-row px-3 py-2.5">
+                {move || {
+                    item.get().map(|i| {
+                        if i.category.is_empty() {
+                            view! { <span class="text-xs text-zinc-600">"—"</span> }.into_any()
+                        } else {
+                            view! {
+                                <span class="inline-flex items-center rounded-md border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-400">
+                                    {i.category}
+                                </span>
+                            }
+                                .into_any()
+                        }
+                    })
+                }}
+            </td>
+            <td class="dense-row whitespace-nowrap px-3 py-2.5 font-mono text-xs tabular-nums text-zinc-400">
+                {move || item.get().map(|i| i.format_seeded()).unwrap_or_default()}
+            </td>
+            <td class="dense-row whitespace-nowrap px-3 py-2.5 font-mono text-xs tabular-nums">
+                {move || {
+                    item.get().map(|i| {
+                        let r = i.ratio();
+                        // Keep in sync with the Explorer Ratio column (T11).
+                        match i.ratio_limit() {
+                            Some(limit) => {
+                                let pct = if limit > 0.0 {
+                                    (r / limit * 100.0).clamp(0.0, 100.0)
+                                } else {
+                                    100.0
+                                };
+                                let bar_class = if r >= limit {
+                                    "h-full rounded-full bg-emerald-400 transition-all duration-300"
+                                } else {
+                                    "h-full rounded-full bg-[var(--accent)] transition-all duration-300"
+                                };
+                                view! {
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-zinc-300">{format!("{r:.2} / {limit:.2}")}</span>
+                                        <div class="h-1 w-16 overflow-hidden rounded-full bg-white/[0.06]">
+                                            <div class=bar_class style=format!("width: {pct:.1}%")></div>
+                                        </div>
+                                    </div>
+                                }
+                                    .into_any()
+                            }
+                            None => {
+                                let style = if r >= 2.0 {
+                                    "font-semibold text-purple-400"
+                                } else if r >= 1.0 {
+                                    "text-emerald-400"
+                                } else if r >= 0.5 {
+                                    "text-amber-400"
+                                } else {
+                                    "text-zinc-400"
+                                };
+                                view! { <span class=style>{format!("{r:.2}")}</span> }.into_any()
+                            }
+                        }
+                    })
+                }}
+            </td>
+            <td class="dense-row px-3 py-2.5 text-right">
+                <button
+                    type="button"
+                    class="cursor-pointer rounded-lg px-2 py-1 text-zinc-500 transition-all duration-150 hover:bg-white/[0.06] hover:text-zinc-200 active:scale-[0.95]"
+                    title="Torrent actions"
+                    aria-label="Torrent actions"
+                    on:click=move |ev: web_sys::MouseEvent| {
+                        ev.stop_propagation();
+                        open_row_menu(row_menu, &menu_hash, ev.client_x(), ev.client_y());
+                    }
+                >
+                    "⋯"
+                </button>
+            </td>
+        </tr>
     }
 }
 

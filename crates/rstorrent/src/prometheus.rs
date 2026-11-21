@@ -655,6 +655,8 @@ mod tests {
     #[test]
     fn resolve_metrics_addr_cli_overrides_and_validates() {
         let cli = Cli {
+            token: None,
+            endpoint: None,
             metrics_addr: Some("127.0.0.1:9090".to_string()),
             ..Default::default()
         };
@@ -664,6 +666,8 @@ mod tests {
         );
 
         let bad = Cli {
+            token: None,
+            endpoint: None,
             metrics_addr: Some("not-an-address".to_string()),
             ..Default::default()
         };

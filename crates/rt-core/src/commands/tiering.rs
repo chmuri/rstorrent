@@ -41,6 +41,39 @@ pub fn register_tiering_commands(
     )?;
 
     let mgr = Arc::clone(&manager);
+    map.insert_func(
+        "tiering.check_interval",
+        move |_target, _obj| {
+            let config = mgr.config();
+            let secs = config.read().map(|c| c.check_interval_secs).unwrap_or(300);
+            Ok(Object::from(secs as i64))
+        },
+        FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE,
+        "",
+        "Returns the tiering check interval in seconds.",
+    )?;
+
+    let mgr = Arc::clone(&manager);
+    map.insert_func(
+        "tiering.check_interval.set",
+        move |_target, obj| {
+            let secs = convert_to_value(obj, 10, 0)?;
+            if secs < 1 {
+                return Err(RpcError::InputError(
+                    "tiering.check_interval must be >= 1 second".into(),
+                ));
+            }
+            if let Ok(mut config) = mgr.config().write() {
+                config.check_interval_secs = secs as u64;
+            }
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "<secs>",
+        "Set the tiering check interval in seconds (>= 1); inc_tick reads it live.",
+    )?;
+
+    let mgr = Arc::clone(&manager);
     let dl_list = Arc::clone(&download_list);
     map.insert_func(
         "tiering.check",

@@ -16,6 +16,7 @@ lt-storage.workspace = true
 lt-engine.workspace = true
 rt-rpc.workspace = true
 rt-core.workspace = true
+rt-rules.workspace = true
 tonic = { workspace = true, features = ["tls-ring"] }
 tonic-prost.workspace = true
 prost.workspace = true

@@ -107,6 +107,34 @@ impl Manager {
             "state_counter",
             Object::from(download.state_counter() as i64),
         );
+
+        // Timestamps and placement state older writers dropped (plan §6.2
+        // persistence gap fix). Additive keys: defaults are omitted and the
+        // reader restores missing keys as defaults, so old sidecars keep
+        // working.
+        if download.timestamp_started() > 0 {
+            let _ = rtorrent_obj.insert_key(
+                "timestamp_started",
+                Object::from(download.timestamp_started() as i64),
+            );
+        }
+        if download.timestamp_finished() > 0 {
+            let _ = rtorrent_obj.insert_key(
+                "timestamp_finished",
+                Object::from(download.timestamp_finished() as i64),
+            );
+        }
+        if download.load_date() > 0 {
+            let _ = rtorrent_obj.insert_key("load_date", Object::from(download.load_date() as i64));
+        }
+        if download.group() > 0 {
+            let _ = rtorrent_obj.insert_key("group", Object::from(download.group() as i64));
+        }
+        if !download.throttle_name().is_empty() {
+            let _ =
+                rtorrent_obj.insert_key("throttle_name", Object::from(download.throttle_name()));
+        }
+
         if let Some(uri) = download.magnet_uri() {
             // Kept even after metadata arrives: if the `.torrent` file is ever
             // missing, the placeholder can still be recreated from this URI.
@@ -140,6 +168,51 @@ impl Manager {
                 "tier_entered_at",
                 Object::from(download.tier_state().tier_entered_at as i64),
             );
+        }
+
+        // Seed state (plan §6.2). Additive keys with the same omit-defaults
+        // discipline as the custom fields: `Inherit` limits, a `None` action,
+        // empty tags and an empty ledger are not written at all.
+        if download.seeding_time() > 0 {
+            let _ = rtorrent_obj
+                .insert_key("seeding_time", Object::from(download.seeding_time() as i64));
+        }
+        if download.last_transfer_at() > 0 {
+            let _ = rtorrent_obj.insert_key(
+                "last_transfer_at",
+                Object::from(download.last_transfer_at() as i64),
+            );
+        }
+        let overrides = download.seed_overrides();
+        if let Some(value) = crate::download::format_limit_value(&overrides.ratio) {
+            let _ = rtorrent_obj.insert_key("seed_ratio", Object::from(value));
+        }
+        if let Some(value) = crate::download::format_limit_value(&overrides.seeding_time_secs) {
+            let _ = rtorrent_obj.insert_key("seed_time", Object::from(value));
+        }
+        if let Some(value) = crate::download::format_limit_value(&overrides.inactive_secs) {
+            let _ = rtorrent_obj.insert_key("seed_idle", Object::from(value));
+        }
+        if let Some(action) = &overrides.action {
+            let _ = rtorrent_obj.insert_key(
+                "seed_action",
+                Object::from(crate::download::format_seed_action(action)),
+            );
+        }
+        if !download.tags().is_empty() {
+            let tags: Vec<Object> = download
+                .tags()
+                .iter()
+                .map(|tag| Object::from(tag.as_str()))
+                .collect();
+            let _ = rtorrent_obj.insert_key("tags", Object::create_list_with(tags));
+        }
+        if !download.rule_ledger().0.is_empty() {
+            let mut ledger = Object::create_map();
+            for (rule_id, fired_at) in &download.rule_ledger().0 {
+                let _ = ledger.insert_key(rule_id.to_string(), Object::from(*fired_at as i64));
+            }
+            let _ = rtorrent_obj.insert_key("rule_ledger", ledger);
         }
 
         let resume = download.to_resume_data();

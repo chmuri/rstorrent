@@ -15,6 +15,7 @@ members = [
     "crates/rt-grpc",
     "crates/rt-core",
     "crates/rt-rss",
+    "crates/rt-rules",
     "crates/rt-tui",
     "crates/rt-tui-client",
     "crates/rstorrent",
@@ -25,7 +26,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.25.9"
+version = "0.26.0"
 edition = "2021"
 rust-version = "1.99"
 authors = ["chmuri <chmuri@gmail.com>"]
@@ -34,11 +35,11 @@ repository = "https://github.com/chmuri/rstorrent"
 homepage = "https://github.com/chmuri/rstorrent"
 
 [workspace.lints.rust]
-# Inherited only by crates that opt in with `[lints] workspace = true` — the ten
-# unsafe-free crates (lt-common, lt-crypto, lt-dht, lt-engine, lt-protocol,
-# lt-tracker, rt-grpc, rt-rss, rt-tui, rt-tui-client). The crates with low-level `unsafe`
-# (lt-storage, lt-sys, lt-net, rt-core, rt-scgi, rstorrent) keep documented
-# invariants (plan.md :264) and do not inherit this table.
+# Inherited only by crates that opt in with `[lints] workspace = true` — the
+# eleven unsafe-free crates (lt-common, lt-crypto, lt-dht, lt-engine, lt-protocol,
+# lt-tracker, rt-grpc, rt-rss, rt-rules, rt-tui, rt-tui-client). The crates with
+# low-level `unsafe` (lt-storage, lt-sys, lt-net, rt-core, rt-scgi, rstorrent) keep
+# documented invariants (plan.md :264) and do not inherit this table.
 unsafe_code = "deny"
 
 # Staged clippy migration (plan.md :263): `clippy::unwrap_used` / `expect_used`
@@ -63,6 +64,7 @@ rt-scgi = { path = "crates/rt-scgi" }
 rt-grpc = { path = "crates/rt-grpc" }
 rt-core = { path = "crates/rt-core" }
 rt-rss = { path = "crates/rt-rss" }
+rt-rules = { path = "crates/rt-rules" }
 rt-tui = { path = "crates/rt-tui" }
 rt-tui-client = { path = "crates/rt-tui-client" }
 
