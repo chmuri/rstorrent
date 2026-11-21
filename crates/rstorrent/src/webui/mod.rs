@@ -255,6 +255,7 @@ pub fn router(state: WebuiState) -> Router {
         .route("/torrents/{hash}/start", post(rest::start_torrent))
         .route("/torrents/{hash}/stop", post(rest::stop_torrent))
         .route("/torrents/{hash}/remove", post(rest::remove_torrent))
+        .route("/torrents/bulk-remove", post(rest::bulk_remove_torrents))
         .route("/torrents/{hash}/recheck", post(rest::recheck_torrent))
         .route("/torrents/{hash}/move", post(rest::move_torrent))
         .route("/torrents/{hash}/tier", post(rest::set_torrent_tier))
@@ -1159,6 +1160,139 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], json!(false));
         assert!(body["error"].as_str().unwrap().contains("untrusted"));
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    // Lowercase: the stubs record `HashString::to_hex()`, which is lowercase.
+    const BULK_HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const BULK_HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    #[tokio::test]
+    async fn bulk_remove_erases_every_hash_in_order() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/torrents/bulk-remove",
+                Some("s3cret"),
+                &json!({"hashes": [BULK_HASH_A, BULK_HASH_B], "delete_data": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(true));
+        assert_eq!(body["requested"], json!(2));
+        assert_eq!(body["removed"], json!([BULK_HASH_A, BULK_HASH_B]));
+        assert_eq!(body["failed"], json!([]));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                ("d.delete_data".to_string(), BULK_HASH_A.to_string()),
+                ("d.erase".to_string(), BULK_HASH_A.to_string()),
+                ("d.delete_data".to_string(), BULK_HASH_B.to_string()),
+                ("d.erase".to_string(), BULK_HASH_B.to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn bulk_remove_aggregates_step_errors_and_still_erases() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &["d.delete_data"]);
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/torrents/bulk-remove",
+                Some("s3cret"),
+                &json!({"hashes": [BULK_HASH_A, BULK_HASH_B], "delete_data": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        // The erase step still ran for both hashes despite the data failures.
+        assert_eq!(body["removed"], json!([BULK_HASH_A, BULK_HASH_B]));
+        let failed = body["failed"].as_array().unwrap();
+        assert_eq!(failed.len(), 2);
+        assert!(failed[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("d.delete_data"));
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 4);
+        assert!(calls.iter().filter(|(cmd, _)| cmd == "d.erase").count() == 2);
+    }
+
+    #[tokio::test]
+    async fn bulk_remove_reports_invalid_hashes_and_deduplicates() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/torrents/bulk-remove",
+                Some("s3cret"),
+                &json!({"hashes": [BULK_HASH_A, "not-a-hash", BULK_HASH_A]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert_eq!(body["removed"], json!([BULK_HASH_A]));
+        let failed = body["failed"].as_array().unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0]["hash"], json!("not-a-hash"));
+        // The duplicate hash must only be erased once.
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![("d.erase".to_string(), BULK_HASH_A.to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn bulk_remove_rejects_untrusted_and_oversized_requests() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                "/api/torrents/bulk-remove",
+                None,
+                &json!({"hashes": [BULK_HASH_A]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Trusted caller without a token configured: request-level rejection.
+        let (state, calls) = state_with_remove_stubs(None, &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/torrents/bulk-remove",
+                None,
+                &json!({"hashes": [BULK_HASH_A]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"].as_str().unwrap().contains("trusted"));
+        assert!(calls.lock().unwrap().is_empty());
+
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let hashes: Vec<String> = (0..=rest::BULK_REMOVE_MAX)
+            .map(|i| format!("{i:040X}"))
+            .collect();
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/torrents/bulk-remove",
+                Some("s3cret"),
+                &json!({"hashes": hashes}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"].as_str().unwrap().contains("too many hashes"));
         assert!(calls.lock().unwrap().is_empty());
     }
 

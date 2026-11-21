@@ -41,8 +41,82 @@ pub fn RemoveConfirm() -> impl IntoView {
         let ds = delete_source.get_untracked();
         state.remove_busy.set(true);
         spawn_local(async move {
-            for hash in &hashes {
-                let _ = api::remove_torrent(state, hash, dd, ds).await;
+            if hashes.len() == 1 {
+                // Single removal keeps the per-torrent toast semantics.
+                let _ = api::remove_torrent(state, &hashes[0], dd, ds).await;
+            } else {
+                // Bulk: one request per chunk, one retry for per-hash
+                // failures, then a single summary toast instead of N toasts.
+                const CHUNK: usize = 200;
+                let mut removed_hashes: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                let mut failed: Vec<BulkRemoveFailure> = Vec::new();
+                for chunk in hashes.chunks(CHUNK) {
+                    match api::bulk_remove_torrents(state, chunk, dd, ds).await {
+                        Ok(response) => {
+                            removed_hashes.extend(response.removed);
+                            failed.extend(response.failed);
+                        }
+                        Err(message) => {
+                            failed.extend(chunk.iter().map(|hash| BulkRemoveFailure {
+                                hash: hash.clone(),
+                                error: message.clone(),
+                            }));
+                        }
+                    }
+                }
+                if !failed.is_empty() {
+                    let retry: Vec<String> = failed.iter().map(|f| f.hash.clone()).collect();
+                    failed.clear();
+                    for chunk in retry.chunks(CHUNK) {
+                        match api::bulk_remove_torrents(state, chunk, dd, ds).await {
+                            Ok(response) => {
+                                removed_hashes.extend(response.removed);
+                                failed.extend(response.failed);
+                            }
+                            Err(message) => {
+                                failed.extend(chunk.iter().map(|hash| BulkRemoveFailure {
+                                    hash: hash.clone(),
+                                    error: message.clone(),
+                                }));
+                            }
+                        }
+                    }
+                }
+                if failed.is_empty() {
+                    state.push_toast(
+                        ToastKind::Success,
+                        "Torrents removed",
+                        format!("Removed {} torrents", removed_hashes.len()),
+                    );
+                    state.push_event(
+                        ToastKind::Success,
+                        format!("Removed {} torrents", removed_hashes.len()),
+                        None,
+                    );
+                } else {
+                    let first = &failed[0];
+                    let short: String = first.hash.chars().take(8).collect();
+                    state.push_toast(
+                        ToastKind::Error,
+                        "Remove finished with errors",
+                        format!(
+                            "Removed {}, failed {}: {short} — {}",
+                            removed_hashes.len(),
+                            failed.len(),
+                            first.error
+                        ),
+                    );
+                    state.push_event(
+                        ToastKind::Error,
+                        format!(
+                            "Remove: {} ok, {} failed",
+                            removed_hashes.len(),
+                            failed.len()
+                        ),
+                        None,
+                    );
+                }
             }
             state.remove_busy.set(false);
             state.remove_confirm_open.set(false);

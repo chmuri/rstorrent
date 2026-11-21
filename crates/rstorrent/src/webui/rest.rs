@@ -298,6 +298,10 @@ pub async fn remove_torrent(
         }
     };
 
+    let started = std::time::Instant::now();
+    let delete_data = options.delete_data;
+    let delete_source = options.delete_source;
+
     // Ordering matters: `d.delete_data` and `d.delete_tied` need the download
     // to still exist, so they must run BEFORE `d.erase` removes it from the
     // client and session.
@@ -340,14 +344,196 @@ pub async fn remove_torrent(
     }
 
     if errors.is_empty() {
+        tracing::info!(
+            info_hash = %hash,
+            delete_data,
+            delete_source,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "Removed torrent"
+        );
         Json(erased)
     } else {
+        let error = errors.join("; ");
+        tracing::warn!(
+            info_hash = %hash,
+            delete_data,
+            delete_source,
+            error = %error,
+            "Torrent remove completed with errors"
+        );
         Json(CommandResponse {
             success: false,
             result: erased.result,
-            error: errors.join("; "),
+            error,
         })
     }
+}
+
+/// Maximum number of hashes accepted by one bulk-remove request. The UI
+/// chunks larger selections so progress stays visible and no single request
+/// monopolizes a blocking worker for minutes.
+pub const BULK_REMOVE_MAX: usize = 5000;
+
+/// Body for `POST /api/torrents/bulk-remove`.
+#[derive(Debug, Deserialize)]
+pub struct BulkRemoveRequest {
+    pub hashes: Vec<String>,
+    #[serde(default)]
+    pub delete_data: bool,
+    #[serde(default)]
+    pub delete_source: bool,
+}
+
+/// One hash whose removal reported a step error.
+///
+/// A hash can appear here even when its erase succeeded (e.g. data deletion
+/// failed but the torrent was still removed) — the same error policy as the
+/// single-torrent remove endpoint.
+#[derive(Debug, Serialize)]
+pub struct BulkRemoveFailure {
+    pub hash: String,
+    pub error: String,
+}
+
+/// Aggregated outcome of a bulk removal.
+#[derive(Debug, Serialize)]
+pub struct BulkRemoveResponse {
+    pub success: bool,
+    pub requested: usize,
+    /// Hashes whose erase step succeeded (erase is idempotent, so hashes that
+    /// were already gone count as removed, matching the single-remove API).
+    pub removed: Vec<String>,
+    pub failed: Vec<BulkRemoveFailure>,
+    /// Request-level error (untrusted caller, oversized batch, task failure);
+    /// empty when the request itself was processed.
+    pub error: String,
+}
+
+impl BulkRemoveResponse {
+    fn request_error(requested: usize, error: String) -> Self {
+        Self {
+            success: false,
+            requested,
+            removed: Vec::new(),
+            failed: Vec::new(),
+            error,
+        }
+    }
+}
+
+/// Removes many torrents in one request: per hash the optional
+/// `d.delete_data`/`d.delete_tied` steps run first, then `d.erase` (which
+/// fires the session-cleanup listener). Every step is attempted even when an
+/// earlier one failed; errors are aggregated per hash.
+pub async fn bulk_remove_torrents(
+    State(state): State<WebuiState>,
+    Extension(trusted): Extension<Trusted>,
+    Json(payload): Json<BulkRemoveRequest>,
+) -> Json<BulkRemoveResponse> {
+    let requested = payload.hashes.len();
+    if !trusted.0 {
+        return Json(BulkRemoveResponse::request_error(
+            requested,
+            "trusted authentication required to remove torrents".into(),
+        ));
+    }
+    if requested > BULK_REMOVE_MAX {
+        return Json(BulkRemoveResponse::request_error(
+            requested,
+            format!("too many hashes ({requested}); max {BULK_REMOVE_MAX} per request"),
+        ));
+    }
+
+    let started = std::time::Instant::now();
+    let delete_data = payload.delete_data;
+    let delete_source = payload.delete_source;
+    let map = state.command_map.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let map = map.read().unwrap_or_else(|e| e.into_inner());
+        let mut removed = Vec::new();
+        let mut failed = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for hash in &payload.hashes {
+            if !seen.insert(hash.as_str()) {
+                continue;
+            }
+            let target = match lt_common::HashString::from_hex(hash) {
+                Some(parsed) => Target::Download(parsed),
+                None => {
+                    failed.push(BulkRemoveFailure {
+                        hash: hash.clone(),
+                        error: format!("invalid info hash {hash}"),
+                    });
+                    continue;
+                }
+            };
+
+            let mut errors: Vec<String> = Vec::new();
+            for (flag, command) in [
+                (delete_data, "d.delete_data"),
+                (delete_source, "d.delete_tied"),
+            ] {
+                if flag {
+                    if let Err(e) =
+                        map.call_command(command, &Object::create_empty(), &target, true)
+                    {
+                        errors.push(format!("{command}: {e}"));
+                    }
+                }
+            }
+            match map.call_command("d.erase", &Object::create_empty(), &target, true) {
+                Ok(_) => removed.push(hash.clone()),
+                Err(e) => errors.push(format!("d.erase: {e}")),
+            }
+            if !errors.is_empty() {
+                failed.push(BulkRemoveFailure {
+                    hash: hash.clone(),
+                    error: errors.join("; "),
+                });
+            }
+        }
+        (removed, failed)
+    })
+    .await;
+
+    let (removed, failed) = match outcome {
+        Ok(pair) => pair,
+        Err(_) => {
+            return Json(BulkRemoveResponse::request_error(
+                requested,
+                "bulk remove task failed".into(),
+            ));
+        }
+    };
+
+    let success = failed.is_empty();
+    if success {
+        tracing::info!(
+            requested,
+            removed = removed.len(),
+            delete_data,
+            delete_source,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "Bulk removed torrents"
+        );
+    } else {
+        tracing::warn!(
+            requested,
+            removed = removed.len(),
+            failed = failed.len(),
+            delete_data,
+            delete_source,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "Bulk remove completed with errors"
+        );
+    }
+    Json(BulkRemoveResponse {
+        success,
+        requested,
+        removed,
+        failed,
+        error: String::new(),
+    })
 }
 
 pub async fn recheck_torrent(

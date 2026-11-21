@@ -150,6 +150,28 @@ pub struct CommandResponse {
     pub error: String,
 }
 
+/// One hash whose bulk removal reported a step error (the erase may still
+/// have succeeded — mirrors the backend's per-hash error aggregation).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BulkRemoveFailure {
+    pub hash: String,
+    pub error: String,
+}
+
+/// Aggregated outcome of `POST /api/torrents/bulk-remove`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BulkRemoveResponse {
+    pub success: bool,
+    #[serde(default)]
+    pub requested: usize,
+    #[serde(default)]
+    pub removed: Vec<String>,
+    #[serde(default)]
+    pub failed: Vec<BulkRemoveFailure>,
+    #[serde(default)]
+    pub error: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct NetworkTomlConfig {
     pub port_range: Option<String>,

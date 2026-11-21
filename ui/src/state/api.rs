@@ -186,6 +186,78 @@ pub async fn remove_torrent(
     })
 }
 
+/// Removes many torrents through one bulk request per chunk.
+///
+/// Unlike [`remove_torrent`], this does not push toasts: the caller (the
+/// remove-confirmation modal) aggregates chunks and retries, then surfaces a
+/// single summary. Successfully removed hashes are applied to the local item
+/// list immediately so the explorer does not wait for the next bridge fetch.
+pub async fn bulk_remove_torrents(
+    state: AppState,
+    hashes: &[String],
+    delete_data: bool,
+    delete_source: bool,
+) -> Result<BulkRemoveResponse, String> {
+    if hashes.is_empty() {
+        return Ok(BulkRemoveResponse::default());
+    }
+
+    if state.connection.get() == ConnectionMode::Live {
+        let base = state.api_base_url.get();
+        let token = state.api_token.get();
+        let url = format!("{base}/api/torrents/bulk-remove");
+        let body = serde_json::json!({
+            "hashes": hashes,
+            "delete_data": delete_data,
+            "delete_source": delete_source,
+        });
+        let mut request = Request::post(&url);
+        if !token.is_empty() {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
+        let outcome = async {
+            let response = request
+                .json(&body)
+                .map_err(|err| format!("Serialization error: {err}"))?
+                .send()
+                .await
+                .map_err(|err| format!("Request failed: {err}"))?;
+            if !response.ok() {
+                return Err(format!("Server returned HTTP {}", response.status()));
+            }
+            response
+                .json::<BulkRemoveResponse>()
+                .await
+                .map_err(|err| format!("Invalid bulk remove response: {err}"))
+        }
+        .await;
+        return match outcome {
+            Ok(response) => {
+                for hash in &response.removed {
+                    apply_command_to_items(state, hash, "remove");
+                }
+                if !response.error.is_empty() {
+                    return Err(response.error.clone());
+                }
+                Ok(response)
+            }
+            Err(message) => Err(message),
+        };
+    }
+
+    // Demo / offline: mutate the local dataset, report everything as removed.
+    for hash in hashes {
+        apply_command_to_items(state, hash, "remove");
+    }
+    Ok(BulkRemoveResponse {
+        success: true,
+        requested: hashes.len(),
+        removed: hashes.to_vec(),
+        failed: Vec::new(),
+        error: String::new(),
+    })
+}
+
 pub async fn send_command(
     state: AppState,
     hash: &str,
