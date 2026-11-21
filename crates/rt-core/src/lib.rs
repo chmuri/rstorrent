@@ -1,3 +1,9 @@
+// This crate contains documented low-level unsafe invariants (plan.md :264).
+// Every member inherits the workspace lints table (unsafe_code = "deny");
+// this crate opts out at the crate root — source attributes override the
+// lint flags cargo injects.
+#![allow(unsafe_code)]
+
 //! Crate `rt-core`
 
 pub mod commands;

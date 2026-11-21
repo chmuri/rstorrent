@@ -5,10 +5,12 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 lt-common.workspace = true
 lt-net.workspace = true
-lt-engine.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 serde.workspace = true

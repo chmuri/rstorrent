@@ -8,6 +8,9 @@ description = "High-performance BitTorrent client written in Rust (modern port o
 repository = "https://github.com/chmuri/rstorrent"
 
 
+[lints]
+workspace = true
+
 [dependencies]
 lt-common.workspace = true
 lt-sys.workspace = true

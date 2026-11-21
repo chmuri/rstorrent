@@ -3851,7 +3851,6 @@ dependencies = [
  "lt-engine",
  "lt-storage",
  "prost",
- "prost-types",
  "rt-core",
  "rt-rpc",
  "rt-rules",
@@ -3871,7 +3870,6 @@ version = "0.26.1"
 dependencies = [
  "base64 0.23.1",
  "lt-common",
- "lt-engine",
  "lt-net",
  "mlua",
  "quick-xml",

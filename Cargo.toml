@@ -31,15 +31,12 @@ edition = "2021"
 rust-version = "1.99"
 authors = ["chmuri <chmuri@gmail.com>"]
 license = "GPL-2.0-or-later"
-repository = "https://github.com/chmuri/rstorrent"
-homepage = "https://github.com/chmuri/rstorrent"
 
 [workspace.lints.rust]
-# Inherited only by crates that opt in with `[lints] workspace = true` — the
-# eleven unsafe-free crates (lt-common, lt-crypto, lt-dht, lt-engine, lt-protocol,
-# lt-tracker, rt-grpc, rt-rss, rt-rules, rt-tui, rt-tui-client). The crates with
-# low-level `unsafe` (lt-storage, lt-sys, lt-net, rt-core, rt-scgi, rstorrent) keep
-# documented invariants (plan.md :264) and do not inherit this table.
+# Inherited by every member via `[lints] workspace = true`. The crates with
+# low-level `unsafe` (lt-storage, lt-sys, lt-net, rt-core, rt-scgi, rstorrent)
+# keep documented invariants (plan.md :264) and opt out with a crate-root
+# `#![allow(unsafe_code)]` — source attributes override cargo's lint flags.
 unsafe_code = "deny"
 
 # Staged clippy migration (plan.md :263): `clippy::unwrap_used` / `expect_used`

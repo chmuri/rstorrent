@@ -142,10 +142,10 @@ semantyki removal/watch z 0.25.9). Obecny deployment to czysty v0.26.0.
       --all-targets -- -D warnings`, `scripts/remote-ci.sh fmt --check`.
       ✅ rt-core/rstorrent/rt-ui zielone (erase_race 7/7, writer 7/7, checkpoint 6/6,
       bulk-remove 4/4, rt-ui 40/40); clippy bez uwag; fmt czysty.
-- [ ] C2. Build obrazu z poprawką, deploy na serwerze (`update.sh`), restart.
-- [ ] C3. Po restarcie: brak WARN „Skipping invalid session torrent entry" (po A1),
+- [x] C2. Build obrazu z poprawką, deploy na serwerze (`update.sh`), restart.
+- [x] C3. Po restarcie: brak WARN „Skipping invalid session torrent entry" (po A1),
       liczba torrentów = 15 827, brak `linux_tracker` w API.
-- [ ] C4. Test end-to-end na serwerze: dodać 2–3 testowe torrenty z tymczasowym labelem,
+- [x] C4. Test end-to-end na serwerze: dodać 2–3 testowe torrenty z tymczasowym labelem,
       wymusić checkpoint (`session.checkpoint` przez RPC), w trakcie usuwać bulk →
       brak osieroconych plików w `/session`, jeden toast podsumowujący w UI.
 
@@ -207,3 +207,26 @@ sprzed restartu na starym binarium dev. Nie zmienia to zakresu naprawy B1–B3.
 - **Obserwacja po sprzątaniu**: przy aktywnej regule RSS (decyzja A3) feed dodał nowy
   torrent `MidnightBSD-4.0.9--amd64-memstick.img` z labelem `linux_tracker` — zgodnie
   z oczekiwaniami; stare pozycje nie wróciły, sesja bez sierot po kolejnych checkpointach.
+
+## 7. Release v0.26.1 (2026-11-21, ~19:00–19:15 czasu warszawskiego)
+
+- Commity: `fd4ab979` fix(session) → `ea6a5061` feat(webui) → `4a252b6a` chore(release):
+  v0.26.1, wypchnięte na `main`; tag `v0.26.1` → GitHub Release (x86_64 + aarch64, 6 assetów).
+- obrazy Docker: `latest`, `0.26.1`, `0.26`, `0` (oba workflowy `Publish Docker Image` zielone).
+- **Watchtower podmienił kontener na 0.26.1** (~19:04), lifecycle Ready, 15 831 torrentów.
+- **C4 PASS** (skrypt `.tmp-investigation/c4_test.sh`, wykonany na serwerze):
+  1. re-add usuniętego `XXRI-Lite-2.7-32bit.iso` (base64; `load.*` nie fetchuje URL-i —
+     endpoint `/api/torrents/add` z `source: https://…` traktuje URL jako ścieżkę pliku,
+     drobny bug do osobnego zgłoszenia),
+  2. wymuszony `session.checkpoint` (async),
+  3. `bulk-remove` z `delete_data:true` w oknie publikacji → `removed:[hash], failed:[]`,
+  4. po zakończeniu passu checkpointu: **0 plików sesji dla hasha, 0 sierot w całej sesji
+     (15 831 baz)**, katalog danych usunięty,
+  5. audit log: `Bulk removed torrents requested=1 removed=1 delete_data=true … elapsed_ms=0`.
+- **CI clippy (GH, rustc 1.100.0)**: nowe linty cargo + 2 nieużywane zmienne w nowym teście
+  (builder miał cache fingerprintów i ich nie pokazał). Naprawa w toku:
+  usunięte nieużywane zależności (`prost-types` w rt-grpc, `lt-engine` w rt-rpc) i pola
+  `workspace.package.repository/homepage`; wszystkie crate'y dziedziczą `[lints] workspace = true`
+  (nowy lint `missing_lints_inheritance`), a 6 crate'ów z unsafe opt-out przez
+  `#![allow(unsafe_code)]` w korzeniu crate'a (atrybuty źródłowe nadpisują flagi cargo);
+  Cargo nie pozwala łączyć `workspace = true` z lokalnymi override'ami w `[lints]`.

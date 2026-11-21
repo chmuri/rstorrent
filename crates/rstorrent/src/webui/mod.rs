@@ -1250,7 +1250,7 @@ mod tests {
     #[tokio::test]
     async fn bulk_remove_rejects_untrusted_and_oversized_requests() {
         let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
-        let (status, body) = send(
+        let (status, _) = send(
             state.clone(),
             post_json(
                 "/api/torrents/bulk-remove",
@@ -1260,6 +1260,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(calls.lock().unwrap().is_empty());
 
         // Trusted caller without a token configured: request-level rejection.
         let (state, calls) = state_with_remove_stubs(None, &[]);
