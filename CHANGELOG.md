@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-11-21
+
+### Fixed
+- **Erase ↔ session-commit race** (`crates/rt-core/session/`, `crates/rstorrent/control.rs`): a periodic checkpoint or full session save that serialized a download before it was erased could publish the stale entry afterwards, resurrecting `.rtorrent`/`.libtorrent_resume` sidecars (observed: 43 orphaned entries after a bulk label removal on a 15.8k-torrent session) — and, for a full save, the `.torrent` anchor itself, which would restore the erased torrent on the next start. Erases now tombstone the hash in the shared write cache *before* unlinking; `save_streams` skips tombstoned entries, cleans up any files a racing torrent-only write left behind, undoes a publish that lost the race, and treats a publish interrupted by the erase (staged `.new` files unlinked mid-rename) as a benign skip instead of a commit error. `event.download.inserted` lifts the tombstone so re-adding a just-erased torrent persists normally; tombstones expire after 15 minutes. Regression suite: `test_session_erase_race` (7 tests, including a concurrent erase-during-commit interleaving).
+
+### Added
+- **Bulk remove endpoint** (`crates/rstorrent/webui/`): `POST /api/torrents/bulk-remove` with `{hashes, delete_data, delete_source}` (trusted callers, max 5000 hashes per request) runs the same per-hash step ordering and error policy as the single remove, deduplicates hashes, and returns an aggregated `{success, requested, removed, failed, error}`. The explorer's remove-confirmation modal now uses it for multi-selections (chunks of 200, one retry for per-hash failures) and surfaces a single summary toast instead of one toast per torrent.
+- **Remove audit logging** (`crates/rstorrent/webui/`): single and bulk removals log INFO/WARN with the info hash(es), requested options, per-step errors and elapsed time, so removals are traceable in `docker logs`/the log console.
+
 ## [0.26.0] - 2026-11-21
 
 ### Added
