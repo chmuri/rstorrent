@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.8] - 2026-11-21
+
+### Fixed
+- **Duplicate announce spawning** (`crates/lt-engine/`): the coordinator selection treated any tracker marked REQUESTING as work to spawn, including requests it had already spawned that were waiting for a concurrency permit or a slow response. With ~1s wake-ups while queued work exists, one logical announce multiplied into 20+ concurrent requests per interval (observed as success_counter bursts on healthy trackers and inflated failure counts on dead ones). A per-coordinator in-flight URL set now guarantees at most one outstanding announce per tracker; results clear it on drain. Added a slow-tracker regression test asserting exactly one started announce while a response is delayed.
+
 ## [0.25.7] - 2026-11-21
 
 ### Fixed

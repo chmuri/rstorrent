@@ -28,6 +28,12 @@ struct MockTracker {
 
 impl MockTracker {
     async fn start(interval: u64) -> Self {
+        Self::start_with_delay(interval, Duration::ZERO).await
+    }
+
+    /// Mock tracker that waits `delay` before answering, emulating a slow
+    /// tracker or a long permit wait so duplicate-spawn bugs become visible.
+    async fn start_with_delay(interval: u64, delay: Duration) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let requests: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -48,6 +54,9 @@ impl MockTracker {
                     if let Some(line) = text.lines().next() {
                         let path = line.split_whitespace().nth(1).unwrap_or("");
                         req_clone.lock().unwrap().push(path.to_string());
+                    }
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
                     }
                     let body = format!(
                         "d8:intervali{interval}e12:min intervali{interval}e8:completei5e10:incompletei2e5:peers0:e"
@@ -279,6 +288,48 @@ async fn dead_udp_tracker_does_not_stall_http_announces() {
         .await
         .expect("healthy HTTP tracker must not be starved by a dead UDP tracker");
     assert_eq!(query_param(&started, "port"), Some("50000"));
+
+    let _ = stop_tx.send(true);
+    tracker.handle.abort();
+    set_announce_jitter_max_ms(30_000);
+}
+
+#[tokio::test]
+async fn slow_tracker_is_not_announced_twice_while_in_flight() {
+    // Regression: the selection used to re-spawn any REQUESTING tracker on
+    // every wake-up (~1s while queued work exists). A request waiting several
+    // seconds for a permit/response was therefore multiplied into many
+    // concurrent announces of the same event (observed as success_counter
+    // bursts of 20+ within one interval on production trackers).
+    set_announce_jitter_max_ms(0);
+    let tracker = MockTracker::start_with_delay(600, Duration::from_secs(4)).await;
+    let meta = metadata(tracker.url());
+
+    let mut dl = Download::new(meta);
+    dl.set_disk_thread(None);
+    dl.open().unwrap();
+    dl.try_start().unwrap();
+    let download = Arc::new(Mutex::new(dl));
+
+    let peer_id = HashString::new([0x79; 20]);
+    let coordinator = DownloadNetworkCoordinator::new(Arc::clone(&download), peer_id, 50000, None);
+    let stop_tx = coordinator.spawn();
+
+    // Wait long enough for several loop wake-ups while the first announce is
+    // still in flight (4s response delay), then a bit past completion.
+    tokio::time::sleep(Duration::from_secs(7)).await;
+    let started_count = tracker
+        .requests()
+        .iter()
+        .filter(|q| q.contains("event=started"))
+        .count();
+    assert_eq!(
+        started_count,
+        1,
+        "exactly one started announce may be in flight/completed, got {}: {:?}",
+        started_count,
+        tracker.requests()
+    );
 
     let _ = stop_tx.send(true);
     tracker.handle.abort();

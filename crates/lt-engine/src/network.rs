@@ -820,6 +820,12 @@ impl DownloadNetworkCoordinator {
             // take many seconds, and awaiting it inline would stall announce
             // result draining and peer scheduling for this torrent.
             let mut dht_tasks: JoinSet<bool> = JoinSet::new();
+            // URLs with an announce task already spawned but not yet drained.
+            // The controller's REQUESTING flag alone cannot distinguish "queued
+            // by the controller, awaiting spawn" from "in flight": without this
+            // set the selection would re-spawn the same request every wake-up
+            // while it waits for a concurrency permit, multiplying load.
+            let mut announce_inflight: HashSet<String> = HashSet::new();
             let mut dht_private_state: Option<bool> = None;
             let mut dht_announced = false;
             let mut dht_first_lookup_done = false;
@@ -946,6 +952,7 @@ impl DownloadNetworkCoordinator {
                     let Ok((_, url, result)) = joined else {
                         continue;
                     };
+                    announce_inflight.remove(&url);
                     match result {
                         Ok(result) => {
                             // Merge peers before taking the download lock so the
@@ -1048,6 +1055,11 @@ impl DownloadNetworkCoordinator {
                             if !tracker.is_usable() {
                                 continue;
                             }
+                            // Never double-spawn a request that is already in
+                            // flight (waiting for a permit or a response).
+                            if announce_inflight.contains(tracker.url()) {
+                                continue;
+                            }
                             let state = tracker.state();
                             if tracker.is_requesting() {
                                 // A request queued through the controller must be
@@ -1095,6 +1107,7 @@ impl DownloadNetworkCoordinator {
                             for (i, t) in controller.tracker_list.trackers.iter().enumerate() {
                                 if t.is_in_use()
                                     && !t.is_requesting()
+                                    && !announce_inflight.contains(t.url())
                                     && off_backoff(t)
                                     && !already(&chosen, i)
                                 {
@@ -1106,6 +1119,7 @@ impl DownloadNetworkCoordinator {
                             for (i, t) in controller.tracker_list.trackers.iter().enumerate() {
                                 if t.is_in_use()
                                     && !t.is_requesting()
+                                    && !announce_inflight.contains(t.url())
                                     && off_backoff(t)
                                     && !already(&chosen, i)
                                 {
@@ -1129,12 +1143,14 @@ impl DownloadNetworkCoordinator {
                         {
                             // A manual announce goes out even when no tracker is
                             // due yet, but still respects failure backoff.
-                            if let Some((i, t)) = controller
-                                .tracker_list
-                                .trackers
-                                .iter()
-                                .enumerate()
-                                .find(|(_, t)| t.can_request_state() && off_backoff(t))
+                            if let Some((i, t)) =
+                                controller.tracker_list.trackers.iter().enumerate().find(
+                                    |(_, t)| {
+                                        t.can_request_state()
+                                            && !announce_inflight.contains(t.url())
+                                            && off_backoff(t)
+                                    },
+                                )
                             {
                                 chosen.push((i, t.url().to_string(), TrackerEvent::None));
                             }
@@ -1183,6 +1199,7 @@ impl DownloadNetworkCoordinator {
                         };
                         let dl_ref = Arc::clone(&download);
                         let router = udp_router.clone();
+                        announce_inflight.insert(url.clone());
                         announce_tasks.spawn(async move {
                             // Fresh counters at send time: a task may wait for a
                             // concurrency permit, and stale values would misreport
