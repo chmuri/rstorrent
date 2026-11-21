@@ -816,6 +816,10 @@ impl DownloadNetworkCoordinator {
                 String,
                 Result<ScrapeStats, TrackerClientError>,
             )> = JoinSet::new();
+            // DHT discovery runs in the background too: an iterative lookup can
+            // take many seconds, and awaiting it inline would stall announce
+            // result draining and peer scheduling for this torrent.
+            let mut dht_tasks: JoinSet<bool> = JoinSet::new();
             let mut dht_private_state: Option<bool> = None;
             let mut dht_announced = false;
             let mut dht_first_lookup_done = false;
@@ -881,14 +885,21 @@ impl DownloadNetworkCoordinator {
                 // Private torrents must never leak into the DHT tracker cache
                 // or be served through `get_peers`. Magnet downloads only learn
                 // privacy once metadata arrives, so keep this in sync instead
-                // of deciding once at construction time.
+                // of deciding once at construction time. Bounded: the router
+                // mutex is shared by every coordinator's discovery task.
                 if let Some(dht) = &dht {
                     if dht_private_state != Some(is_private) {
-                        dht.router
-                            .lock()
-                            .await
-                            .set_private_info_hash(info_hash, is_private);
-                        dht_private_state = Some(is_private);
+                        let synced = timeout(Duration::from_secs(5), async {
+                            dht.router
+                                .lock()
+                                .await
+                                .set_private_info_hash(info_hash, is_private);
+                        })
+                        .await
+                        .is_ok();
+                        if synced {
+                            dht_private_state = Some(is_private);
+                        }
                     }
                 }
 
@@ -919,6 +930,13 @@ impl DownloadNetworkCoordinator {
                         .merge(discovered, PeerSource::Pex, is_private);
                     if added > 0 {
                         debug!(added, "Merged discovered peers into pool");
+                    }
+                }
+
+                // Apply finished DHT discovery results (announce success flag).
+                while let Some(joined) = dht_tasks.try_join_next() {
+                    if let Ok(true) = joined {
+                        dht_announced = true;
                     }
                 }
 
@@ -1211,62 +1229,80 @@ impl DownloadNetworkCoordinator {
                     if let Some(dht) = &dht {
                         // A configured but stopped/off controller has no
                         // socket; tracker peers remain the only source.
-                        if dht.server.is_active() {
+                        if dht.server.is_active() && dht_tasks.is_empty() {
                             let peer_shortage = {
                                 let p = pool.lock().unwrap_or_else(|e| e.into_inner());
                                 p.connected_count() + p.connecting_count() < min_peers
                             };
 
-                            if !is_private && (dht_lookup_due || peer_shortage) {
+                            if !is_private
+                                && dht_private_state == Some(is_private)
+                                && Instant::now() >= announce_not_before
+                                && (dht_lookup_due || peer_shortage)
+                            {
                                 // A magnet download has no info dict yet, so
                                 // its privacy flag is unknown. Look up peers
                                 // to obtain metadata, but never announce an
                                 // unverified info-hash to the DHT.
-                                if !is_meta_download && !dht_announced {
-                                    match announce_peer(
-                                        dht.server.clone(),
-                                        dht.router.clone(),
-                                        info_hash,
-                                        listen_port,
-                                        16,
+                                let do_announce = !is_meta_download && !dht_announced;
+                                let server = dht.server.clone();
+                                let router = dht.router.clone();
+                                let pool_ref = Arc::clone(&pool);
+                                dht_tasks.spawn(async move {
+                                    let mut announced = false;
+                                    if do_announce {
+                                        match timeout(
+                                            Duration::from_secs(30),
+                                            announce_peer(
+                                                server.clone(),
+                                                router.clone(),
+                                                info_hash,
+                                                listen_port,
+                                                16,
+                                            ),
+                                        )
+                                        .await
+                                        {
+                                            Ok(Ok(count)) if count > 0 => announced = true,
+                                            Ok(Ok(_)) => {
+                                                debug!("DHT announce found no nodes to announce to")
+                                            }
+                                            Ok(Err(err)) => {
+                                                debug!(error = %err, "DHT announce failed")
+                                            }
+                                            Err(_) => debug!("DHT announce timed out"),
+                                        }
+                                    }
+
+                                    match timeout(
+                                        Duration::from_secs(30),
+                                        get_peers(server, router, info_hash, 16),
                                     )
                                     .await
                                     {
-                                        Ok(count) if count > 0 => dht_announced = true,
-                                        Ok(_) => {
-                                            debug!("DHT announce found no nodes to announce to")
+                                        Ok(Ok(peers)) => {
+                                            debug!(
+                                                count = peers.len(),
+                                                "Discovered peers from DHT"
+                                            );
+                                            let addresses = peers
+                                                .into_iter()
+                                                .filter_map(|peer| peer.as_socket_addr());
+                                            let added = pool_ref
+                                                .lock()
+                                                .unwrap_or_else(|e| e.into_inner())
+                                                .merge(addresses, PeerSource::Dht, is_private);
+                                            debug!(added, "Merged DHT peers into pool");
                                         }
-                                        Err(err) => {
-                                            debug!(error = %err, "DHT announce failed")
-                                        }
+                                        Ok(Err(err)) => debug!(error = %err, "DHT lookup failed"),
+                                        Err(_) => debug!("DHT lookup timed out"),
                                     }
-                                }
-
-                                match get_peers(
-                                    dht.server.clone(),
-                                    dht.router.clone(),
-                                    info_hash,
-                                    16,
-                                )
-                                .await
-                                {
-                                    Ok(peers) => {
-                                        info!(count = peers.len(), "Discovered peers from DHT");
-                                        let addresses = peers
-                                            .into_iter()
-                                            .filter_map(|peer| peer.as_socket_addr());
-                                        let added = pool
-                                            .lock()
-                                            .unwrap_or_else(|e| e.into_inner())
-                                            .merge(addresses, PeerSource::Dht, is_private);
-                                        debug!(added, "Merged DHT peers into pool");
-                                    }
-                                    Err(err) => debug!(error = %err, "DHT lookup failed"),
-                                }
+                                    announced
+                                });
+                                dht_first_lookup_done = true;
                             }
                         }
                     }
-                    dht_first_lookup_done = true;
 
                     // Single connect scheduler: fill every free slot from the
                     // merged pool, regardless of which source produced the peer.
@@ -1532,6 +1568,8 @@ impl DownloadNetworkCoordinator {
             while announce_tasks.join_next().await.is_some() {}
             scrape_tasks.abort_all();
             while scrape_tasks.join_next().await.is_some() {}
+            dht_tasks.abort_all();
+            while dht_tasks.join_next().await.is_some() {}
 
             // Flush verified pieces before the coordinator exits. This blocks,
             // so run it on a blocking pool rather than a reactor worker, only if needed.

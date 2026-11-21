@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.6] - 2026-11-21
+
+### Fixed
+- **Coordinator stall on DHT discovery** (`crates/lt-engine/`): the per-torrent loop still awaited iterative DHT `announce_peer`/`get_peers` lookups inline. Under a large session (thousands of concurrent lookups sharing one DHT socket) a lookup could take many minutes, blocking announce-result draining and peer scheduling — trackers showed requests stuck "busy" with no successes or failures recorded. DHT discovery now runs as a bounded background task (30s per operation), the privacy-flag router sync is timeout-guarded (discovery waits for it, so private torrents never leak), and first lookups share the announce jitter stagger. Announce results drain every cycle regardless of DHT latency.
+
 ## [0.25.5] - 2026-11-21
 
 ### Fixed
