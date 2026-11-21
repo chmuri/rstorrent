@@ -8,6 +8,7 @@
 use crate::toml_config::RtorrentTomlConfig;
 use crate::webui::convert::{self, SessionStats, TorrentSummary, VersionInfo};
 use crate::webui::{Trusted, WebuiState};
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -249,12 +250,104 @@ pub async fn stop_torrent(
     torrent_action(state, trusted.0, hash, "d.stop").await
 }
 
+/// Optional body for `POST /api/torrents/{hash}/remove`.
+///
+/// A missing or empty body keeps the historical behavior (plain `d.erase`):
+/// both flags default to `false`, so existing callers are unaffected.
+#[derive(Debug, Deserialize, Default)]
+pub struct RemoveOptions {
+    /// Also delete the torrent's own data files (`d.delete_data`).
+    #[serde(default)]
+    pub delete_data: bool,
+    /// Also delete the tied source .torrent file (`d.delete_tied`).
+    #[serde(default)]
+    pub delete_source: bool,
+}
+
 pub async fn remove_torrent(
     State(state): State<WebuiState>,
     Extension(trusted): Extension<Trusted>,
     Path(hash): Path<String>,
+    body: Bytes,
 ) -> Json<CommandResponse> {
-    torrent_action(state, trusted.0, hash, "d.erase").await
+    // Read raw bytes instead of `Json`/`Option<Json>` so an empty body is
+    // always accepted: the legacy UI POSTs bodyless actions with a JSON
+    // content-type, which a strict `Json` extractor would reject. A non-empty
+    // body must parse; malformed JSON is reported instead of silently falling
+    // back to the defaults.
+    let options = if body.iter().all(u8::is_ascii_whitespace) {
+        RemoveOptions::default()
+    } else {
+        match serde_json::from_slice::<RemoveOptions>(&body) {
+            Ok(options) => options,
+            Err(e) => {
+                return Json(CommandResponse::failure(format!(
+                    "invalid remove options: {e}"
+                )))
+            }
+        }
+    };
+
+    let target = match lt_common::HashString::from_hex(&hash) {
+        Some(hash) => Target::Download(hash),
+        None => {
+            return Json(CommandResponse::failure(format!(
+                "invalid info hash {}",
+                hash
+            )))
+        }
+    };
+
+    // Ordering matters: `d.delete_data` and `d.delete_tied` need the download
+    // to still exist, so they must run BEFORE `d.erase` removes it from the
+    // client and session.
+    //
+    // Error policy: a failed data/source deletion must not strand the torrent
+    // in the client. Every requested step is attempted even if an earlier one
+    // failed (the final erase always runs); all step errors are aggregated
+    // into `error` in execution order and `success` is false if any step
+    // failed. `result` carries the erase step's result, the primary operation.
+    let mut errors: Vec<String> = Vec::new();
+    for (requested, command) in [
+        (options.delete_data, "d.delete_data"),
+        (options.delete_source, "d.delete_tied"),
+    ] {
+        if requested {
+            let res = run_command(
+                state.clone(),
+                trusted.0,
+                command.to_string(),
+                target.clone(),
+                Object::create_empty(),
+            )
+            .await;
+            if !res.success {
+                errors.push(format!("{command}: {}", res.error));
+            }
+        }
+    }
+
+    let erased = run_command(
+        state,
+        trusted.0,
+        "d.erase".to_string(),
+        target,
+        Object::create_empty(),
+    )
+    .await;
+    if !erased.success {
+        errors.push(format!("d.erase: {}", erased.error));
+    }
+
+    if errors.is_empty() {
+        Json(erased)
+    } else {
+        Json(CommandResponse {
+            success: false,
+            result: erased.result,
+            error: errors.join("; "),
+        })
+    }
 }
 
 pub async fn recheck_torrent(

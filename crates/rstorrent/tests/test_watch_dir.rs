@@ -574,3 +574,90 @@ async fn initialize_with_empty_watch_directory_is_a_no_op() {
 
     control.shutdown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Watch consumption policy (watch_consume) — prevents re-import/resurrection
+// ---------------------------------------------------------------------------
+
+#[test]
+fn consume_delete_removes_source_file() {
+    let base = TestDir::new("consume-delete");
+    let src = write_torrent(&base.path, "a.torrent", "delete-me", b"payload");
+    let mut control = Control::new();
+    control.watch_consume = "delete".to_string();
+
+    let loaded = control.load_watch_directory(&base.as_str()).unwrap();
+    assert_eq!(loaded, 1);
+    assert!(!src.exists(), "delete policy must remove the source file");
+}
+
+#[test]
+fn consume_move_relocates_and_rescan_is_empty() {
+    let base = TestDir::new("consume-move");
+    let src = write_torrent(&base.path, "a.torrent", "move-me", b"payload");
+    let mut control = Control::new();
+    control.watch_consume = "move".to_string();
+
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 1);
+    assert!(!src.exists(), "source must be moved out of the watch root");
+    assert!(
+        base.join(".imported").join("a.torrent").exists(),
+        "source must land in .imported"
+    );
+    // Second scan ignores .imported (non-recursive) → nothing new.
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 0);
+    assert_eq!(control.download_list.read().unwrap().len(), 1);
+}
+
+#[test]
+fn consume_keep_leaves_source_file() {
+    let base = TestDir::new("consume-keep");
+    let src = write_torrent(&base.path, "a.torrent", "keep-me", b"payload");
+    let mut control = Control::new();
+    control.watch_consume = "keep".to_string();
+
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 1);
+    assert!(src.exists(), "keep policy must leave the source file");
+    // Duplicate is not counted again.
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 0);
+}
+
+#[test]
+fn duplicate_import_does_not_restart_paused_torrent() {
+    let base = TestDir::new("consume-paused");
+    write_torrent(&base.path, "a.torrent", "paused-me", b"payload");
+    let mut control = Control::new();
+    control.watch_consume = "keep".to_string();
+
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 1);
+    let dl = control.download_list.read().unwrap().all()[0].clone();
+    control.download_list.read().unwrap().pause(&dl);
+    assert!(dl.read().unwrap().is_paused(), "torrent must be paused");
+
+    // Re-scan: duplicate must NOT force-start the paused torrent.
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 0);
+    assert!(
+        dl.read().unwrap().is_paused(),
+        "paused torrent must stay paused across a watch re-scan"
+    );
+}
+
+#[test]
+fn consumed_source_prevents_resurrection_after_erase() {
+    let base = TestDir::new("consume-resurrect");
+    write_torrent(&base.path, "a.torrent", "erase-me", b"payload");
+    let mut control = Control::new();
+    control.watch_consume = "move".to_string();
+
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 1);
+    let hash = *control.download_list.read().unwrap().all()[0]
+        .read()
+        .unwrap()
+        .info_hash();
+    control.download_list.write().unwrap().erase(&hash);
+    assert_eq!(control.download_list.read().unwrap().len(), 0);
+
+    // Source was consumed at import, so a restart scan cannot resurrect it.
+    assert_eq!(control.load_watch_directory(&base.as_str()).unwrap(), 0);
+    assert_eq!(control.download_list.read().unwrap().len(), 0);
+}

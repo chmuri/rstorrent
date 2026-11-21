@@ -99,6 +99,92 @@ pub fn spawn_backend_bridge(state: AppState) {
     });
 }
 
+/// Removes a torrent with explicit options. `delete_data` also deletes the
+/// torrent's own downloaded files; `delete_source` also deletes the tied
+/// `.torrent` source file. Both false reproduces the legacy erase-only behavior.
+pub async fn remove_torrent(
+    state: AppState,
+    hash: &str,
+    delete_data: bool,
+    delete_source: bool,
+) -> Result<CommandResponse, String> {
+    let short: String = hash.chars().take(8).collect();
+    let body = serde_json::json!({ "delete_data": delete_data, "delete_source": delete_source });
+
+    if state.connection.get() == ConnectionMode::Live {
+        let base = state.api_base_url.get();
+        let token = state.api_token.get();
+        let url = format!("{base}/api/torrents/{hash}/remove");
+        let mut request = Request::post(&url);
+        if !token.is_empty() {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
+        let outcome = async {
+            let response = request
+                .json(&body)
+                .map_err(|err| format!("Serialization error: {err}"))?
+                .send()
+                .await
+                .map_err(|err| format!("Request failed: {err}"))?;
+            if !response.ok() {
+                return Err(format!("Server returned HTTP {}", response.status()));
+            }
+            response
+                .json::<CommandResponse>()
+                .await
+                .map_err(|err| format!("Invalid command response: {err}"))
+        }
+        .await;
+        return match outcome {
+            Ok(response) if response.success => {
+                apply_command_to_items(state, hash, "remove");
+                state.push_event(
+                    ToastKind::Success,
+                    "Torrent removed".to_string(),
+                    Some(hash.to_string()),
+                );
+                state.push_toast(
+                    ToastKind::Success,
+                    "Torrent removed",
+                    format!("Removed {short}"),
+                );
+                Ok(response)
+            }
+            Ok(response) => {
+                let message = if response.error.is_empty() {
+                    "Backend rejected the removal".to_string()
+                } else {
+                    response.error.clone()
+                };
+                state.push_toast(ToastKind::Error, "Remove failed", message.clone());
+                Err(message)
+            }
+            Err(message) => {
+                state.push_toast(ToastKind::Error, "Remove failed", message.clone());
+                Err(message)
+            }
+        };
+    }
+
+    // Demo / offline: mutate the local dataset.
+    apply_command_to_items(state, hash, "remove");
+    state.push_toast(
+        ToastKind::Warning,
+        "Torrent removed",
+        format!("Removed {short} (demo)"),
+    );
+    state.push_event(
+        ToastKind::Warning,
+        format!("remove: {short}"),
+        Some(hash.to_string()),
+    );
+    Ok(CommandResponse {
+        success: true,
+        result: serde_json::Value::Null,
+        error: String::new(),
+    })
+}
+
 pub async fn send_command(
     state: AppState,
     hash: &str,

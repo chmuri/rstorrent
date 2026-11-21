@@ -122,6 +122,16 @@ pub fn SlideOverDrawer() -> impl IntoView {
         });
     };
 
+    // Open the shared remove-confirmation modal for the current torrent.
+    let open_remove = move || {
+        let Some(item) = current_item.get_untracked() else {
+            return;
+        };
+        state.remove_confirm_hashes.set(vec![item.hash.clone()]);
+        state.remove_confirm_label.set(item.name.clone());
+        state.remove_confirm_open.set(true);
+    };
+
     let key_handle = window_event_listener(ev::keydown, move |ev: web_sys::KeyboardEvent| {
         if ev.key() == "Escape"
             && !state.cmd_palette_open.get_untracked()
@@ -405,7 +415,7 @@ pub fn SlideOverDrawer() -> impl IntoView {
                         <Button label="Stop" variant=ButtonVariant::Secondary disabled=is_busy on_click=move || run_command("stop") />
                         <Button label="Recheck" variant=ButtonVariant::Secondary disabled=is_busy on_click=move || run_command("recheck") />
                         <div class="flex-1"></div>
-                        <Button label="Remove" variant=ButtonVariant::Danger disabled=is_busy on_click=move || run_command("remove") />
+                        <Button label="Remove" variant=ButtonVariant::Danger disabled=is_busy on_click=move || open_remove() />
                     </div>
                 }
             }}

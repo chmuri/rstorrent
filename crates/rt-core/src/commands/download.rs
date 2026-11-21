@@ -146,6 +146,66 @@ fn resolve_path_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
         .map(|path| path.as_os_str().as_bytes().to_vec())
 }
 
+/// Records the source `.torrent` path for a loaded download so `d.delete_tied`
+/// and the UI "delete source file" option can find it later.
+fn record_source_path(overrides: &DownloadOverridesStore, hash: &HashString, path: &str) {
+    let bytes = path.as_bytes().to_vec();
+    let mut ov = overrides.write().unwrap();
+    ov.loaded_file.insert(*hash, bytes.clone());
+    ov.tied_to_file.insert(*hash, bytes);
+}
+
+/// Deletes ONLY a torrent's own downloaded data, never the shared download root.
+///
+/// Single-file torrents remove `<dir>/<name>`; multi-file torrents remove the
+/// `<dir>/<name>/` subtree. The target is canonicalized and must lie strictly
+/// inside the base directory; unsafe names (empty, `.`, `..`, path separators)
+/// and any path that resolves to the root itself are rejected. Missing files
+/// are treated as success so the command is idempotent.
+fn delete_download_data(dir: &str, name: &str, multi: bool) -> Result<(), RpcError> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+    {
+        return Err(RpcError::InputError(
+            "unsafe torrent name; refusing to delete data".into(),
+        ));
+    }
+    let base = path_from_bytes(&expand_path_bytes(dir.as_bytes()));
+    let base_canon = std::fs::canonicalize(&base).map_err(|e| {
+        RpcError::InputError(format!("cannot resolve download directory '{}': {e}", dir))
+    })?;
+    let target = base_canon.join(name);
+    let target_canon = if target.exists() {
+        std::fs::canonicalize(&target)
+            .map_err(|e| RpcError::InputError(format!("cannot resolve data path: {e}")))?
+    } else {
+        target
+    };
+    if target_canon == base_canon || !target_canon.starts_with(&base_canon) {
+        return Err(RpcError::InputError(
+            "refusing to delete data outside (or equal to) the download root".into(),
+        ));
+    }
+    if multi {
+        if target_canon.is_dir() {
+            std::fs::remove_dir_all(&target_canon)
+                .map_err(|e| RpcError::InputError(format!("failed to delete data dir: {e}")))?;
+        }
+    } else if target_canon.is_file() {
+        std::fs::remove_file(&target_canon)
+            .map_err(|e| RpcError::InputError(format!("failed to delete data file: {e}")))?;
+    } else if target_canon.is_dir() {
+        return Err(RpcError::InputError(
+            "single-file torrent resolved to a directory; refusing to delete".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 enum PathVariant {
     Plain,
@@ -474,6 +534,9 @@ pub fn register_download_commands(
     download_list: Arc<RwLock<DownloadList>>,
     view_manager: Arc<RwLock<ViewManager>>,
 ) -> Result<(), RpcError> {
+    // Created early so commands registered before the extended surface (e.g.
+    // d.erase) can capture it for source-path override cleanup.
+    let overrides: DownloadOverridesStore = Arc::new(RwLock::new(DownloadOverrides::default()));
     let dl_name = Arc::clone(&download_list);
     map.insert_func(
         "d.name",
@@ -824,11 +887,17 @@ pub fn register_download_commands(
     )?;
 
     let dl_erase = Arc::clone(&download_list);
+    let ov_erase = Arc::clone(&overrides);
     map.insert_func(
         "d.erase",
         move |target, _obj| {
             if let Target::Download(hash) = target {
                 dl_erase.write().unwrap().erase(hash);
+                // Drop source-path overrides so an erased download leaves no
+                // stale tied/loaded file entries behind.
+                let mut ov = ov_erase.write().unwrap();
+                ov.tied_to_file.remove(hash);
+                ov.loaded_file.remove(hash);
             }
             Ok(Object::create_empty())
         },
@@ -1133,7 +1202,6 @@ pub fn register_download_commands(
 
     // Register the extended surface before snapshotting the command map so
     // d.multicall/d.multicall2 can dispatch every download getter.
-    let overrides: DownloadOverridesStore = Arc::new(RwLock::new(DownloadOverrides::default()));
     register_download_extended_commands(map, &download_list, &view_manager, &overrides)?;
 
     // d.multicall2: view_name, commands...
@@ -1291,6 +1359,7 @@ pub fn register_download_commands(
     let dl_load_start = Arc::clone(&download_list);
     let vm_load_start = Arc::clone(&view_manager);
     let map_load_start = Arc::clone(&map_clone);
+    let ov_load_start = Arc::clone(&overrides);
     map.insert_func(
         "load.start",
         move |_target, obj| {
@@ -1301,6 +1370,7 @@ pub fn register_download_commands(
                 &dl_load_start,
                 &vm_load_start,
                 &map_load_start,
+                &ov_load_start,
             )
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
@@ -1315,6 +1385,7 @@ pub fn register_download_commands(
     let dl_load_norm = Arc::clone(&download_list);
     let vm_load_norm = Arc::clone(&view_manager);
     let map_load_norm = Arc::clone(&map_clone);
+    let ov_load_norm = Arc::clone(&overrides);
     map.insert_func(
         "load.normal",
         move |_target, obj| {
@@ -1325,6 +1396,7 @@ pub fn register_download_commands(
                 &dl_load_norm,
                 &vm_load_norm,
                 &map_load_norm,
+                &ov_load_norm,
             )
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
@@ -1339,6 +1411,7 @@ pub fn register_download_commands(
     let dl_raw_start = Arc::clone(&download_list);
     let vm_raw_start = Arc::clone(&view_manager);
     let map_raw_start = Arc::clone(&map_clone);
+    let ov_raw_start = Arc::clone(&overrides);
     map.insert_func(
         "load.raw_start",
         move |_target, obj| {
@@ -1349,6 +1422,7 @@ pub fn register_download_commands(
                 &dl_raw_start,
                 &vm_raw_start,
                 &map_raw_start,
+                &ov_raw_start,
             )
         },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
@@ -1362,9 +1436,12 @@ pub fn register_download_commands(
     let dl_raw = Arc::clone(&download_list);
     let vm_raw = Arc::clone(&view_manager);
     let map_raw = Arc::clone(&map_clone);
+    let ov_raw = Arc::clone(&overrides);
     map.insert_func(
         "load.raw",
-        move |_target, obj| apply_load_command(obj, false, true, &dl_raw, &vm_raw, &map_raw),
+        move |_target, obj| {
+            apply_load_command(obj, false, true, &dl_raw, &vm_raw, &map_raw, &ov_raw)
+        },
         FLAG_PUBLIC_RPC | FLAG_UNTRUSTED_SAFE | FLAG_IS_REDIRECT,
         "<raw_data>",
         "Load a torrent from raw data without starting.",
@@ -1531,6 +1608,7 @@ fn apply_load_command(
     dl_list: &Arc<RwLock<DownloadList>>,
     vm: &Arc<RwLock<ViewManager>>,
     command_map: &Arc<RwLock<CommandMap>>,
+    overrides: &DownloadOverridesStore,
 ) -> Result<Object, RpcError> {
     let mut factory = crate::download_factory::DownloadFactory::new();
     factory.set_start(false);
@@ -1583,7 +1661,7 @@ fn apply_load_command(
         factory
             .load_raw_data(&final_bytes)
             .map_err(|e| RpcError::InputError(format!("Failed to load raw torrent: {}", e)))?;
-    } else if let Some(path) = torrent_path {
+    } else if let Some(path) = torrent_path.clone() {
         let trimmed = path.trim();
         if trimmed.is_empty() {
             return Err(RpcError::InputError("Empty torrent path".into()));
@@ -1633,6 +1711,9 @@ fn apply_load_command(
                                 }
                             }
                         }
+                        if let Some(ref p) = torrent_path {
+                            record_source_path(overrides, &hash, p);
+                        }
                         if start {
                             let list_guard = dl_list.read().unwrap();
                             list_guard.start(&existing_dl);
@@ -1673,6 +1754,9 @@ fn apply_load_command(
     dl_arc.write().unwrap().queue_recheck_if_files_exist();
 
     let hash = *dl_arc.read().unwrap().info_hash();
+    if let Some(ref p) = torrent_path {
+        record_source_path(overrides, &hash, p);
+    }
     vm.write()
         .unwrap()
         .insert_download_to_all(Arc::clone(&dl_arc));
@@ -3251,6 +3335,27 @@ fn register_download_extended_commands(
         FLAG_PUBLIC_RPC,
         "",
         "Delete the file the download is tied to.",
+    )?;
+
+    let dl_delete_data = Arc::clone(download_list);
+    map.insert_func(
+        "d.delete_data",
+        move |target, _obj| {
+            let dl = get_download(target, &dl_delete_data)?;
+            let (dir, name, multi) = {
+                let guard = dl.read().unwrap();
+                (
+                    guard.directory().to_string(),
+                    guard.name().to_string(),
+                    guard.metadata().is_multi_file,
+                )
+            };
+            delete_download_data(&dir, &name, multi)?;
+            Ok(Object::create_empty())
+        },
+        FLAG_PUBLIC_RPC,
+        "",
+        "Delete the torrent's own downloaded data files (never the shared download root).",
     )?;
 
     // Per-download tracker controller commands.

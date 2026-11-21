@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.9] - 2026-11-21
+
+### Added
+- **Watch-directory consumption** (`crates/rstorrent/`): new `[storage] watch_consume = "move" | "delete" | "keep"` option (default **`move`**). Imported `.torrent` files are relocated to `<watch>/.imported/` (or deleted), so the watch directory is consumed instead of being re-scanned and re-imported on every startup. The source path is recorded on the download (`d.tied_to_file` / `d.loaded_file`).
+- **Remove options + confirmation UI** (`crates/rstorrent/webui/`, `ui/`): `POST /api/torrents/{hash}/remove` accepts an optional JSON body `{delete_data, delete_source}` (empty body keeps the legacy erase-only behavior). The web UI now shows a confirmation modal with explicit checkboxes "Delete downloaded data" and "Delete source .torrent file" (both unchecked by default) for single and bulk removal.
+- **`d.delete_data` RPC command** (`crates/rt-core/`): deletes only the torrent's own data (single file or its multi-file subtree), with canonicalized path-safety checks that never touch the shared download root or sibling files; idempotent.
+
+### Fixed
+- **Erased torrents resurrecting / paused torrents force-started on boot** (`crates/rstorrent/`): the watch scan no longer re-imports consumed files and no longer force-starts torrents already restored from session (a paused torrent stays paused across restarts).
+- **Watch import race** (`crates/rstorrent/`): the runtime monitor retries with backoff when a dropped file is still copying, and deduplicates bursts of filesystem events per path.
+- **Removal semantics** (`crates/rt-core/`, `crates/rstorrent/webui/`): `d.erase` now clears the `tied_to_file`/`loaded_file` overrides (no stale entries); `load.*` commands record the source path so `d.delete_tied` works. Data deletion is opt-in and explicit — the default Remove still only removes the torrent from the client and session, never user data.
+
+### Notes
+- Correction to earlier diagnostics: a full scan found **no invalid torrents** on the reference deployment — the previously observed announce failures were caused by the announce bugs fixed in 0.25.5–0.25.8, not by unregistered torrents. No torrents were deleted.
+
 ## [0.25.8] - 2026-11-21
 
 ### Fixed

@@ -291,7 +291,7 @@ fn bulk_bar(state: AppState) -> impl IntoView {
                     <Button
                         label="Remove"
                         variant=ButtonVariant::Danger
-                        on_click=Callback::new(move |_| run_bulk(state, "remove"))
+                        on_click=Callback::new(move |_| open_bulk_remove(state))
                     />
                     <Button
                         label="Clear"
@@ -944,6 +944,28 @@ fn run_command(state: AppState, hash: String, verb: &'static str) {
         // send_command already surfaces success/error toasts.
         let _ = api::send_command(state, &hash, verb).await;
     });
+}
+
+/// Opens the remove-confirmation modal for the current bulk selection.
+fn open_bulk_remove(state: AppState) {
+    let hashes = state.selected_hashes.get();
+    if hashes.is_empty() {
+        return;
+    }
+    let label = if hashes.len() == 1 {
+        state
+            .items
+            .get()
+            .iter()
+            .find(|i| i.hash == hashes[0])
+            .map(|i| i.name.clone())
+            .unwrap_or_else(|| hashes[0].clone())
+    } else {
+        format!("{} torrents", hashes.len())
+    };
+    state.remove_confirm_hashes.set(hashes);
+    state.remove_confirm_label.set(label);
+    state.remove_confirm_open.set(true);
 }
 
 fn run_bulk(state: AppState, verb: &'static str) {

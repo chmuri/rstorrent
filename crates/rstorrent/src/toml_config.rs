@@ -60,6 +60,9 @@ pub struct StorageTomlConfig {
     #[serde(alias = "session_directory")]
     pub session: Option<String>,
     pub watch_directory: Option<String>,
+    /// What to do with a .torrent file after importing it from the watch
+    /// directory: "move" (to <watch>/.imported/), "delete", or "keep".
+    pub watch_consume: Option<String>,
     pub disk_threads: Option<usize>,
     pub max_open_files: Option<usize>,
 }
@@ -235,6 +238,7 @@ impl RtorrentTomlConfig {
                 directory: Some("~/Downloads".to_string()),
                 session: Some("~/.local/share/rstorrent/session".to_string()),
                 watch_directory: None,
+                watch_consume: None,
                 disk_threads: Some(4),
                 max_open_files: Some(256),
             },
@@ -455,6 +459,7 @@ impl RtorrentTomlConfig {
                 directory,
                 session,
                 watch_directory: None,
+                watch_consume: None,
                 disk_threads: Some(4),
                 max_open_files: Some(256),
             },
@@ -518,6 +523,9 @@ impl RtorrentTomlConfig {
         }
         if let Some(wd) = &self.storage.watch_directory {
             out.push_str(&format!("watch_directory = {:?}\n", wd));
+        }
+        if let Some(wc) = &self.storage.watch_consume {
+            out.push_str(&format!("watch_consume = {:?}\n", wc));
         }
         if let Some(dt) = self.storage.disk_threads {
             out.push_str(&format!("disk_threads = {}\n", dt));
@@ -1042,6 +1050,7 @@ mod tests {
             directory = "/downloads"
             session = "/downloads/.session"
             watch_directory = "/downloads/watch"
+            # watch_consume = "move"   # move | delete | keep imported .torrent files
 
             [protocol]
             encryption = "allow_incoming,try_outgoing,enable_retry"

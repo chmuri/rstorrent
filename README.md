@@ -27,7 +27,7 @@ The project contains active implementations for core BitTorrent functionality, a
   - **Zero-Copy & Lock-Free Buffer Pool**: 16 KiB buffer arena (`BlockPool`) via `crossbeam-queue`, zero-copy Bencode views, and vectored network request batching.
   - **Multithreaded CPU Hashing**: Rayon-offloaded SHA-1/SHA-256 piece validation preventing Tokio executor starvation.
   - **Positioned Asynchronous Disk I/O & Non-Blocking Upload**: Atomic `write_all_at`/`read_exact_at` operations; peer upload blocks are read asynchronously without holding engine state mutexes.
-  - **Real-Time Watch Directory**: Native inotify event monitoring via `notify` automatically loading and starting new torrents on filesystem changes.
+  - **Real-Time Watch Directory**: Native inotify event monitoring via `notify` automatically loading and starting new torrents on filesystem changes. Imported files are consumed (`watch_consume = "move" | "delete" | "keep"`, default `move`) so they are not re-imported on every restart, and erased torrents do not resurrect.
 - **BitTorrent Protocol Support**:
   - **BEP 3**: Core BitTorrent Protocol.
   - **BEP 5**: Mainline DHT (Kademlia) with bootstrap, persistent node cache, and dual-stack IPv4/IPv6.
@@ -490,6 +490,11 @@ upload_throttle_kb = 2500
 directory = "/downloads"
 session_directory = "/session"
 watch_directory = "/downloads/watch"
+# What happens to a .torrent file after it is imported from the watch dir:
+#   "move"   -> relocate to <watch>/.imported/ (default; stops re-import on boot)
+#   "delete" -> remove the source file
+#   "keep"   -> leave it (legacy rtorrent behavior; re-scanned every startup)
+watch_consume = "move"
 
 [protocol]
 encryption = "allow"

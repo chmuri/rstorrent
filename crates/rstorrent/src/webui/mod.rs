@@ -417,6 +417,7 @@ mod tests {
     use lt_common::Object;
     use rt_rpc::command_flags::{FLAG_PUBLIC_RPC, FLAG_UNTRUSTED_SAFE};
     use serde_json::{json, Value};
+    use std::sync::Mutex;
     use std::time::Duration;
     use tower::ServiceExt;
 
@@ -849,6 +850,296 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("either source URL/magnet or torrent_file_base64"));
+    }
+
+    /// POST with a raw string body and optional content-type, covering the
+    /// bodyless and malformed-payload cases `post_json` cannot express.
+    fn post_raw(
+        uri: &str,
+        token: Option<&str>,
+        content_type: Option<&str>,
+        body: &str,
+    ) -> Request<Body> {
+        let mut builder = Request::builder().method("POST").uri(uri);
+        if let Some(content_type) = content_type {
+            builder = builder.header(header::CONTENT_TYPE, content_type);
+        }
+        if let Some(token) = token {
+            builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+        builder.body(Body::from(body.to_string())).unwrap()
+    }
+
+    const REMOVE_HASH: &str = "5151515151515151515151515151515151515151";
+
+    /// State whose command map stubs the three remove-path commands and
+    /// records every invocation as (command, target hash) in execution order.
+    /// Stubs keep these tests independent of rt-core's real filesystem
+    /// commands (`d.delete_data` is being added concurrently and may not be
+    /// registered yet); names listed in `failing` return an error so the
+    /// handler's error aggregation can be exercised. Flags mirror the real
+    /// registrations (`FLAG_PUBLIC_RPC`, i.e. trusted-only).
+    #[allow(clippy::type_complexity)]
+    fn state_with_remove_stubs(
+        token: Option<&str>,
+        failing: &[&str],
+    ) -> (WebuiState, Arc<Mutex<Vec<(String, String)>>>) {
+        let state = test_state(token);
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        {
+            let mut map = state.command_map.write().unwrap();
+            for name in ["d.erase", "d.delete_data", "d.delete_tied"] {
+                let calls = Arc::clone(&calls);
+                let fails = failing.contains(&name);
+                map.insert_func(
+                    name,
+                    move |target, _arg| {
+                        let hash = target.download().map(|h| h.to_hex()).unwrap_or_default();
+                        calls.lock().unwrap().push((name.to_string(), hash));
+                        if fails {
+                            Err(rt_rpc::RpcError::Custom {
+                                code: -500,
+                                message: format!("{name} stub failure"),
+                            })
+                        } else {
+                            Ok(Object::create_empty())
+                        }
+                    },
+                    FLAG_PUBLIC_RPC,
+                    "",
+                    "",
+                )
+                .unwrap();
+            }
+        }
+        (state, calls)
+    }
+
+    #[tokio::test]
+    async fn remove_without_body_erases_only() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let uri = format!("/api/torrents/{REMOVE_HASH}/remove");
+        // Legacy UI shape: JSON content-type with an empty body.
+        let (status, body) = send(
+            state.clone(),
+            post_raw(&uri, Some("s3cret"), Some("application/json"), ""),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(true));
+        assert_eq!(body["error"], json!(""));
+        assert_eq!(body["result"], json!(null));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![("d.erase".to_string(), REMOVE_HASH.to_string())]
+        );
+
+        // No content-type at all, and an explicit empty object, behave the same.
+        let (_, body) = send(state.clone(), post_raw(&uri, Some("s3cret"), None, "")).await;
+        assert_eq!(body["success"], json!(true));
+        let (_, body) = send(state, post_json(&uri, Some("s3cret"), &json!({}))).await;
+        assert_eq!(body["success"], json!(true));
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert!(calls.iter().all(|(cmd, _)| cmd == "d.erase"));
+    }
+
+    #[tokio::test]
+    async fn remove_delete_data_runs_before_erase() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                Some("s3cret"),
+                &json!({"delete_data": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(true));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                ("d.delete_data".to_string(), REMOVE_HASH.to_string()),
+                ("d.erase".to_string(), REMOVE_HASH.to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_delete_source_runs_before_erase() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                Some("s3cret"),
+                &json!({"delete_source": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(true));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                ("d.delete_tied".to_string(), REMOVE_HASH.to_string()),
+                ("d.erase".to_string(), REMOVE_HASH.to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_both_flags_run_data_tied_erase_in_order() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                Some("s3cret"),
+                &json!({"delete_data": true, "delete_source": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(true));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                ("d.delete_data".to_string(), REMOVE_HASH.to_string()),
+                ("d.delete_tied".to_string(), REMOVE_HASH.to_string()),
+                ("d.erase".to_string(), REMOVE_HASH.to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_invalid_hash_fails_without_commands() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_json(
+                "/api/torrents/not-a-hash/remove",
+                Some("s3cret"),
+                &json!({"delete_data": true, "delete_source": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid info hash"));
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_failed_deletion_still_erases_and_reports_error() {
+        // A failing data deletion must not skip the erase.
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &["d.delete_data"]);
+        let (status, body) = send(
+            state,
+            post_json(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                Some("s3cret"),
+                &json!({"delete_data": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"].as_str().unwrap().contains("d.delete_data:"));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                ("d.delete_data".to_string(), REMOVE_HASH.to_string()),
+                ("d.erase".to_string(), REMOVE_HASH.to_string()),
+            ]
+        );
+
+        // Both deletions failing: every error is aggregated, erase still runs last.
+        let (state, calls) =
+            state_with_remove_stubs(Some("s3cret"), &["d.delete_data", "d.delete_tied"]);
+        let (status, body) = send(
+            state,
+            post_json(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                Some("s3cret"),
+                &json!({"delete_data": true, "delete_source": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        let error = body["error"].as_str().unwrap();
+        assert!(error.contains("d.delete_data:"), "error: {error}");
+        assert!(error.contains("d.delete_tied:"), "error: {error}");
+        assert!(error.contains("stub failure"), "error: {error}");
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[2].0, "d.erase");
+    }
+
+    #[tokio::test]
+    async fn remove_malformed_body_fails_without_commands() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, body) = send(
+            state,
+            post_raw(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                Some("s3cret"),
+                Some("application/json"),
+                "{not json",
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid remove options"));
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_requires_auth_like_other_actions() {
+        let (state, calls) = state_with_remove_stubs(Some("s3cret"), &[]);
+        let (status, _) = send(
+            state,
+            post_json(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                None,
+                &json!({"delete_data": true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_untrusted_caller_cannot_erase() {
+        // No token configured → untrusted caller; d.erase (like the real
+        // command) is not FLAG_UNTRUSTED_SAFE, so the command map rejects it
+        // before the stub runs.
+        let (state, calls) = state_with_remove_stubs(None, &[]);
+        let (status, body) = send(
+            state,
+            post_raw(
+                &format!("/api/torrents/{REMOVE_HASH}/remove"),
+                None,
+                None,
+                "",
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], json!(false));
+        assert!(body["error"].as_str().unwrap().contains("untrusted"));
+        assert!(calls.lock().unwrap().is_empty());
     }
 
     #[test]

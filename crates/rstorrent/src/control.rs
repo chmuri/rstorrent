@@ -71,6 +71,8 @@ pub struct Control {
     /// Number of `queue_recheck_if_files_exist()` calls that found payload on
     /// disk since startup. Diagnostic only; see `startup.summary`.
     pub queued_rechecks: AtomicU64,
+    /// Effective watch-directory consumption policy: "move" | "delete" | "keep".
+    pub watch_consume: String,
     pub tiering_manager: Arc<rt_core::tiering::TieringManager>,
     pub config_path: Option<std::path::PathBuf>,
     pub config_path_slot: Arc<RwLock<Option<std::path::PathBuf>>>,
@@ -138,6 +140,7 @@ impl Control {
             network_runtime: Mutex::new(None),
             metrics: Metrics::from_env(),
             queued_rechecks: AtomicU64::new(0),
+            watch_consume: "move".to_string(),
             tiering_manager,
             config_path: None,
             config_path_slot: Arc::new(RwLock::new(None)),
@@ -340,6 +343,7 @@ impl Control {
         self.set_phase("Loading configuration files", 4, 10, None);
         let phase = Instant::now();
         let mut watch_dir_from_toml: Option<String> = None;
+        let mut watch_consume_from_toml: Option<String> = None;
         let mut disk_threads_from_toml: Option<usize> = None;
         let mut max_open_files_from_toml: Option<usize> = None;
         let mut rss_config = rt_rss::RssConfig::default();
@@ -375,6 +379,9 @@ impl Control {
                                     );
                                     if let Some(wd) = cfg.storage.watch_directory {
                                         watch_dir_from_toml = Some(wd);
+                                    }
+                                    if let Some(wc) = cfg.storage.watch_consume {
+                                        watch_consume_from_toml = Some(wc);
                                     }
                                     disk_threads_from_toml = cfg.storage.disk_threads;
                                     max_open_files_from_toml = cfg.storage.max_open_files;
@@ -1070,6 +1077,7 @@ impl Control {
         self.set_phase("Scanning watch directory", 9, 10, None);
         let phase = Instant::now();
         let effective_watch_dir = cli.watch_dir.clone().or(watch_dir_from_toml);
+        self.watch_consume = normalize_watch_consume(watch_consume_from_toml.as_deref());
         if let Some(watch_dir) = &effective_watch_dir {
             match self.load_watch_directory(watch_dir) {
                 Ok(loaded) => watch_loaded = loaded,
@@ -1379,16 +1387,22 @@ impl Control {
 
     /// Returns `true` when the torrent was newly inserted into the session.
     fn import_watch_torrent(&self, torrent_path: &std::path::Path, directory: &str) -> bool {
-        Self::import_watch_torrent_inner(
-            torrent_path,
-            directory,
-            &self.download_list,
-            &self.view_manager,
-            Some(&self.queued_rechecks),
-            Some(&self.root_ui),
+        matches!(
+            Self::import_watch_torrent_inner(
+                torrent_path,
+                directory,
+                &self.download_list,
+                &self.view_manager,
+                Some(&self.queued_rechecks),
+                Some(&self.root_ui),
+                &self.watch_consume,
+                Some(&self.command_map),
+            ),
+            WatchImportOutcome::Added
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn import_watch_torrent_inner(
         torrent_path: &std::path::Path,
         directory: &str,
@@ -1396,7 +1410,9 @@ impl Control {
         view_manager: &Arc<RwLock<ViewManager>>,
         queued_rechecks: Option<&AtomicU64>,
         root_ui: Option<&Arc<Mutex<RootUI>>>,
-    ) -> bool {
+        consume: &str,
+        command_map: Option<&Arc<RwLock<CommandMap>>>,
+    ) -> WatchImportOutcome {
         let path_str = torrent_path.to_string_lossy().to_string();
 
         let mut factory = DownloadFactory::new();
@@ -1404,29 +1420,38 @@ impl Control {
         factory.set_init_load(true);
         if let Err(e) = factory.load_file(&path_str) {
             tracing::warn!("Failed to load watch torrent '{}': {}", path_str, e);
-            return false;
+            return WatchImportOutcome::Failed;
         }
 
         let mut dl_list = download_list.write().unwrap_or_else(|e| e.into_inner());
         let download = match factory.commit(&mut dl_list) {
             Ok(download) => download,
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // The torrent is already tracked (e.g. restored from the
-                // session). Start it, but do not report it as newly loaded.
-                if let Ok(placeholder) = factory.create_download() {
-                    let hash = *placeholder.info_hash();
-                    if let Some(existing) = dl_list.find(&hash) {
-                        dl_list.start(&existing);
-                    }
+                // Already tracked (e.g. restored from session). Consume + record
+                // the source, but do NOT force-start: a paused torrent must keep
+                // its state across restarts.
+                let hash = factory.create_download().ok().map(|p| *p.info_hash());
+                // Release the download-list write lock BEFORE recording the
+                // source: d.tied_to_file.set reads the download list, and calling
+                // it under the write guard would deadlock the same RwLock.
+                drop(dl_list);
+                if let (Some(h), Some(final_path)) =
+                    (hash, consume_watch_file(torrent_path, consume))
+                {
+                    record_watch_source(command_map, &h, &final_path);
                 }
-                return false;
+                return WatchImportOutcome::Duplicate;
             }
             Err(e) => {
                 tracing::warn!("Commit failed for watch torrent '{}': {}", path_str, e);
-                return false;
+                return WatchImportOutcome::Failed;
             }
         };
 
+        let hash = *download
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .info_hash();
         {
             let mut guard = download.write().unwrap_or_else(|e| e.into_inner());
             guard.set_directory(directory);
@@ -1443,12 +1468,16 @@ impl Control {
         let mut vm = view_manager.write().unwrap_or_else(|e| e.into_inner());
         vm.insert_download_to_all(Arc::clone(&download));
 
+        if let Some(final_path) = consume_watch_file(torrent_path, consume) {
+            record_watch_source(command_map, &hash, &final_path);
+        }
+
         if let Some(ui) = root_ui {
             let msg = format!("Watch dir loaded torrent: {}", path_str);
             ui.lock().unwrap_or_else(|e| e.into_inner()).push_log(msg);
         }
 
-        true
+        WatchImportOutcome::Added
     }
 
     /// Spawns a real-time filesystem watcher that automatically imports new `.torrent` files
@@ -1463,6 +1492,8 @@ impl Control {
         let download_list = Arc::clone(&self.download_list);
         let view_manager = Arc::clone(&self.view_manager);
         let root_ui = Arc::clone(&self.root_ui);
+        let command_map = Arc::clone(&self.command_map);
+        let consume = self.watch_consume.clone();
         let default_download_dir = self.default_download_directory();
         let watch_path_clone = watch_path.clone();
 
@@ -1494,28 +1525,60 @@ impl Control {
             }
 
             tracing::info!(
-                "Real-time watch directory active on {}",
-                watch_path_clone.display()
+                "Real-time watch directory active on {} (consume={})",
+                watch_path_clone.display(),
+                consume
             );
 
+            // Deduplicate bursts of Create/Modify events for the same path.
+            let mut recent: std::collections::HashMap<std::path::PathBuf, Instant> =
+                std::collections::HashMap::new();
+
             while let Some(event) = rx.recv().await {
-                match event.kind {
-                    EventKind::Create(_) | EventKind::Modify(_) => {
-                        for path in event.paths {
-                            if path.is_file() && Self::has_torrent_extension(&path) {
-                                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                                Self::import_watch_torrent_inner(
-                                    &path,
-                                    &default_download_dir,
-                                    &download_list,
-                                    &view_manager,
-                                    None,
-                                    Some(&root_ui),
-                                );
+                if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                    continue;
+                }
+                for path in event.paths {
+                    if !path.is_file() || !Self::has_torrent_extension(&path) {
+                        continue;
+                    }
+                    let now = Instant::now();
+                    if let Some(prev) = recent.get(&path) {
+                        if now.duration_since(*prev) < std::time::Duration::from_secs(2) {
+                            continue;
+                        }
+                    }
+                    recent.insert(path.clone(), now);
+                    recent
+                        .retain(|_, t| now.duration_since(*t) < std::time::Duration::from_secs(60));
+
+                    // A file may still be copying when the first event fires.
+                    // Retry with backoff until it parses (or attempts exhaust).
+                    let mut delay = std::time::Duration::from_millis(200);
+                    for attempt in 0..5 {
+                        tokio::time::sleep(delay).await;
+                        match Self::import_watch_torrent_inner(
+                            &path,
+                            &default_download_dir,
+                            &download_list,
+                            &view_manager,
+                            None,
+                            Some(&root_ui),
+                            &consume,
+                            Some(&command_map),
+                        ) {
+                            WatchImportOutcome::Added | WatchImportOutcome::Duplicate => break,
+                            WatchImportOutcome::Failed => {
+                                if attempt == 4 {
+                                    tracing::warn!(
+                                        "Watch import failed after retries: {}",
+                                        path.display()
+                                    );
+                                }
+                                delay = (delay * 2).min(std::time::Duration::from_millis(3200));
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         });
@@ -2237,4 +2300,99 @@ fn register_config_commands(
     .map_err(|e| format!("Failed to register config.save: {e}"))?;
 
     Ok(())
+}
+
+/// Result of importing one watch-directory file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchImportOutcome {
+    /// Newly inserted into the session.
+    Added,
+    /// Already tracked; source consumed/recorded, state left untouched.
+    Duplicate,
+    /// Could not parse/commit (e.g. file still copying); eligible for retry.
+    Failed,
+}
+
+/// Validates the `storage.watch_consume` option, defaulting to "move".
+fn normalize_watch_consume(value: Option<&str>) -> String {
+    match value.map(|v| v.trim().to_ascii_lowercase()) {
+        Some(v) if v == "delete" || v == "keep" || v == "move" => v,
+        Some(v) => {
+            tracing::warn!("Invalid watch_consume '{v}'; using 'move'");
+            "move".to_string()
+        }
+        None => "move".to_string(),
+    }
+}
+
+/// Applies the consumption policy to an imported watch `.torrent` file.
+/// "move" relocates it to `<watch>/.imported/` (ignored by the non-recursive
+/// scan); "delete" removes it; "keep" leaves it in place. Failures are logged
+/// and never abort startup.
+fn consume_watch_file(torrent_path: &std::path::Path, policy: &str) -> Option<String> {
+    let original = torrent_path.to_string_lossy().into_owned();
+    match policy {
+        "delete" => {
+            if let Err(e) = std::fs::remove_file(torrent_path) {
+                tracing::warn!(
+                    "Could not delete watch file '{}': {}",
+                    torrent_path.display(),
+                    e
+                );
+                return Some(original);
+            }
+            None
+        }
+        "move" => {
+            let Some(parent) = torrent_path.parent() else {
+                return Some(original);
+            };
+            let Some(name) = torrent_path.file_name() else {
+                return Some(original);
+            };
+            let dest_dir = parent.join(".imported");
+            if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+                tracing::warn!("Could not create '{}': {}", dest_dir.display(), e);
+                return Some(original);
+            }
+            let mut dest = dest_dir.join(name);
+            if dest.exists() {
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0);
+                dest = dest_dir.join(format!("{}.{}", name.to_string_lossy(), stamp));
+            }
+            match std::fs::rename(torrent_path, &dest) {
+                Ok(()) => Some(dest.to_string_lossy().into_owned()),
+                Err(e) => {
+                    tracing::warn!(
+                        "Could not move watch file '{}' to '{}': {}",
+                        torrent_path.display(),
+                        dest.display(),
+                        e
+                    );
+                    Some(original)
+                }
+            }
+        }
+        _ => Some(original),
+    }
+}
+
+/// Records the source `.torrent` path on the download so `d.delete_tied` and
+/// the UI "delete source file" option can find it. Best-effort.
+fn record_watch_source(
+    command_map: Option<&Arc<RwLock<CommandMap>>>,
+    hash: &lt_common::hash_string::HashString,
+    path: &str,
+) {
+    let Some(map) = command_map else {
+        return;
+    };
+    let map = map.read().unwrap_or_else(|e| e.into_inner());
+    let target = rt_rpc::Target::Download(*hash);
+    let arg = Object::create_string(path.to_string());
+    let _ = map.call_command("d.tied_to_file.set", &arg, &target, true);
+    let _ = map.call_command("d.loaded_file.set", &arg, &target, true);
 }
