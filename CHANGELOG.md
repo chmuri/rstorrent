@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.7] - 2026-11-21
+
+### Fixed
+- **Failure-backoff bypass in event recovery** (`crates/lt-engine/`): the controller-flag recovery added in 0.25.5 re-queued pending start/update events every cycle even while a tracker was in failure backoff (the SEND flag only clears on success). On sessions with many unregistered/dead trackers this hammered them ~1×/s each and saturated the announce semaphore for healthy trackers. Recovery now respects `activity_time_next()` backoff, collapsing request volume to sustainable levels.
+
 ## [0.25.6] - 2026-11-21
 
 ### Fixed

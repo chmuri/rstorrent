@@ -25,7 +25,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.25.6"
+version = "0.25.7"
 edition = "2021"
 rust-version = "1.99"
 authors = ["chmuri <chmuri@gmail.com>"]

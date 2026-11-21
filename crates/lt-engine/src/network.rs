@@ -1078,32 +1078,46 @@ impl DownloadNetworkCoordinator {
                         // Recover explicit events whose per-tracker REQUESTING
                         // mark was lost to a concurrent scrape result or close.
                         // Controller flags stay authoritative until a success
-                        // clears them, so re-queue on the appropriate trackers.
+                        // clears them, so re-queue on the appropriate trackers —
+                        // but never bypass failure backoff: a failing tracker
+                        // keeps its SEND flag until a success, and re-queuing it
+                        // every cycle would hammer the tracker and saturate the
+                        // concurrency semaphore for the whole session.
                         let flags = controller.flags;
                         let already = |chosen: &[(usize, String, TrackerEvent)], i: usize| {
                             chosen.iter().any(|(ci, _, _)| *ci == i)
                         };
+                        let off_backoff = |t: &lt_tracker::Tracker| {
+                            t.state().counters.failed_counter == 0
+                                || t.state().activity_time_next() <= cached_time
+                        };
                         if flags.contains(lt_tracker::ControllerFlags::SEND_COMPLETED) {
                             for (i, t) in controller.tracker_list.trackers.iter().enumerate() {
-                                if t.is_in_use() && !t.is_requesting() && !already(&chosen, i) {
+                                if t.is_in_use()
+                                    && !t.is_requesting()
+                                    && off_backoff(t)
+                                    && !already(&chosen, i)
+                                {
                                     chosen.push((i, t.url().to_string(), TrackerEvent::Completed));
                                 }
                             }
                         }
                         if flags.contains(lt_tracker::ControllerFlags::SEND_STOP) {
                             for (i, t) in controller.tracker_list.trackers.iter().enumerate() {
-                                if t.is_in_use() && !t.is_requesting() && !already(&chosen, i) {
+                                if t.is_in_use()
+                                    && !t.is_requesting()
+                                    && off_backoff(t)
+                                    && !already(&chosen, i)
+                                {
                                     chosen.push((i, t.url().to_string(), TrackerEvent::Stopped));
                                 }
                             }
                         }
                         if flags.contains(lt_tracker::ControllerFlags::SEND_START) {
-                            if let Some((i, t)) = controller
-                                .tracker_list
-                                .trackers
-                                .iter()
-                                .enumerate()
-                                .find(|(_, t)| t.is_usable() && !t.is_requesting())
+                            if let Some((i, t)) =
+                                controller.tracker_list.trackers.iter().enumerate().find(
+                                    |(_, t)| t.is_usable() && !t.is_requesting() && off_backoff(t),
+                                )
                             {
                                 if !already(&chosen, i) {
                                     chosen.push((i, t.url().to_string(), TrackerEvent::Started));
@@ -1113,14 +1127,14 @@ impl DownloadNetworkCoordinator {
                         if flags.contains(lt_tracker::ControllerFlags::SEND_UPDATE)
                             && chosen.is_empty()
                         {
-                            // A manual announce must go out even when no tracker
-                            // is due yet (mirrors controller.send_update_event).
+                            // A manual announce goes out even when no tracker is
+                            // due yet, but still respects failure backoff.
                             if let Some((i, t)) = controller
                                 .tracker_list
                                 .trackers
                                 .iter()
                                 .enumerate()
-                                .find(|(_, t)| t.can_request_state())
+                                .find(|(_, t)| t.can_request_state() && off_backoff(t))
                             {
                                 chosen.push((i, t.url().to_string(), TrackerEvent::None));
                             }
