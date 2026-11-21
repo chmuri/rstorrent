@@ -142,14 +142,14 @@ impl MouseHandler {
                             .contains(crossterm::event::KeyModifiers::CONTROL)
                         {
                             return AppAction::ToggleSelectRow(clicked_idx);
-                        } else if event
+                        }
+                        if event
                             .modifiers
                             .contains(crossterm::event::KeyModifiers::SHIFT)
                         {
                             return AppAction::SelectRange(clicked_idx);
-                        } else {
-                            return AppAction::SelectRow(clicked_idx);
                         }
+                        return AppAction::SelectRow(clicked_idx);
                     }
                     return AppAction::None;
                 }

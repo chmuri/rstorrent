@@ -99,7 +99,7 @@
     <div class="stats" id="stats"></div>
 
     <div class="bar">
-      <input type="text" id="add-input" class="grow" placeholder="magnet:?xt=… or /path/to.torrent">
+      <input type="text" id="add-input" class="grow" placeholder="magnet:?xt=… or /path/to.torrent" aria-label="Torrent magnet URI or file path">
       <button id="add">Add torrent</button>
     </div>
 
@@ -201,9 +201,9 @@
         <tbody id="cfg-tiers-body"></tbody>
       </table>
       <div class="bar" style="margin-bottom: 18px;">
-        <input type="text" id="new-tier-name" placeholder="Tier Name (e.g. nvme, ssd, hdd)" style="max-width: 180px;">
-        <input type="text" id="new-tier-path" class="grow" placeholder="Absolute Mount/Directory Path (e.g. /mnt/nvme/torrents)">
-        <input type="number" id="new-tier-cap" placeholder="Cap GB (opt)" style="max-width: 130px;">
+        <input type="text" id="new-tier-name" placeholder="Tier Name (e.g. nvme, ssd, hdd)" aria-label="Tier Name" style="max-width: 180px;">
+        <input type="text" id="new-tier-path" class="grow" placeholder="Absolute Mount/Directory Path (e.g. /mnt/nvme/torrents)" aria-label="Tier Mount Path">
+        <input type="number" id="new-tier-cap" placeholder="Cap GB (opt)" aria-label="Tier Capacity in GB" style="max-width: 130px;">
         <button id="btn-add-tier">Add Tier</button>
       </div>
 
@@ -229,7 +229,7 @@
     <div class="card">
       <h3>Configuration File Preview & Direct Editor (rstorrent.toml)</h3>
       <div class="field">
-        <textarea id="cfg-toml-preview" spellcheck="false"></textarea>
+        <textarea id="cfg-toml-preview" spellcheck="false" aria-label="Configuration File Preview and Direct Editor"></textarea>
       </div>
       <div class="flex-row">
         <button class="ghost" id="btn-apply-toml">Apply Raw TOML</button>

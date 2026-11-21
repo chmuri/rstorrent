@@ -765,13 +765,13 @@ impl ScgiServer {
         handler: Arc<ScgiHandler>,
     ) -> Result<Self, ScgiError> {
         let p = path.as_ref().to_path_buf();
-        if p.exists() {
-            let _ = std::fs::remove_file(&p);
+        if tokio::fs::try_exists(&p).await.unwrap_or(false) {
+            let _ = tokio::fs::remove_file(&p).await;
         }
         let listener = UnixListener::bind(&p)?;
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+            let _ = tokio::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).await;
         }
         info!("SCGI listening on Unix socket {:?}", p);
         Ok(Self {
@@ -896,7 +896,7 @@ impl ScgiServer {
         }
 
         if let Some(path) = unix_path {
-            let _ = std::fs::remove_file(path);
+            let _ = tokio::fs::remove_file(path).await;
         }
 
         result

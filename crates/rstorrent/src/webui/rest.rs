@@ -761,7 +761,7 @@ pub async fn add_torrent(
                         let hash_part = &source_or_data[pos + 9..];
                         let hex_str: String = hash_part
                             .chars()
-                            .take_while(|c| c.is_ascii_hexdigit())
+                            .take_while(char::is_ascii_hexdigit)
                             .collect();
                         if let Some(hs) = lt_common::HashString::from_hex(&hex_str) {
                             return list.find(&hs);

@@ -1463,7 +1463,7 @@ impl App {
             while let Some(command) = self.take_priority_command() {
                 match self.send_priority(&command).await {
                     Some(Ok(response)) if !response.success => {
-                        tracing::warn!(message = %response.error_message, "priority change rejected");
+                        tracing::warn!(reason = %response.error_message, "priority change rejected");
                     }
                     Some(Err(error)) => tracing::warn!(%error, "priority change failed"),
                     _ => {}

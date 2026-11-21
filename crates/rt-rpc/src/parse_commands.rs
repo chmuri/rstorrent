@@ -172,9 +172,8 @@ pub fn parse_command_file(
             // Line continuation
             current_line.push_str(continued);
             continue;
-        } else {
-            current_line.push_str(trimmed_end);
         }
+        current_line.push_str(trimmed_end);
 
         let to_parse = current_line.trim();
         if !to_parse.is_empty() && !to_parse.starts_with('#') {

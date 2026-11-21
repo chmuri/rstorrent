@@ -182,7 +182,7 @@ impl RssService {
             .map(str::to_string)
             .or_else(|| self.default_directory());
         if let Some(path) = &save_path {
-            if let Err(err) = std::fs::create_dir_all(path) {
+            if let Err(err) = tokio::fs::create_dir_all(path).await {
                 tracing::warn!(path = %path, error = %err, "Could not create RSS save directory");
             }
             download.set_directory(path.as_str());
@@ -213,14 +213,17 @@ impl RssService {
             let mut list = self
                 .download_list
                 .write()
-                .unwrap_or_else(|e| e.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             list.insert(Arc::clone(&download))
         };
         if !inserted {
             return DownloadResult::Duplicate(hash);
         }
         if !action.paused {
-            let list = self.download_list.read().unwrap_or_else(|e| e.into_inner());
+            let list = self
+                .download_list
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             list.start(&download);
         }
         // Persist through the same writer-snapshot path as d.save_full_session

@@ -243,26 +243,30 @@ pub async fn run_app() -> Result<(), Box<dyn std::error::Error>> {
                                 }
 
                                 if delete_data {
-                                    use rayon::prelude::*;
-                                    erased.par_iter().for_each(|dl| {
-                                        let guard = dl.read().unwrap();
-                                        let dir = guard.directory();
-                                        let name = guard.name();
-                                        let base_path = std::path::Path::new(dir).join(name);
-                                        if base_path.exists() {
-                                            if base_path.is_dir() {
-                                                let _ = std::fs::remove_dir_all(&base_path);
-                                            } else {
-                                                let _ = std::fs::remove_file(&base_path);
+                                    let erased_for_deletion = erased.clone();
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        use rayon::prelude::*;
+                                        erased_for_deletion.par_iter().for_each(|dl| {
+                                            let guard = dl.read().unwrap();
+                                            let dir = guard.directory();
+                                            let name = guard.name();
+                                            let base_path = std::path::Path::new(dir).join(name);
+                                            if base_path.exists() {
+                                                if base_path.is_dir() {
+                                                    let _ = std::fs::remove_dir_all(&base_path);
+                                                } else {
+                                                    let _ = std::fs::remove_file(&base_path);
+                                                }
                                             }
-                                        }
-                                        for f in guard.download().file_list().files() {
-                                            let p = f.path();
-                                            if p.exists() && p.is_file() {
-                                                let _ = std::fs::remove_file(p);
+                                            for f in guard.download().file_list().files() {
+                                                let p = f.path();
+                                                if p.exists() && p.is_file() {
+                                                    let _ = std::fs::remove_file(p);
+                                                }
                                             }
-                                        }
-                                    });
+                                        });
+                                    })
+                                    .await;
                                 }
                             }
                             rt_tui::EngineCommand::RecheckHash(hashes) => {

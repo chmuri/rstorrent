@@ -121,9 +121,11 @@ impl GrpcServer {
         let mut builder = Server::builder();
         if let Some(sec) = sec {
             if let (Some(cert), Some(key)) = (&sec.tls_cert, &sec.tls_key) {
-                let cert_pem = std::fs::read(cert)
+                let cert_pem = tokio::fs::read(cert)
+                    .await
                     .map_err(|e| format!("read gRPC TLS cert {:?}: {}", cert, e))?;
-                let key_pem = std::fs::read(key)
+                let key_pem = tokio::fs::read(key)
+                    .await
                     .map_err(|e| format!("read gRPC TLS key {:?}: {}", key, e))?;
                 let identity = Identity::from_pem(cert_pem, key_pem);
                 builder = builder
@@ -164,14 +166,14 @@ impl GrpcServer {
         use tokio_stream::wrappers::UnixListenerStream;
 
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            let _ = tokio::fs::create_dir_all(parent).await;
         }
-        if path.exists() {
-            let _ = std::fs::remove_file(&path);
+        if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            let _ = tokio::fs::remove_file(&path).await;
         }
 
         let listener = UnixListener::bind(&path)?;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        let _ = tokio::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).await;
         info!("Starting gRPC Unix domain socket server on {:?}", path);
 
         let stream = UnixListenerStream::new(listener);
@@ -195,7 +197,7 @@ impl GrpcServer {
             })
             .await?;
 
-        let _ = std::fs::remove_file(&path_cleanup);
+        let _ = tokio::fs::remove_file(&path_cleanup).await;
         Ok(())
     }
 }

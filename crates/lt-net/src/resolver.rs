@@ -42,9 +42,8 @@ impl DnsCache {
         if let Some(entry) = entries.get(hostname) {
             if Instant::now() < entry.expires_at {
                 return Some(entry.ips.clone());
-            } else {
-                entries.remove(hostname);
             }
+            entries.remove(hostname);
         }
         None
     }

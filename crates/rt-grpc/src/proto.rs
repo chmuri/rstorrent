@@ -1579,7 +1579,7 @@ pub mod torrent_service_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "rtorrent.v1.TorrentService";
     impl<T> tonic::server::NamedService for TorrentServiceServer<T> {
-        const NAME: &'static str = SERVICE_NAME;
+        const NAME: &str = SERVICE_NAME;
     }
 }
 /// Generated client implementations.
@@ -2107,7 +2107,7 @@ pub mod system_service_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "rtorrent.v1.SystemService";
     impl<T> tonic::server::NamedService for SystemServiceServer<T> {
-        const NAME: &'static str = SERVICE_NAME;
+        const NAME: &str = SERVICE_NAME;
     }
 }
 /// Generated client implementations.
@@ -2553,6 +2553,6 @@ pub mod command_service_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "rtorrent.v1.CommandService";
     impl<T> tonic::server::NamedService for CommandServiceServer<T> {
-        const NAME: &'static str = SERVICE_NAME;
+        const NAME: &str = SERVICE_NAME;
     }
 }

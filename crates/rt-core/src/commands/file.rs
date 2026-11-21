@@ -250,8 +250,7 @@ pub fn register_file_commands(
             let num_files = {
                 let dl_guard = dl.read().unwrap();
                 let engine = dl_guard.download();
-                let count = engine.file_list().files().len();
-                count
+                engine.file_list().files().len()
             };
 
             let map_guard = mc_map.read().unwrap();

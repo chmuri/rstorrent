@@ -197,7 +197,7 @@ case "${1:-}" in
             "${SSH[@]}" "mkdir -p $(printf '%q' "$BASE")"
             rsync -az "scripts/Dockerfile.builder" "$HOST:$BASE/Dockerfile"
         fi
-        "${SSH[@]}" "cd $(printf '%q' "$BASE") && docker build --build-arg AWS_ACCESS_KEY_ID=$(printf '%q' "${AWS_ACCESS_KEY_ID:-}") --build-arg AWS_SECRET_ACCESS_KEY=$(printf '%q' "${AWS_SECRET_ACCESS_KEY:-}") --build-arg SCCACHE_ENDPOINT=$(printf '%q' "${SCCACHE_ENDPOINT:-http://cache.example.com:9000}") -t $(printf '%q' "$IMAGE") ."
+        "${SSH[@]}" "cd $(printf '%q' "$BASE") && docker build --build-arg SCCACHE_ENDPOINT=$(printf '%q' "${SCCACHE_ENDPOINT:-https://cache.example.com:9000}") -t $(printf '%q' "$IMAGE") ."
         exit 0
         ;;
     sync)

@@ -2246,7 +2246,7 @@ fn register_config_commands(
     dht_config: Arc<RwLock<DhtConfig>>,
     rss_slot: Arc<OnceLock<Arc<crate::rss::RssService>>>,
 ) -> Result<(), String> {
-    use rt_rpc::command_flags::*;
+    use rt_rpc::command_flags::{FLAG_PUBLIC_RPC, FLAG_UNTRUSTED_SAFE};
     use rt_rpc::RpcError;
 
     let map_weak = Arc::downgrade(&command_map_arc);
@@ -2262,7 +2262,9 @@ fn register_config_commands(
             let rss = Arc::clone(&rss_slot);
             move |_target, _arg| {
                 if let Some(map_arc) = map_weak.upgrade() {
-                    let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
+                    let map_guard = map_arc
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let rss_cfg = rss.get().map(|svc| svc.rss.config());
                     let cfg = crate::toml_config::RtorrentTomlConfig::from_runtime_with_rss(
                         &map_guard,
@@ -2299,7 +2301,9 @@ fn register_config_commands(
                     return Err(RpcError::InputError("Path cannot be empty".into()));
                 }
                 if let Some(map_arc) = map_weak.upgrade() {
-                    let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
+                    let map_guard = map_arc
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let rss_cfg = rss.get().map(|svc| svc.rss.config());
                     let cfg = crate::toml_config::RtorrentTomlConfig::from_runtime_with_rss(
                         &map_guard,
@@ -2340,7 +2344,9 @@ fn register_config_commands(
                     _ => "rstorrent.toml".to_string(),
                 };
                 if let Some(map_arc) = map_weak.upgrade() {
-                    let map_guard = map_arc.read().unwrap_or_else(|e| e.into_inner());
+                    let map_guard = map_arc
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let rss_cfg = rss.get().map(|svc| svc.rss.config());
                     let cfg = crate::toml_config::RtorrentTomlConfig::from_runtime_with_rss(
                         &map_guard,

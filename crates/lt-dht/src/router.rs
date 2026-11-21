@@ -223,9 +223,8 @@ impl DhtRouter {
                 let other = self.buckets[bucket_idx].split(&own_id);
                 self.buckets.push(other);
                 continue;
-            } else {
-                return false;
             }
+            return false;
         }
     }
 

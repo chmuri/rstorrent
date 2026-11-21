@@ -19,9 +19,8 @@ pub fn ipv4_range_parse(address: &str) -> Option<(u32, u32)> {
         let end_u32 = u32::from(end_ip);
         if start_u32 <= end_u32 {
             return Some((start_u32, end_u32));
-        } else {
-            return None;
         }
+        return None;
     }
 
     // Check for CIDR: IP/mask

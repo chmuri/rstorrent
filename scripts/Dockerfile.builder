@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git rsync ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-unknown-linux-musl.tar.gz \
+RUN curl --proto '=https' --tlsv1.2 -fsSL https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz -C /tmp && \
     mv /tmp/sccache-v0.19.0-x86_64-unknown-linux-musl/sccache /usr/local/bin/sccache && \
     chmod +x /usr/local/bin/sccache && \
@@ -18,11 +18,7 @@ RUN curl -fsSL https://github.com/mozilla/sccache/releases/download/v0.19.0/scca
 # an image-layer `rustup target add` would be shadowed at runtime.
 RUN cargo install trunk --locked --version 0.22.1
 
-# sccache S3 credentials are injected at build time via --build-arg (see
-# scripts/remote-ci.sh `image`); no secrets are stored in this repository.
-ARG SCCACHE_ENDPOINT=http://cache.example.com:9000
-ARG AWS_ACCESS_KEY_ID=""
-ARG AWS_SECRET_ACCESS_KEY=""
+ARG SCCACHE_ENDPOINT=https://cache.example.com:9000
 
 ENV CARGO_TERM_COLOR=always \
     CARGO_INCREMENTAL=0 \
@@ -33,8 +29,6 @@ ENV CARGO_TERM_COLOR=always \
     SCCACHE_BUCKET=sccache \
     SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT} \
     SCCACHE_S3_USE_SSL=false \
-    AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
-    AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
     SCCACHE_REGION=us-east-1
 
 WORKDIR /work

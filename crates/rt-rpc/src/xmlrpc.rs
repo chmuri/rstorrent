@@ -424,15 +424,15 @@ impl XmlRpc {
                                 message: "empty boolean element".to_string(),
                             });
                         }
-                        if trimmed == "1" {
-                            return Ok(Object::from(1i64));
-                        } else if trimmed == "0" {
-                            return Ok(Object::from(0i64));
-                        } else {
-                            return Err(RpcError::Custom {
-                                code: XMLRPC_TYPE_ERROR,
-                                message: format!("unknown boolean value: {}", trimmed),
-                            });
+                        match trimmed {
+                            "1" => return Ok(Object::from(1i64)),
+                            "0" => return Ok(Object::from(0i64)),
+                            _ => {
+                                return Err(RpcError::Custom {
+                                    code: XMLRPC_TYPE_ERROR,
+                                    message: format!("unknown boolean value: {}", trimmed),
+                                })
+                            }
                         }
                     }
                     b"double" => {
