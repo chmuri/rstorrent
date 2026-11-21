@@ -749,6 +749,17 @@ impl Control {
                             ),
                         }
                     }
+                    "event.download.inserted" => {
+                        // A fresh insert (restore, import, or re-adding a
+                        // just-erased hash) voids any erase tombstone so the
+                        // live download's session writes are not suppressed.
+                        if let Ok(guard) = download.read() {
+                            session_manager
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clear_erased(&guard.info_hash_hex());
+                        }
+                    }
                     _ => {}
                 }
             }));

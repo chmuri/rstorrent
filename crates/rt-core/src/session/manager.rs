@@ -7,6 +7,16 @@ use std::io::{self, Error, ErrorKind};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+/// How long an erase tombstone blocks late session writes for the same hash.
+///
+/// A periodic checkpoint serializes the whole download list up front and then
+/// publishes entries for minutes on large sessions; an erase that lands inside
+/// that window must not be undone by a write that was already in flight. The
+/// TTL only needs to outlive the longest plausible commit pass (observed: a
+/// few minutes for ~16k entries), after which no in-flight write can remain.
+const ERASE_TOMBSTONE_TTL: Duration = Duration::from_secs(900);
 
 /// One download's already-serialized session streams.
 ///
@@ -383,6 +393,7 @@ impl SessionManager {
         }
 
         let file_path = DownloadStorer::build_path(&self.path, info_hash_hex)?;
+        self.write_cache.lock().unwrap().mark_erased(info_hash_hex);
         DownloadStorer::unlink_files(&file_path);
         Ok(())
     }
@@ -396,6 +407,9 @@ impl SessionManager {
             return Ok(false);
         }
 
+        // Tombstone first: an in-flight commit whose staged files we are about
+        // to unlink must already see the erase when its publish fails.
+        self.write_cache.lock().unwrap().mark_erased(info_hash_hex);
         let base = DownloadStorer::build_path(&self.path, info_hash_hex)?;
         DownloadStorer::unlink_files(&base);
         for suffix in [
@@ -406,7 +420,6 @@ impl SessionManager {
         ] {
             let _ = fs::remove_file(format!("{base}{suffix}"));
         }
-        self.write_cache.lock().unwrap().forget(info_hash_hex);
         Ok(true)
     }
 
@@ -416,6 +429,16 @@ impl SessionManager {
             return Ok(0);
         }
         use rayon::prelude::*;
+
+        // Tombstone every hash before unlinking: an in-flight commit whose
+        // staged files we are about to remove must already see the erase when
+        // its publish fails (see `erase_entry`).
+        {
+            let mut cache = self.write_cache.lock().unwrap();
+            for hex in info_hash_hexes {
+                cache.mark_erased(hex);
+            }
+        }
 
         info_hash_hexes.par_iter().for_each(|hex| {
             if let Ok(base) = DownloadStorer::build_path(&self.path, hex) {
@@ -431,14 +454,19 @@ impl SessionManager {
             }
         });
 
-        {
-            let mut cache = self.write_cache.lock().unwrap();
-            for hex in info_hash_hexes {
-                cache.forget(hex);
-            }
-        }
-
         Ok(info_hash_hexes.len())
+    }
+
+    /// Lift the erase tombstone for a hash that became live again.
+    ///
+    /// Wired to `event.download.inserted`: re-adding a just-erased torrent
+    /// must persist normally instead of being suppressed until the tombstone
+    /// TTL expires. A no-op when the manager is inactive or no tombstone exists.
+    pub fn clear_erased(&self, info_hash_hex: &str) {
+        if self.path.is_empty() || !self.active {
+            return;
+        }
+        self.write_cache.lock().unwrap().clear_erased(info_hash_hex);
     }
 
     pub fn get_entries(&self) -> io::Result<Vec<DirectoryEntry>> {
@@ -490,6 +518,15 @@ pub fn write_workers() -> usize {
 #[derive(Debug, Default)]
 struct WriteCache {
     entries: std::collections::HashMap<String, CachedStreams>,
+    /// Info hashes whose session files were erased, mapped to the erase time.
+    ///
+    /// Erasing unlinks the files, but a commit pass that serialized the entry
+    /// *before* the erase may still publish it afterwards, resurrecting the
+    /// sidecars (or, for a full save, the `.torrent` itself). Writers consult
+    /// this tombstone map before and after publishing so an erased entry can
+    /// never outlive its erase. Pruned on every new erase; see
+    /// [`ERASE_TOMBSTONE_TTL`].
+    erased: std::collections::HashMap<String, Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -551,6 +588,35 @@ impl WriteCache {
     fn forget(&mut self, info_hash_hex: &str) {
         self.entries.remove(info_hash_hex);
     }
+
+    /// Record that the entry's session files were erased.
+    ///
+    /// Drops any cached generation (the files are gone, so a later write must
+    /// not be skipped as "unchanged") and tombstones the hash against commits
+    /// that serialized the entry before the erase.
+    fn mark_erased(&mut self, info_hash_hex: &str) {
+        self.entries.remove(info_hash_hex);
+        self.erased
+            .insert(info_hash_hex.to_string(), Instant::now());
+        self.prune_erased();
+    }
+
+    fn is_erased(&self, info_hash_hex: &str) -> bool {
+        self.erased.contains_key(info_hash_hex)
+    }
+
+    /// Lift the tombstone because the hash is live again (a fresh insert).
+    ///
+    /// Without this, re-adding a just-erased torrent would have its session
+    /// writes suppressed until the tombstone expires.
+    fn clear_erased(&mut self, info_hash_hex: &str) {
+        self.erased.remove(info_hash_hex);
+    }
+
+    fn prune_erased(&mut self) {
+        self.erased
+            .retain(|_, at| at.elapsed() < ERASE_TOMBSTONE_TTL);
+    }
 }
 
 /// Snapshot of the session directory settings, usable without the manager
@@ -597,6 +663,15 @@ impl SessionWriter {
         }
 
         let file_path = DownloadStorer::build_path(&self.path, info_hash_hex)?;
+        // An erase may have landed after this entry was serialized for a
+        // commit pass. Never (re)publish an erased entry, and clean up any
+        // files a torrent-only write left behind before the erase — otherwise
+        // a stale `.torrent` anchor would resurrect the download on restart.
+        if self.cache.lock().unwrap().is_erased(info_hash_hex) {
+            DownloadStorer::unlink_files(&file_path);
+            stats::record_skipped_entry();
+            return Ok(());
+        }
         if self.already_published(
             info_hash_hex,
             torrent_stream,
@@ -621,14 +696,34 @@ impl SessionWriter {
         );
         let mut cache = self.cache.lock().unwrap();
         match &result {
-            Ok(()) => cache.remember(
-                info_hash_hex,
-                torrent_stream,
-                rtorrent_stream,
-                libtorrent_stream,
-            ),
-            // A failed publish must not leave "this entry is current" behind.
-            Err(_) => cache.forget(info_hash_hex),
+            Ok(()) => {
+                if cache.is_erased(info_hash_hex) {
+                    // The erase won the race while these streams were being
+                    // published: undo the resurrection instead of caching it.
+                    drop(cache);
+                    DownloadStorer::unlink_files(&file_path);
+                } else {
+                    cache.remember(
+                        info_hash_hex,
+                        torrent_stream,
+                        rtorrent_stream,
+                        libtorrent_stream,
+                    );
+                }
+            }
+            Err(_) => {
+                if cache.is_erased(info_hash_hex) {
+                    // The erase also removed the staged `.new` files, so the
+                    // publish failed mid-rename. That is the desired outcome
+                    // for an erased entry: clean up any partially published
+                    // files and report a benign skip instead of an error.
+                    drop(cache);
+                    DownloadStorer::unlink_files(&file_path);
+                    return Ok(());
+                }
+                // A failed publish must not leave "this entry is current" behind.
+                cache.forget(info_hash_hex);
+            }
         }
         result.map_err(Into::into)
     }
@@ -693,6 +788,9 @@ impl SessionWriter {
             return Ok(());
         };
         if self.path.is_empty() {
+            return Ok(());
+        }
+        if self.cache.lock().unwrap().is_erased(&entry.info_hash_hex) {
             return Ok(());
         }
         let path = DownloadStorer::build_path(&self.path, &entry.info_hash_hex)?;
